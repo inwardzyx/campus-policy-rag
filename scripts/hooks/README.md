@@ -130,24 +130,50 @@ Recall@5 **0/15**、两个不同题集的极值撞成同一个常数 **0.4240**�
 **GitHub 只有在仓库设置里把某个 check 标成 required（必需检查）时，
 红灯才真正锁住合并。** `pull_request` 触发的检查默认**不是** required。
 
-⇒ 所以这个仓库当前的真实状态是：
+⇒ 所以这个仓库在**补规则之前**的真实状态是：
 
-- **本地两道（P1钩子）**：真的挡（已用真实 push 验过）
+- **本地两道（钩子）**：真的挡（已用真实 push 验过）
 - **远端那道（CI）**：⚠️ **只会喊，不会拦** —— 它能告诉你"红了"，
   但你（和任何协作者）该合还是能合
 
-★ **"CI 绿了"和"CI拦得住"是两件事**，今天第一次测后者，就发现不成立。
+★ **"CI 绿了"和"CI 拦得住"是两件事**，今天第一次测后者，就发现不成立。
 这比"CI 能不能变红"重要一个量级：前者的坏后果是"没发现问题"，
 而后者是**"问题被发现了，防线却没挡住"** —— 比没有 CI 更危险，因为它给人虚假的安全感。
 
+### 现在的状态：远端补了 rule，但**故意不把 CI 变成门禁**（2026-10-11）
+
+已在 `Settings → Branches` 建了一条 Branch rule（新版 rulesets），覆盖 `main`：
+
+| 选项 | 状态 | 作用 |
+|---|---|---|
+| **Block force pushes** | ✅ 已开 | 挡住"手滑 force push 改写历史" |
+| **Restrict deletions** | ✅ 已开 | 挡住"手滑删掉 main" |
+| Require status checks to pass | ⬜ **故意不开** | ★ 开它会**禁掉直接 push 到 main**（见下） |
+| 其余 9 项 | ⬜ 不开 | 与本仓库要解决的问题无关 |
+
+⇒ **所以那道缺口仍然在**：CI 红灯**依然不拦合并**。
+这是**知情的取舍**，不是漏配 —— 因为把 CI 变成门禁的代价
+（每次推送都得走 PR + 等几分钟）大于它当下解决的问题（单人项目，一天推好几次）。
+⇒ 什么时候该翻成 B：**当"CI 红了却被人合进去"真的发生过一次**的时候。
+在那之前，靠下面两条本地防线 + PR 页面上看得见的红灯。
+
+★ 顺带一句：本仓库的本地钩子（`pre-commit` / `pre-push`）
+**是唯一真正会挡的两道**，而它们**不进仓库**（`.git/hooks/` 被 gitignore），
+换 clone 就没了 —— 别人（或未来的你）clone 下来默认一道都没有。
+这才是这道防线真正的薄弱点，比远端那条更值得补。
+
 ### 要补的话，在 Settings → Branches 加一条 rule
 
-★ **先看清楚代价（2026-10-11 实测页面后修正）**：
-`Require status checks to pass` 那一栏底下GitHub 自己写着——
+⚠️ **先分清两套系统**（2026-10-11 实测页面）：
+- **Classic branch protections** —— 旧版，页面会明说 "have not been configured"
+- **Branch rules（rulesets）** —— ★ 新版，现在的正路，选项更多也更清楚
+
+★ **先看清楚 `Require status checks to pass` 的代价**——
+GitHub 自己在那栏底下写着：
 
 > "commits must first be pushed to another ref where the checks pass"
 
-⇒ **它不只是"合并前要绿"，它会禁掉「直接 push 到 main」**。
+⇒ 它不只是"合并前要绿"，它**禁掉「直接 push 到 main」**。
 本仓库是单人项目、每天推好几次，一旦开这一项，工作流就变成
 "每改一行都得开 PR"，而慢 job + 容器 job 合计要好几分钟。
 
@@ -155,19 +181,30 @@ Recall@5 **0/15**、两个不同题集的极值撞成同一个常数 **0.4240**�
 
 | 选项 | 换来什么 | 代价 |
 |---|---|---|
-| **A. 只开 Block force pushes**（不开 required checks） | 禁止改写 main 历史 —— 这个仓库恰好付过改写的代价（2026-09-24 `filter-branch`） | ⚠️ **CI 仍然是"只会喊不会拦"**。等于接受"红灯是提醒，不是门禁" |
+| **A. 只开防误操作的项**（见下） | 挡住"手滑改历史 / 手滑删主干" | ⚠️ **CI 仍然是"只会喊不会拦"**。等于接受"红灯是提醒，不是门禁" |
 | **B. 开 required checks**（勾容器 job / 慢 job） | ★ 红灯真正锁住合并，CI 升级成门禁 | **每次推送都得走 PR**，CI 跑完（数分钟）才推得进去 |
 
-**别开 "Require a pull request before merging"** —— 那是 B 的加强版，
-对单人项目纯属负担。
+#### 新版 UI 上，A 方案具体勾哪几项（2026-10-11 实际采用）
 
-⚠️ 无论选 A 还是 B，下面这两项都值得开：
-- **Block force pushes**（尤其重要：本仓库有 `filter-branch` 的前科）
-- **Do not allow bypassing the above settings** / 禁止管理员绕过
-  —— 不开这条，上面那些开关管理员能一键跳过，等于没开
+| 选项 | 开不开 | 为什么 |
+|---|---|---|
+| **Block force pushes** | ✅ **开** | ★ 最重要的一条。本仓库有 `filter-branch` 的前科 —— 2026-09-24 那次改写历史虽然目的正当（清掉误推的文件），但**手法本身就危险**，而它能发生正是因为没有规则拦 |
+| **Restrict deletions** | ✅ **开** | 不让删掉 main。本仓库已经因为那次事故做过一次"远端删除是单向门"的复盘 |
+| Restrict creations / Restrict updates | ❌ 不开 | 这两项是"只允许有 bypass 权限的人创建/更新"，= 变相强制走 PR，同 B 的代价 |
+| Require a pull request before merging | ❌ 不开 | B 的加强版，单人项目纯负担 |
+| Require linear history / Require signed commits | ❌ 不开 | 与本仓库要解决的问题无关；signed commits 还要求配 GPG/SSH 签名 |
+| Require deployments / code scanning / code quality / coverage / Copilot review | ❌ 不开 | 这些功能本仓库没启用，勾了只会卡住自己 |
+| **Require status checks to pass** | ❌ **不开**（选 A 时） | 见上，开它=禁掉直推 main |
 
-若选 B，还要留意 **"Do not require status checks on creation"**
-（默认不勾 = 允许创建分支时豁免检查；勾上则新分支的创建也可能被检查挡住）。
+⚠️ **新版里没有 "Do not allow bypassing" 这一条**（那是旧版 classic 的说法）。
+新版靠 **bypass list** 控制：创建 rule 时那个 "Bypass list" **留空**
+⇒ 没有任何人能绕过这条 rule（含管理员）。
+⚠️ 别往 bypass list 里加自己 —— 一加就等于给自己开后门，rule 立刻形同虚设。
+
+⚠️ **Block force pushes 开启后的副作用**（不是 bug，是设计）：
+万一真需要改写 main 历史（像 2026-09-24 那次清理泄露文件），会撞上这条规则。
+届时正确做法是**临时在 Settings 里禁用这条 rule**，改完再启用 ——
+**不要用 `--force` 硬冲，也不要为了绕过它把规则删掉**。
 
 ## ⚠️ 这套东西自己也被审过
 
