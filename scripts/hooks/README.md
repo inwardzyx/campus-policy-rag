@@ -142,17 +142,32 @@ Recall@5 **0/15**、两个不同题集的极值撞成同一个常数 **0.4240**�
 
 ### 要补的话，在 Settings → Branches 加一条 rule
 
-⚠️ **但别开"Require a pull request before merging"** —— 那是给多人协作设计的，
-会打断本仓库现在的"直接推 main"习惯（单人项目、每天推好几次）。
-真正该开的是这两项：
+★ **先看清楚代价（2026-10-11 实测页面后修正）**：
+`Require status checks to pass` 那一栏底下GitHub 自己写着——
 
-| 选项 | 为什么 |
-|---|---|
-| **Require status checks to pass**（勾 `CI / 容器 job`、`CI / 慢 job`） | ★ 这才是"红灯锁住合并"的那一项 |
-| **Do not allow bypassing the above settings** | 否则管理员能一键绕过，等于没开 |
+> "commits must first be pushed to another ref where the checks pass"
 
-**代价要知道**：开了之后，`git push origin main` 在 CI 没跑完/没绿之前会被拒。
-单人项目可以先只勾"容器 job"（它已经能在 2 分钟内抓到"库里没东西"这类问题）。
+⇒ **它不只是"合并前要绿"，它会禁掉「直接 push 到 main」**。
+本仓库是单人项目、每天推好几次，一旦开这一项，工作流就变成
+"每改一行都得开 PR"，而慢 job + 容器 job 合计要好几分钟。
+
+⇒ 所以这**不是"哪个开关更严"的选择，是"要不要改工作流"的选择**。两条都诚实：
+
+| 选项 | 换来什么 | 代价 |
+|---|---|---|
+| **A. 只开 Block force pushes**（不开 required checks） | 禁止改写 main 历史 —— 这个仓库恰好付过改写的代价（2026-09-24 `filter-branch`） | ⚠️ **CI 仍然是"只会喊不会拦"**。等于接受"红灯是提醒，不是门禁" |
+| **B. 开 required checks**（勾容器 job / 慢 job） | ★ 红灯真正锁住合并，CI 升级成门禁 | **每次推送都得走 PR**，CI 跑完（数分钟）才推得进去 |
+
+**别开 "Require a pull request before merging"** —— 那是 B 的加强版，
+对单人项目纯属负担。
+
+⚠️ 无论选 A 还是 B，下面这两项都值得开：
+- **Block force pushes**（尤其重要：本仓库有 `filter-branch` 的前科）
+- **Do not allow bypassing the above settings** / 禁止管理员绕过
+  —— 不开这条，上面那些开关管理员能一键跳过，等于没开
+
+若选 B，还要留意 **"Do not require status checks on creation"**
+（默认不勾 = 允许创建分支时豁免检查；勾上则新分支的创建也可能被检查挡住）。
 
 ## ⚠️ 这套东西自己也被审过
 
