@@ -89,42 +89,112 @@ def search_policy(query: str, k: int = 5) -> str:
 
     ★ 正确做法（实测 /chat 的 sources 里就带着原文）：
       /chat 返回的 sources 里每条都有 {doc（含条款号）, text（原文）, score}。
-      ⇒ 要原文根本不用碰检索那一层，直接读 sources 就行，
-        而且这样【两个工具都走 HTTP】，MCP server 保持纯跨进程，
-        "stdio 还是 HTTP""服务没起来怎么办"这些问题才答得出来。
+    ⇒ 要原文根本不用碰检索那一层，直接读 sources 就行，
+      而且这样【两个工具都走 HTTP】，MCP server 保持纯跨进程。
     ⇒ 代价：/chat 内部会跑一遍生成，所以比纯检索慢 ——
       对一个工具调用来说可以接受，而且这一点必须写在文档里，别假装它更轻。
+
+    ★★★ 2026-10-12 加：命中标记（SIGNAL 协议）
+      为什么加：拒答判据原来只能靠【读模型的措辞】猜它有没有依据，
+      而关键词判据的实测假阳率高到会把"硬答"洗成"正确拒答"。
+      ⇒ 改成让工具【自己说】有没有命中 —— 一个固定格式的标记块：
+        模型看得懂（它读的就是这段文本），脚本也能精确解析（不靠猜）。
+      ★ 这个块必须放在**答案的最末尾**：模型读到最后的注意力权重最高，
+        而中间会被业务内容稀释。
+      ⚠️ 它只是给模型的提示，不改变模型的行为保证 ——
+        模型仍可能无视它编答案。所以它解决的是"判据能不能客观测量"，
+        不是"模型会不会硬答"。后者要靠 hard_answer_rate 单独测。
     """
     data = _get_json("/chat", {"question": query, "use_rerank": False, "top_k": k})
     if not data.get("knowledge_hit", True):
-        return NO_HIT_TEXT
+        return NO_HIT_TEXT + _signal_line("no_hit", "search_policy")
     srcs = data.get("sources", [])
     if not srcs:
-        return NO_HIT_TEXT
+        return NO_HIT_TEXT + _signal_line("no_hit", "search_policy")
     lines = []
     for s in srcs:
         lines.append(f"· {s['doc']}（相似度 {s['score']:.4f}）\n  {s['text'][:200]}")
-    return "\n".join(lines)
+    return "\n".join(lines) + _signal_line("hit", "search_policy", len(srcs))
 
 
 def ask_policy(question: str) -> str:
-    """ask_policy 的实现：走 /chat 拿【带出处的成答】。跨进程。"""
+    """ask_policy 的实现：走 /chat 拿【带出处的成答】。跨进程。
+
+    ★ 同 search_policy：末尾带结构化命中标记（SIGNAL 协议，见上）。
+    """
     data = _get_json("/chat", {"question": question, "use_rerank": True})
     # ★ knowledge_hit 是本项目自己加的字段，它把「库里没有」和「服务异常」分开。
     #   不看它，模型收到的就只是一句冷冰冰的"我不知道"，
     #   而模型分不清来源时，最可能的行为是硬答。
     if not data.get("knowledge_hit", True):
-        return NO_HIT_TEXT
+        return NO_HIT_TEXT + _signal_line("no_hit", "ask_policy")
     src = data.get("sources", [])
     if src:
         doc_names = sorted({s.get("doc", "?") for s in src})
-        return f"{data['answer']}\n\n依据文件：{'、'.join(doc_names)}"
-    return data.get("answer", "")
+        return (f"{data['answer']}\n\n依据文件：{'、'.join(doc_names)}"
+                + _signal_line("hit", "ask_policy", len(src)))
+    return data.get("answer", "") + _signal_line("no_hit", "ask_policy")
 
 
 def health() -> dict:
     """健康检查：MCP server 启动时先探一下，别等到 agent 调用才发现服务没起。"""
     return _get_json("/health")
+
+
+# ==================================================================
+# ★★★ SIGNAL 协议：让工具【自己说】命中没命中（2026-10-12）
+#
+# 为什么要有这个：
+#   原来判断"模型有没有依据"只能【读模型的措辞】，
+#   而关键词判据的实测假阳率高到会把硬答洗成"正确拒答"
+#   （DSH 独立审计实测：5 条对抗样例全错，最致命的一条是
+#     "我查不到报销比例，但按往年惯例可以报销 80%" 被判成正确拒答）。
+#   ⇒ 改为主动标记：这个格式是固定的，脚本能精确解析，不靠猜措辞。
+#
+# 为什么不用 JSON：
+#   工具返回是给【模型】读的。JSON 对模型是额外噪音，
+#   而这行标记要同时满足两件事：
+#     · 模型看得懂（不然它会当成无关内容忽略）
+#     · 脚本能精确 parse（不然还得正则，又回到猜措辞）
+#   ⇒ 一行人话 + 一个稳定的 key=value 尾巴，两边都够用。
+#
+# ⚠️ 它【不是】行为保证：模型完全可能无视这行标记继续编。
+#   它解决的是"能不能客观测量"，不是"会不会硬答"。
+#   后者必须靠 hard_answer_rate（模型无视标记的题数）单独测。
+# ==================================================================
+
+SIGNAL_PREFIX = "[检索信号]"
+SIGNAL_KEY = "hit_status"       # ★ 脚本只认这个 key，别改名字
+
+
+def _signal_line(status: str, tool: str, n_src: int = 0) -> str:
+    """生成末尾的命中标记行。
+
+    status ∈ {"hit", "no_hit"}；no_hit 表示库里确实没有这条。
+    """
+    return (f"\n\n{SIGNAL_PREFIX} {SIGNAL_KEY}={status} "
+            f"tool={tool} n_sources={n_src}")
+
+
+def parse_signal(tool_text: str) -> str | None:
+    """从工具输出里解析命中标记。**解析不了就返回 None，不猜。**
+
+    ★ 返回 None 是合法的结果，不是异常 ——
+      它意味着"这次工具没带标记"（旧版本 / 走了别的分支），
+      此时计分必须把该题排除出分母，而不是当成 no_hit。
+      把 None 当成 no_hit 会凭空造出一批"硬答"。
+    """
+    if not tool_text or SIGNAL_PREFIX not in tool_text:
+        return None
+    for line in tool_text.splitlines():
+        line = line.strip()
+        if not line.startswith(SIGNAL_PREFIX):
+            continue
+        for part in line[len(SIGNAL_PREFIX):].split():
+            if part.startswith(f"{SIGNAL_KEY}="):
+                v = part.split("=", 1)[1].strip()
+                return v if v in ("hit", "no_hit") else None
+    return None
 
 
 # ★★ 这就是【唯一源】：MCP 侧的 tools/list 和 bind_tools 侧的描述都从这里派生。

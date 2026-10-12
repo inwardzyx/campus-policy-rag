@@ -50,3 +50,30 @@ _rag_server.log
 #   它只是 mcp/_loop_out.json 的一份拷贝，用来和另一版做对比，
 #   结论已经写死在 mcp/verify_mcp_parity.py 的 docstring 里了）
 mcp/_loop_out_run2.json
+
+# ★ 变异测试的假数据（agent/_mut/FAKE_*.json）
+#   这些是【编造的】，不是实测结果。文件名带 FAKE_ 前缀已经是一种警示，
+#   但它们没有任何被参考的价值 —— 结论全在 make_fake.py 里可重生成，
+#   所以连测试数据一起不进仓库：
+#     ★ 前缀能骗过眼睛，规则才骗不过 —— 谁知道哪天有人 mv 一下改个名。
+agent/_mut/FAKE_*.json
+
+# ★ 实测中间结果（几万行 JSON，跑一次覆盖一次）
+#   这些是"跑出来的"，但：
+#     1. 重跑一次就变（模型有随机性），进仓库等于把某一次的随机快照当结论
+#     2. 真正要长期保留的是【报告 markdown】，那才是结论
+#   报告里每个数字都是从这些 JSON 读的，所以 JSON 必须能重新生成出来。
+#   ⇒ 判定逻辑（脚本）在仓库里，原始数据不在 —— 这也是"数字非手写"的前提：
+#      读者跑一遍就能得到自己的数字，而不是相信我某一次跑的快照。
+agent/_refusal_regression.json
+agent/_token_cost.json
+agent/_mut/_fake_regression.json
+agent/_mut/_fake_report.md
+
+# ★ 判据演进过程中的中间备份（改坏了要回滚时才用，不进仓库：
+#   它们是某个版本的快照，而仓库里应该只有【当前版本】+ 它的测试。
+#   留一堆历史快照在仓库里，只会让人分不清哪个是当前逻辑。）
+agent/_mut/_*.py
+agent/_mut/_*.json
+agent/_mut/_*.md
+agent/_mut/_*.txt
