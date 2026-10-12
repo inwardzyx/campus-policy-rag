@@ -297,13 +297,47 @@ def main():
         if miss:
             print(f"    ★ 有 {miss} 次调用没读到 usage —— 均值因此偏低，别当真值用")
 
-    # 直打侧的 usage 字段名先看实际有什么，别硬套
-    sample = next((r["usage_raw"] for r in d_rows
-                   if not r.get("error") and r.get("usage_raw")), None)
-    print(f"\n  直打 /chat 的 usage 实际形态：{sample}")
-    if isinstance(sample, dict) and "_keys" in sample:
-        print("    ★ 服务端没返回 usage 字段（只见到这些含 usage/token 的键）")
-        print("      ⇒ 直打侧要么去 service.py 加计量，要么只能报 agent 侧。")
+    # ---- 直打侧汇总 ----
+    # ★ 这段以前只会打印一条"usage 实际形态"（那是加计量之前的临时展示）。
+    #   服务端真把 usage 报上来之后还那么打，等于【量都量了却不给结论】。
+    d_ok = [r for r in d_rows
+            if not r.get("error") and isinstance(r.get("usage_raw"), dict)
+            and "n_calls" in r["usage_raw"]]
+    d_total = len(d_rows)
+    print(f"\n  直打 /chat：{len(d_ok)}/{d_total} 题计入"
+          f"（{d_total - len(d_ok)} 题没有可用 usage，不计入均值）")
+    if d_ok:
+        keys = ("input_tokens", "output_tokens", "total_tokens", "n_calls")
+        d_avg = {k: sum(r["usage_raw"][k] for r in d_ok) / len(d_ok) for k in keys}
+        print(f"    平均 LLM 调用 {d_avg['n_calls']:.2f} 次/题"
+              f"　（一次 /chat 内部要走：查询改写 → rerank 打分 → 生成）")
+        print(f"    平均 input {d_avg['input_tokens']:.0f}　"
+              f"output {d_avg['output_tokens']:.0f}　"
+              f"合计 {d_avg['total_tokens']:.0f} token/题")
+        d_cost = [cost_of({"input": r["usage_raw"]["input_tokens"],
+                            "output": r["usage_raw"]["output_tokens"],
+                            "total": r["usage_raw"]["total_tokens"],
+                            "cache_hit": r["usage_raw"].get("cache_read", 0)})
+                  for r in d_ok]
+        d_cost = [c for c in d_cost if c is not None]
+        if d_cost:
+            print(f"    平均成本 {sum(d_cost) / len(d_cost):.6f} 元/题"
+                  f"（{PRICE_TABLE['_as_of']}）")
+        # ★ missing_calls 不为 0 也要说：均值混了漏记的部分，会【偏低】而不是偏高
+        d_miss = sum(r["usage_raw"].get("missing_calls", 0) for r in d_ok)
+        if d_miss:
+            print(f"    ★ 有 {d_miss} 次调用没读到 usage —— 均值因此偏低，别当真值用")
+        if ok:
+            a_avg_total = sum(r["usage"]["total"] for r in ok) / len(ok)
+            ratio = a_avg_total / d_avg["total_tokens"] if d_avg["total_tokens"] else 0
+            print(f"    ⇒ 同样这批题，agent 侧 {a_avg_total:.0f} token/题，"
+                  f"是直打的 {ratio:.1f} 倍")
+    else:
+        # 保留原来那两行提示：读不到就说读不到，不拿 0 冒充"直连不花钱"
+        sample = next((r["usage_raw"] for r in d_rows
+                       if not r.get("error") and r.get("usage_raw")), None)
+        print(f"    直打 /chat 的 usage 实际形态：{sample}")
+        print("    ★ 服务端没返回可用的 usage 字段 ⇒ 直打侧只能报 agent 侧。")
         print("      ★ 别拿 0 冒充'直连不花钱'——那是不测就说没有。")
 
     out = os.path.join(_ROOT, "agent", "_token_cost.json")

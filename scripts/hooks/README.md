@@ -64,6 +64,29 @@ Git Bash 报 bad interpreter，而且报错指不到原因。
 | `pre-commit` | `scripts/check_readme_numbers.py` | README 里写的数字 vs 脚本落盘的真实产物 |
 | `pre-push` ① | `scripts/check_push_paths.py` | **即将推上去的文件**里有没有"本不该进仓库"的 |
 | `pre-push` ② | `scripts/check_artifact_sanity.py` | 产物**本身是不是像跑出来的**（坏环境下跑的结果会覆盖好产物） |
+| `pre-push` ③ | `scripts/check_token_report.py` | token 报告里的每个数 vs 实测 JSON（**逐格**） |
+
+## ★ pre-push ③：token 报告对账（2026-10-12）
+
+写 `evalset/report-token-cost.md` 时我手工核对了 27 项，
+**却在正文里自己抓到 3 处算错**（缓存命中率 67.1%→实际 66.5%、
+output 差值 46→47、"52 次调用"→53）。
+
+⇒ "写完自己读一遍"这种核对**读的是自己刚写的句子，不是数据**。
+所以凡是"正文里出现了由数据算出来的数"，就得有一条自动判据盯着。
+
+它的变异测试是 `scripts/mutate_check_token.py`（5 条）。
+
+⚠️ **两个必须记住的边界**：
+
+1. **缺数据时不能"当成通过"。** 这个检查要读 `agent/_token_cost.json`，
+   而它按 `.gitignore` **不进仓库** ⇒ 别人 clone 下来没有。
+   钩子的处理是：**明确说缺、并给出怎么补**，而不是静默跳过 ——
+   静默跳过等于这道防线在别人机器上是假的。
+2. **注入失败必须算失败。** `mutate_check_token.py` 第一版里
+   "变异原文没找到"只打一行警告、退出码仍是 0 ⇒ 实测踩到过：
+   成本列那条把**上一张表**的列结构记错了，注入失败被跳过，
+   而全套变异测试全绿 ⇒ 那条判据实际上从没被验证过。
 
 ⚠️ **两个钩子里都有同一个已踩过的坑**：`[ -x "$PY" ]` 在 Git Bash 下对
 `D:/...` 这种 Windows 形式路径判不出可执行 ⇒ 静默 false ⇒ 解释器变空 ⇒
@@ -82,7 +105,7 @@ Recall@5 **0/15**、两个不同题集的极值撞成同一个常数 **0.4240**�
 ⇒ 检查只拦"**明显不是跑出来的**"，**刻意不设性能下界**
 （那会把真实退化也拦下来，而真实退化是要允许发生并被记录的）。
 
-它的变异测试是 `scripts/mutate_check_artifact.py`（8 条，含 1 条负向）。
+它的变异测试是 `scripts/mutate_check_artifact.py`（**14 条**，含负向）。
 ★ 其中一条变异改的是**检查器自己的清单**而不是产物 ——
 因为"漏登记"意味着那份产物**永远不会被检查**，而这正是上一版真实的洞
 （`report-rerank-main-norw.md` 从未被检查过）。

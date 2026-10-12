@@ -955,14 +955,17 @@ rag-customer-service/
 │   ├── measure_dup_threshold.py      # 真重复/同义改写/不同条款 三类配对各是多少
 │   ├── check_readme_numbers.py       # 数字对账：README 与落盘产物必须一致（pre-commit 调它）
 │   ├── mutate_check_numbers.py       # 对"对账器"本身做变异测试（不然它会变成假通过）
+│   ├── check_token_report.py         # token 报告 ↔ 实测数据【逐格】对账（pre-push 调它）
+│   ├── mutate_check_token.py         # 对上一条做变异测试（5 条，含"注入失败必须算失败"）
 │   ├── record_demo.mjs               # 录制顶部那段动图：CDP 驱动浏览器逐帧截屏
 │   ├── make_gif.py                   # 把帧合成 GIF（裁空白 + 去重 + 量化）
 │   └── mutate_check.py               # 变异测试：故意改坏代码，看测试红不红（7 条）
-└── tests/                       # 共 60 条，全是 pytest 断言（旧版是 print 自检，退出码永远 0）
-    ├── test_guard.py            # 把关 + 拒答 + PII 脱敏 + XSS 回归（25 条）
-    ├── test_loader.py           # kb/loader 解析单测（22 条，不碰模型 → CI 快 job 跑它）
+└── tests/                       # 共 65 条，全是 pytest 断言（旧版是 print 自检，退出码永远 0）
+    ├── test_guard.py            # 把关 + 拒答 + PII 脱敏 + XSS 回归（28 条）
+    ├── test_loader.py           # kb/loader 解析单测（22 条，不碰模型→ CI 快 job 跑它）
+    ├── test_llm_resilience.py   # 模型故障守门：超时 / 返回垃圾 / 幻觉 id / 超长输入，
+    ││                         #   + token 计量必须【累加】不能只留最后一次（10 条）
     ├── test_eval_set.py         # 评测集自洽 + 离线质量门禁（5 条）
-    ├── test_llm_resilience.py   # 模型故障守门：超时 / 返回垃圾 / 幻觉 id / 超长输入（5 条）
     └── fixtures/dirty_inbox/    # 构造的脏数据，一个文件对应一道关（覆盖度用，见「入库把关」）
 ├── mcp/                         # ★ MCP 协议层（2026-10-12：把服务接成 agent 可用的工具）
 │   ├── server.py                #   MCP server：注册 2 个工具
@@ -974,8 +977,7 @@ rag-customer-service/
 └── agent/                       # ★ agent 层：拒答验收与成本计量（见上面那一节）
     ├── refusal_regression.py    #   ★ 61 题 × N 遍回归（28 条判据用例自检）
     ├── render_regression_report.py  # 报告生成器（数字全部从 JSON 读）
-    ├── token_cost.py            #   token/成本计量（agent 侧已实测）
-    ├── check_token_report.py    #   token 报告的数字自动核对
+    ├── token_cost.py            #   token/成本计量（★ 两条路径都实测，20 题同批）
     ├── _mut/                    #   变异测试：故意改坏报告生成器，看守卫会不会红
     ├── policy_agent.py          #   拒答题集的 agent 跑法
     └── mcp_bridge.py            #   agent ↔ MCP 桥
@@ -1371,22 +1373,48 @@ agent 文本拒答率 85.2%~88.5%，直打侧 95.1%~98.4%——
 （同 prompt / 同模型 / 同 top_k / 同上下文格式），
 只替换"检索结果如何进入生成"这一处。**这是下一步，不是本次的结论。**
 
-### Token 成本（agent 侧实测 10 题）
+### Token 成本（两条路径同批实测 20 题）
 
-| 指标 | 值 |
-|---|---|
-| input / output / total（均值） | 1697 / 274 / **1972** |
-| 缓存命中 | **68.6%** |
-| LLM 调用 | 每题恰好 **2.00** 次（第1 次选工具、第 2 次出答案） |
-| 成本 | **0.003493 元/题** |
-| `missing_usage` | **0**（20 次调用全部拿到 usage，没有一次靠估算或补 0） |
-| `truncated` | **0**（没题触到 `MAX_ROUNDS`） |
+同批10 道应答题 + 10 道拒答题，直打与 agent 走完全一样的题。
 
-★ **直打侧未完成**，根因已定位不是脚本 bug：
-`service.py:225` 的 `_invoke_llm` 返回完整 `AIMessage`（usage 在上面），
-但三处调用点（`service.py:574/643/676`）**都只取 `.content`** ⇒ usage 丢在那。
-**现在不补的理由**：改 `service.py` 会污染正在采集的回归数据 ⇒ 排队。
-（且改完**必须重跑一遍拒答回归** —— 同一实验的前后半段不能用不同代码。）
+| 指标 | 直打 `/chat` | 走 agent |
+|---|---|---|
+| token/题（均值） | **957** | **1906**（直打的 1.99 倍） |
+| input / output（均值） | 762 / 195 | 1664 / 242 |
+| LLM 调用 | 每题 **2~3 次**（改写→精排→生成） | 每题 2.00 次 |
+| 成本 | 0.002506 元/题 | 0.003268 元/题 |
+| usage 缺失 | `missing_calls` **0** | `missing_usage` **0** |
+
+**① 贵在 input，不在话多。** agent 侧 output 只多 47 token，而 input 多 118%（2.18 倍）——
+多出来的是每轮把工具结果（检索块全文 + 精排分）重新塞回上下文。
+⇒ 优化顺序：**先压工具返回的体积**。
+
+**② 拒答并不便宜 —— 这一条推翻了直觉。** 按 `n_calls` 分流
+（`n_calls=2` 即只调了改写+精排、没调生成）：
+
+| | 题数 | 平均 input | 平均 total |
+|---|---|---|---|
+| 硬短路拒答 | 7 | 634 | 784 |
+| 调了生成作答 | 13 | 831 | 1049 |
+
+拒答省下的只有生成那一次的 output，**input 一分没省**（634/831 = 76%）——
+查询改写和 rerank 打分两次调用一次都没省，而 rerank 要把候选块**全文**塞进 prompt。
+极端一例：故意问库里没有的「GPA 怎么算」，**这一次拒答花了 1650 token 输入**，
+比这批里答对任何一道题都多。⇒ **"拒答很便宜"在本项目里是错的。**
+
+**③ 补计量时踩到一个真 bug，值得单独说。** 第一版记账代码能跑、字段有值、
+不报错，但**把一次 `/chat` 的三次模型调用记成了一次**（`n_calls` 恒等于 1、
+token 少算 58%）。原因是「覆盖」写成「累加」，且 `n_calls` 算的是
+一个**从没人写过的线程属性**。两个 bug 互相掩护 —— "1 次调用 + 一个小数字"
+看起来完全合理，第一轮跑批就这么过去了。
+只有让假模型**每次返回不同的 token 数**（100/200/300）才暴露得出来。
+⇒ 判据必须在"两种错误实现"下给出不同结果，否则测了等于没测。
+
+**④ 改完不用重跑拒答回归。** 这次是**纯读取型**改动：`_invoke_llm` 的返回值语义没变、
+三处调用点仍然只取 `.content`，只在旁边多读一个属性 ⇒ 模型输入一字未改 ⇒ 硬答率必然不变。
+验证用 `agent/verify_direct_unchanged.py` 比对结构化不变量（命中与否 / 引用了哪些条款 /
+sources 条数 ±1 容差），1 遍就够，**实测全绿**。
+（★ 不要用"硬答率还在不在 10.5%~15.8% 区间"来证明没变 —— 那是拿 5 个百分点的底噪当信号。）
 
 报告：[`evalset/report-token-cost.md`](evalset/report-token-cost.md)
 
@@ -1397,10 +1425,20 @@ agent 文本拒答率 85.2%~88.5%，直打侧 95.1%~98.4%——
 | `agent/refusal_regression.py` | 61 题 × N 遍，结构化信号 + 三态文本判据（28 条用例自检） |
 | `agent/render_regression_report.py` | 报告生成器，**数字全部从 JSON 读**，不手写 |
 | `agent/_mut/test_report_renderer.py` | 变异测试 6 个用例（守卫被改坏会红） |
+| `agent/verify_direct_unchanged.py` | 证"补计量没改动模型行为"：只比结构化不变量，不比文本 |
+| `agent/token_cost.py` | 两条路径同批计量，**拒答/作答按 `n_calls` 自动分流** |
 | `scripts/check_artifact_sanity.py` | 产物合理性检查（含本节两份报告的**独立判据**） |
 | `scripts/mutate_check_artifact.py` | 对上一条做变异测试，**14 条** |
+| `scripts/check_token_report.py` | token 报告 ↔ `_token_cost.json` **逐格**对账（pre-push 调它） |
+| `scripts/mutate_check_token.py` | 对上一条做变异测试，**5 条** |
+| `tests/test_llm_resilience.py` 第 ⑥ 组 | token 计量必须**累加**（5 条用例 + 3 个变异） |
 
 ★ **新加的判据必须配套变异测试** —— 没被变异测试盯着的判据等于没有判据。
+
+★ **注入失败必须算失败。** `mutate_check_token.py` 第一版里"变异原文没找到"
+只打一行警告、退出码仍是 0 ⇒ 实测踩到过：成本列那条把**上一张表**的列结构记错了，
+注入失败被跳过，而全套变异测试全绿 ⇒ 那条判据实际上从没被验证过。
+现在"跳过的条数 > 0"直接 `return 1`。
 （这两份报告刚被 pre-push 拦下来，因为"在磁盘上却没登记进 ARTIFACTS"；
 处理方式不是豁免而是**补判据**：豁免等于一份坏产物永远没人喊。）
 

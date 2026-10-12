@@ -218,13 +218,25 @@ ASSERTIONS: list[Assertion] = [
     #   而这三条要校的是「三遍分别是 6/38、5/40、4/38」这种多值组合 ——
     #   实测硬塞进去会得到一个永远报错的检查（"README 写 12.9，产物是三个值"）。
     #   ⇒ **宁可多写一个专项函数，也不要一个"看起来在查"的通用条目。**
+    # ★ 2026-10-12 改过：README 那张表从「单路径三列均值」改成
+    #   「直打 / agent 双列对照」，所以这条判据的正则跟着换了。
+    #   换判据不是"放松"—— 变的只是**读哪一列**，
+    #   仍然是「README 声称的 agent 均值 total 必须等于产物里的实测值」。
+    #   ⚠️ 中间那个分隔符是全角空格（U+3000），不是半角。
+    #      写成只认半角会永远抽不到 —— 而"抽不到"在通用路径里
+    #      表现为"数字对不上"，看起来像文档错了，其实是正则过期。
+    #   ⚠️ 产物侧的捕获组【只能有一个】，而且必须是 agent 那个数：
+    #      通用路径拿产物侧全部组拼起来、与 README 侧的 group(1) 比
+    #      （见本文件 verify() 的实现）。这里如果写成两个组，
+    #      产物侧会变成 "957/1906" 而 README 侧是 "1906" ⇒ 永远报红。
+    #      直打那个数由 scripts/check_token_report.py 校（那边逐格都校）。
     Assertion(
         name="agent token 均值 total",
-        readme_value="1972",
+        readme_value="1906",
         src="evalset/report-token-cost.md",
-        pattern=r"\*\*均值\*\* \| \*\*\d+\*\* \| \*\*\d+\*\* \| \*\*(\d+)\*\*",
+        pattern=r"\*\*均值：直打 \d+ token/题\s*agent (\d+) token/题",
         expect=None,
-        readme_pattern=r"input / output / total（均值） \| \d+ / \d+ / \*\*(\d+)\*\*",
+        readme_pattern=r"token/题（均值） \| \*\*\d+\*\* \| \*\*(\d+)\*\*（直打的",
     ),
 ]
 
@@ -346,6 +358,31 @@ def _check_agent_hard_rate() -> list[str]:
     if not m3:
         errs.append("✗ agent 硬答率：产物里找不到 no_hit 信号占比行，合计分母无从核对")
     return errs
+
+
+def _check_direct_token_mean() -> list[str]:
+    """README 对照表里「直打 /chat」那一列的 token 均值，必须与产物一致。
+
+    ★ 为什么要单独写一个专项函数（2026-10-12，变异测试逼出来的）：
+      通用路径一个 pattern 只产出一个值，所以它只校了 agent 那一列。
+      实测变异「把直打那格 957 改成 1000」**漏检** —— 那一格根本没人看守。
+      而 `check_token_report.py` 校的是**报告**里的逐题数字，
+      校不到 README 这一格 —— 它压根不看 README。
+      ⇒ 两边都漏的地方，就是必须补一个专项函数的地方。
+    """
+    p = REPO_ROOT / "evalset/report-token-cost.md"
+    rd = REPO_ROOT / "README.md"
+    if not p.exists() or not rd.exists():
+        return ["✗ 直打 token 均值：找不到产物或 README"]
+    pm = re.search(r"\*\*均值：直打 (\d+) token/题", p.read_text(encoding="utf-8"))
+    if not pm:
+        return ["✗ 直打 token 均值：产物里抽不到「均值：直打 N token/题」"]
+    rm = re.search(r"token/题（均值） \| \*\*(\d+)\*\* \|", rd.read_text(encoding="utf-8"))
+    if not rm:
+        return ["✗ 直打 token 均值：README 里找不到「token/题（均值） | **N**」那一格"]
+    if rm.group(1) != pm.group(1):
+        return [f"✗ 直打 token 均值：README 写 {rm.group(1)}，产物是 {pm.group(1)}"]
+    return []
 
 
 def _check_direct_split() -> list[str]:
@@ -847,6 +884,7 @@ def check() -> tuple[list[str], list[str]]:
     errors += _check_agent_hard_counts()
     errors += _check_agent_hard_rate()
     errors += _check_direct_split()
+    errors += _check_direct_token_mean()
     # ★ 过期陈述（文档说某物不存在，但它其实在）——
     #   ⚠️ 只提示不拦提交，理由见 _check_stale_text 的 docstring（盲审后降级：
     #     变异与规则同源 ⇒"能响"是自证；且有实测假阳性）

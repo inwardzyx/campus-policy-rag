@@ -76,6 +76,32 @@ else
     echo "[pre-push] ★ 产物不合理（上面列出的那些）—— 查环境后重跑，别当基线用"
     fail=1
 fi
+echo
+
+# ---- 3. token 报告 ↔ 实测数据 逐格对账 ----
+# ★ 起因：2026-10-12 写report-token-cost.md 时，我手工核对了 27 项，
+#   却在正文里自己抓到 3 处算错（缓存命中率 67.1%→66.5%、差值 46→47、
+#   "52 次调用"→53）。"写完自己读一遍"这种核对读的是自己刚写的句子，
+#   不是数据 ⇒ 必须有自动判据。
+#
+# ⚠️ 边界（必须说清，否则会变成"拦人的噪音"）：
+#   这个检查要读 agent/_token_cost.json，而它按 .gitignore **不进仓库**。
+#   ⇒ 别人 clone 下来没有这份数据。
+#   这里的处理是：**缺数据就说缺、且给出怎么补，不当成"检查通过"**。
+#   不能反过来"没数据就当过了" —— 那样这道防线在别人机器上是假的。
+DATA="$REPO/agent/_token_cost.json"
+if [ -f "$DATA" ]; then
+    if (cd "$REPO" && "$PY" scripts/check_token_report.py); then
+        echo "[pre-push] token 报告对账 OK"
+    else
+        echo "[pre-push] ★ token 报告里的数字与实测数据对不上（上面列出的那些）"
+        fail=1
+    fi
+else
+    echo "[pre-push] ⚠ 跳过 token 报告对账：缺 agent/_token_cost.json"
+    echo "           那份数据按 .gitignore 不进仓库。要查就先跑："
+    echo "             python -u agent/token_cost.py --n 20"
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then
