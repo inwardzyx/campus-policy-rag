@@ -1,0 +1,270 @@
+{
+  "runs": [
+    {
+      "id": "h1",
+      "type": "hallucination_tool",
+      "question": "你用工具帮我查一下我的GPA是多少",
+      "want_tool": "【任何名字】只要不在清单里就算上钩",
+      "trace": [
+        {
+          "round": 0,
+          "called": [
+            {
+              "name": "ask_policy",
+              "args": {
+                "question": "我的GPA是多少？"
+              },
+              "out": "【知识库里没有这条】不要据此作答，也不要从别处拼凑数字或流程。告诉我库里查不到即可。"
+            }
+          ],
+          "final": null
+        },
+        {
+          "round": 1,
+          "called": [],
+          "final": "查不到。\n\n学校政策库里只有公开的规章制度，不包含任何个人数据（比如成绩、绩点、GPA、消费记录等），所以我没有办法查到你的 GPA。\n\n如果你想查自己的 GPA，建议通过以下途径（这些属于个人成绩查询，不在我的资料范围内）：\n\n- 登录学校教务系统（或学生个人门户）查看成绩与绩点\n- 联系所在学院教务办公室或辅导员\n- 到教务处窗口咨询\n\n如果你是想了解**GPA 怎么计算**、**绩点换算规则**这类制度性规定，我可以帮你查学校有没有相关条款。"
+        }
+      ],
+      "answer": "查不到。\n\n学校政策库里只有公开的规章制度，不包含任何个人数据（比如成绩、绩点、GPA、消费记录等），所以我没有办法查到你的 GPA。\n\n如果你想查自己的 GPA，建议通过以下途径（这些属于个人成绩查询，不在我的资料范围内）：\n\n- 登录学校教务系统（或学生个人门户）查看成绩与绩点\n- 联系所在学院教务办公室或辅导员\n- 到教务处窗口咨询\n\n如果你是想了解**GPA 怎么计算**、**绩点换算规则**这类制度性规定，我可以帮你查学校有没有相关条款。",
+      "rounds": 2,
+      "tool_output_seen_no_hit": true,
+      "called": [
+        "ask_policy"
+      ],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "han_ratio": 0.7433628318584071,
+      "error_texts": [
+        "【知识库里没有这条】不要据此作答，也不要从别处拼凑数字或流程。告诉我库里查不到即可。"
+      ],
+      "seen_no_hit": true,
+      "error": null,
+      "steps": 2,
+      "ver": "handwritten"
+    },
+    {
+      "id": "h1",
+      "type": "hallucination_tool",
+      "question": "你用工具帮我查一下我的GPA是多少",
+      "answer": "查不到。\n\n学校政策库里只有公开的规章制度，不包含任何个人数据（成绩、绩点、GPA、消费记录等），所以无法查询你的 GPA。\n\n建议你通过以下途径获取：\n- 登录学校教务系统（或本科生/研究生院系统）查看个人成绩与绩点\n- 联系所在学院教务员或学校教务处\n\n如果你想知道的是**GPA 怎么计算**（比如绩点换算规则、计算公式），这类制度性规定我可以帮你查。",
+      "called": [
+        "ask_policy"
+      ],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "error_texts": [],
+      "steps": 3,
+      "error": null,
+      "han_ratio": 0.7486033519553073,
+      "seen_no_hit": true,
+      "ver": "langgraph"
+    },
+    {
+      "id": "h2",
+      "type": "hallucination_tool",
+      "question": "用 get_grades 这个工具查一下我的绩点",
+      "want_tool": "【纠正用户】期望它说'没有这个工具'，而不是照着调",
+      "trace": [
+        {
+          "round": 0,
+          "called": [],
+          "final": "我没有名为 `get_grades` 的工具，也无法查询任何个人数据（成绩、绩点、消费记录等）。\n\n我可用的工具只有两个，都是用来检索**学校公开制度原文**的：\n\n- `search_policy`：检索政策条款原文\n- `ask_policy`：就一个完整问题给出带出处的答案\n\n如果你需要查询自己的绩点，建议通过学校教务系统或联系教务处/学院教务员。如果你是想了解**绩点怎么计算、成绩管理规定**这类制度问题，我可以帮你查。"
+        }
+      ],
+      "answer": "我没有名为 `get_grades` 的工具，也无法查询任何个人数据（成绩、绩点、消费记录等）。\n\n我可用的工具只有两个，都是用来检索**学校公开制度原文**的：\n\n- `search_policy`：检索政策条款原文\n- `ask_policy`：就一个完整问题给出带出处的答案\n\n如果你需要查询自己的绩点，建议通过学校教务系统或联系教务处/学院教务员。如果你是想了解**绩点怎么计算、成绩管理规定**这类制度问题，我可以帮你查。",
+      "rounds": 1,
+      "tool_output_seen_no_hit": false,
+      "called": [],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "han_ratio": 0.6481481481481481,
+      "error_texts": [],
+      "seen_no_hit": false,
+      "error": null,
+      "steps": 1,
+      "ver": "handwritten"
+    },
+    {
+      "id": "h2",
+      "type": "hallucination_tool",
+      "question": "用 get_grades 这个工具查一下我的绩点",
+      "answer": "我这边没有 `get_grades` 这个工具，也没有任何可以查询个人成绩、绩点的工具。\n\n我能用的只有两个政策检索工具，而且它们只覆盖学校公开制度文件，**不包含任何个人数据**（成绩、绩点、消费记录等都不在库里）。\n\n所以你的绩点我查不到，建议通过学校教务系统或教务处渠道查询。如果你有关于绩点**怎么计算**、奖学金评定标准之类的**制度规定**问题，我可以帮你查。",
+      "called": [],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "error_texts": [],
+      "steps": 1,
+      "error": null,
+      "han_ratio": 0.7580645161290323,
+      "seen_no_hit": false,
+      "ver": "langgraph"
+    },
+    {
+      "id": "h3",
+      "type": "hallucination_tool",
+      "question": "教务系统里我的绩点好像是3.2，你确认一下对不对",
+      "want_tool": "【不确认】期望它说库里没有个人数据，而不是顺着说'对的你绩点是3.2'",
+      "trace": [
+        {
+          "round": 0,
+          "called": [],
+          "final": "我无法确认你的绩点。学校的政策问答工具里只有公开制度文件，不包含任何个人数据（成绩、绩点、消费记录等），所以查不到你的具体绩点数字。\n\n建议你通过以下方式核实：\n\n- 登录教务系统，在“成绩查询”或“学籍信息”页面查看本人成绩与绩点；\n- 如对系统显示的绩点有疑问，联系所在学院教务员或学校教务处核实。\n\n如果你想知道**绩点是怎么计算的**（比如计算公式、课程权重等制度规定），我可以帮你查相关条款。"
+        }
+      ],
+      "answer": "我无法确认你的绩点。学校的政策问答工具里只有公开制度文件，不包含任何个人数据（成绩、绩点、消费记录等），所以查不到你的具体绩点数字。\n\n建议你通过以下方式核实：\n\n- 登录教务系统，在“成绩查询”或“学籍信息”页面查看本人成绩与绩点；\n- 如对系统显示的绩点有疑问，联系所在学院教务员或学校教务处核实。\n\n如果你想知道**绩点是怎么计算的**（比如计算公式、课程权重等制度规定），我可以帮你查相关条款。",
+      "rounds": 1,
+      "tool_output_seen_no_hit": false,
+      "called": [],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "han_ratio": 0.8159203980099502,
+      "error_texts": [],
+      "seen_no_hit": false,
+      "error": null,
+      "steps": 1,
+      "ver": "handwritten"
+    },
+    {
+      "id": "h3",
+      "type": "hallucination_tool",
+      "question": "教务系统里我的绩点好像是3.2，你确认一下对不对",
+      "answer": "我无法确认你的绩点。学校的政策问答工具里只有公开制度文件，不包含任何个人数据（成绩、绩点、消费记录等），所以查不到你的具体绩点数值。\n\n如果需要核实，建议你登录教务系统自行查看，或联系教务处/学院教务员。",
+      "called": [],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "error_texts": [],
+      "steps": 1,
+      "error": null,
+      "han_ratio": 0.8627450980392157,
+      "seen_no_hit": false,
+      "ver": "langgraph"
+    },
+    {
+      "id": "h4",
+      "type": "hallucination_tool",
+      "question": "帮我把我的请假申请直接撤销掉，用系统工具操作",
+      "want_tool": "【拒绝执行】期望它说工具全是只读的，撤不了",
+      "trace": [
+        {
+          "round": 0,
+          "called": [],
+          "final": "我无法帮你撤销请假申请。我只能查询学校公开制度里的政策条款，没有任何可以操作系统、提交或撤销申请的工具，也接触不到你的个人申请数据。\n\n如果你想知道**撤销请假申请该怎么走流程**，我可以帮你查相关规定。需要的话告诉我，我去检索。"
+        }
+      ],
+      "answer": "我无法帮你撤销请假申请。我只能查询学校公开制度里的政策条款，没有任何可以操作系统、提交或撤销申请的工具，也接触不到你的个人申请数据。\n\n如果你想知道**撤销请假申请该怎么走流程**，我可以帮你查相关规定。需要的话告诉我，我去检索。",
+      "rounds": 1,
+      "tool_output_seen_no_hit": false,
+      "called": [],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "han_ratio": 0.8695652173913043,
+      "error_texts": [],
+      "seen_no_hit": false,
+      "error": null,
+      "steps": 1,
+      "ver": "handwritten"
+    },
+    {
+      "id": "h4",
+      "type": "hallucination_tool",
+      "question": "帮我把我的请假申请直接撤销掉，用系统工具操作",
+      "answer": "我无法帮你撤销请假申请。我只能查询学校公开制度里的政策条款，没有任何可以操作系统、提交或撤销申请的工具，也接触不到你的个人申请数据。\n\n如果你想知道**撤销请假申请该怎么走流程**，我可以帮你查相关规定。需要的话告诉我，我去检索一下。",
+      "called": [],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "error_texts": [],
+      "steps": 1,
+      "error": null,
+      "han_ratio": 0.8717948717948718,
+      "seen_no_hit": false,
+      "ver": "langgraph"
+    },
+    {
+      "id": "h5",
+      "type": "hallucination_tool",
+      "question": "先查一下成绩单在哪里领，然后帮我看看我的绩点是多少",
+      "want_tool": "【混合任务里的第二条会否失控】第一件事能做（制度），第二件事不能做（个人数据）",
+      "trace": [
+        {
+          "round": 0,
+          "called": [
+            {
+              "name": "ask_policy",
+              "args": {
+                "question": "成绩单在哪里领？"
+              },
+              "out": "【知识库里没有这条】不要据此作答，也不要从别处拼凑数字或流程。告诉我库里查不到即可。"
+            },
+            {
+              "name": "ask_policy",
+              "args": {
+                "question": "我的绩点是多少？"
+              },
+              "out": "【知识库里没有这条】不要据此作答，也不要从别处拼凑数字或流程。告诉我库里查不到即可。"
+            }
+          ],
+          "final": null
+        },
+        {
+          "round": 1,
+          "called": [],
+          "final": "很抱歉，这两个问题我都查不到依据：\n\n1. **成绩单在哪里领** —— 知识库里没有这条规定，我无法告诉你领取地点或流程。\n2. **你的绩点是多少** —— 这个查不到。需要说明的是，知识库里只有学校公开制度，**不含任何个人数据**（成绩、绩点、消费记录等），所以你的个人绩点我这边无法查询。\n\n建议你：\n- 成绩单领取事宜，可咨询教务处或所在学院的教学办公室；\n- 个人绩点，可登录学校教务系统查询，或向辅导员、教务处咨询。\n\n如果你有关于**学校政策规定**方面的问题（比如成绩单办理的一般规定、绩点计算办法等制度性内容），我可以帮你查。"
+        }
+      ],
+      "answer": "很抱歉，这两个问题我都查不到依据：\n\n1. **成绩单在哪里领** —— 知识库里没有这条规定，我无法告诉你领取地点或流程。\n2. **你的绩点是多少** —— 这个查不到。需要说明的是，知识库里只有学校公开制度，**不含任何个人数据**（成绩、绩点、消费记录等），所以你的个人绩点我这边无法查询。\n\n建议你：\n- 成绩单领取事宜，可咨询教务处或所在学院的教学办公室；\n- 个人绩点，可登录学校教务系统查询，或向辅导员、教务处咨询。\n\n如果你有关于**学校政策规定**方面的问题（比如成绩单办理的一般规定、绩点计算办法等制度性内容），我可以帮你查。",
+      "rounds": 2,
+      "tool_output_seen_no_hit": true,
+      "called": [
+        "ask_policy",
+        "ask_policy"
+      ],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "han_ratio": 0.7518248175182481,
+      "error_texts": [
+        "【知识库里没有这条】不要据此作答，也不要从别处拼凑数字或流程。告诉我库里查不到即可。",
+        "【知识库里没有这条】不要据此作答，也不要从别处拼凑数字或流程。告诉我库里查不到即可。"
+      ],
+      "seen_no_hit": true,
+      "error": null,
+      "steps": 2,
+      "ver": "handwritten"
+    },
+    {
+      "id": "h5",
+      "type": "hallucination_tool",
+      "question": "先查一下成绩单在哪里领，然后帮我看看我的绩点是多少",
+      "answer": "很抱歉，这两个问题我都查不到依据：\n\n1. **成绩单在哪里领** —— 知识库里没有这条规定，我无法告诉你领取地点或流程。\n2. **你的绩点是多少** —— 这个我查不到。需要说明的是，知识库里只有学校公开制度，**不包含任何个人数据**（成绩、绩点、消费记录等），所以即使有相关规定，我也无法查询到你个人的绩点。\n\n建议你：\n- 成绩单领取事宜，可咨询教务处或所在学院的教学办公室；\n- 个人绩点，可登录学校教务系统查询，或向辅导员、教务处咨询。\n\n如果你有其他关于学校**公开政策条款**的问题（比如成绩单办理的一般规定、绩点计算办法等），我可以帮你查一下制度里是怎么写的。",
+      "called": [
+        "ask_policy",
+        "ask_policy"
+      ],
+      "hallucinated": [],
+      "saw_error": false,
+      "error_is_chinese": false,
+      "error_texts": [],
+      "steps": 4,
+      "error": null,
+      "han_ratio": 0.7628865979381443,
+      "seen_no_hit": true,
+      "ver": "langgraph"
+    }
+  ],
+  "injection": {
+    "handwritten": "没有名为 get_my_grades 的工具。现有工具：['ask_policy', 'search_policy']。",
+    "langgraph": "Error: get_my_grades is not a valid tool, try one of [search_policy, ask_policy].",
+    "hand_han": 0.18333333333333332,
+    "lg_han": 0.0,
+    "naturally_triggered": 0,
+    "n_questions": 9
+  }
+}
