@@ -25,7 +25,18 @@ git **没有**「clone 之后自动执行」的钩子（这是设计，不是缺
    「修好提交之后 `scripts/hooks/pre-commit` 又被覆盖回旧版，
      差点让"检查通过"变成一句假话」。
    ⇒ 用 `core.hooksPath` 之后**没有第二份副本**，"副本过期"这一整类问题不存在。
-2. 得拷两次 + `chmod +x`，而 `chmod` 在 Windows 上是空操作（钩子靠 shebang 跑）。
+2. 得拷两次，而且**光拷不够**：POSIX 上 git 不会执行没有可执行位的钩子，
+   所以还得 `chmod +x`。这个坑很阴 —— Windows 上完全看不出来
+   （Git for Windows 靠 shebang 跑、不看那个位），所以
+   「我在 Windows 上测过」推不出「Linux 上能用」。
+   ★ 换成 `core.hooksPath` 之后，**可执行位反而变成承重的**：git 执行的是仓库里
+   那份被跟踪的文件，它的文件模式（`100755` / `100644`）直接决定 POSIX 上跑不跑，
+   而这个模式存在 git 索引里、不是本地 chmod。
+   ⇒ 本仓库为此真红过一次：CI run #27（2026-10-12）两个钩子都是 `100644`，
+     于是本脚本返回 3、「一条命令装上」这个功能在 Linux 上其实是坏的 ——
+     而它在 Windows 上测三遍都是绿的。修法：
+         git update-index --chmod=+x scripts/hooks/pre-commit scripts/hooks/pre-push
+     本脚本会把这条当体检项现算，不靠人记得。
 
 ## 用法
 
@@ -111,6 +122,33 @@ def configured_value(root: Path) -> str | None:
     return out if code == 0 and out else None
 
 
+def _index_modes(root: Path) -> dict[str, str]:
+    """从 git 索引里读这几个钩子的文件模式（100644 / 100755）。
+
+    ★ 为什么必须查这个：**POSIX 上 git 不会执行没有可执行位的钩子。**
+      而这个位是存在【git 索引】里的**文件模式**，不是本地 chmod ——
+      Windows 上完全看不出来（Git for Windows 靠 shebang 跑，不看这个位），
+      所以「我在 Windows 上测过了」推不出「Linux/macOS 上能用」。
+
+    ★ 这是实测出来的，不是推演：2026-10-12 的 CI run #27（fast job）就是这么红的
+      —— `install_hooks.py` 返回 3（现场证明没看到 `[pre-commit]` 横幅），
+      一查 `git ls-files -s`，两个钩子在索引里都是 `100644`。
+      也就是说：**如果没有那步 CI，这个洞会一直留着**，而且是留在我这次
+      刚加的"一条命令装上"这个功能上 —— 恰恰是最该好用的地方。
+    """
+    code, out = _git("ls-files", "-s", "--",
+                     f"{EXPECTED_HOOKS_PATH}/pre-commit",
+                     f"{EXPECTED_HOOKS_PATH}/pre-push", cwd=str(root))
+    modes: dict[str, str] = {}
+    if code != 0:
+        return modes
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4:
+            modes[parts[3].replace("\\", "/")] = parts[0]
+    return modes
+
+
 def hook_file_problems(root: Path) -> list[str]:
     """仓库里那两个钩子文件本身的体检 —— 有问题就说出来，不假装没事。"""
     problems: list[str] = []
@@ -127,9 +165,22 @@ def hook_file_problems(root: Path) -> list[str]:
             #   Git Bash 报 bad interpreter —— 而且报错指不到原因。
             #   （.gitattributes 已把这两类钉成 LF，这里是"钉住了没"的现算检查。）
             problems.append(f"{EXPECTED_HOOKS_PATH}/{name} 是 CRLF 行尾 —— "
-                            f"shebang 会变成 '#!/usr/bin/env bash\\r'，Git Bash 跑不起来")
+                            f"shebang 会变成 '#!/usr/bin/env bash\\r'，跑不起来")
         if not raw.startswith(b"#!"):
             problems.append(f"{EXPECTED_HOOKS_PATH}/{name} 第一行不是 #!（没有 shebang）")
+
+    modes = _index_modes(root)
+    for name in HOOK_NAMES:
+        rel = f"{EXPECTED_HOOKS_PATH}/{name}"
+        mode = modes.get(rel)
+        if mode is None:
+            problems.append(f"{rel} 不在 git 索引里（没被 git 跟踪）—— "
+                            f"clone 出来的人根本拿不到这个文件")
+        elif mode != "100755":
+            problems.append(
+                f"{rel} 在 git 索引里是 {mode}（**没有可执行位**）—— "
+                f"POSIX 上 git 不会执行它，Windows 上看不出来。"
+                f"修法：git update-index --chmod=+x {rel}")
     return problems
 
 

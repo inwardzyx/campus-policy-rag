@@ -26,15 +26,26 @@ python scripts/install_hooks.py
     差点让'检查通过'变成一句假话」。
    ⇒ `core.hooksPath=scripts/hooks` 让 git **直接跑仓库里那份**：没有第二份副本，
      "副本过期"这一整类问题不存在；改了立刻生效，而且改动进 git 历史、可 review。
-2. `chmod +x` 在本项目的 Windows 上是**空操作**（那边靠 shebang 跑），
-   写了容易让人以为做过什么。
+2. **可执行位**（这条我一开始判断错了，留在这儿当教训）：
+   POSIX 上 git **不会执行没有可执行位的钩子**。用 `cp` 的老办法得对**副本**
+   `chmod +x`；换成 `core.hooksPath` 之后，git 执行的是仓库里那份**被跟踪的文件**，
+   于是**它的文件模式**（`100755` / `100644`）直接决定 POSIX 上跑不跑 ——
+   而这个模式存在 **git 索引**里，不是本地 `chmod`，也**不是** `.gitattributes` 能管的。
+   ★ 这个坑在 Windows 上**完全看不出来**（Git for Windows 靠 shebang 跑、不看那个位）。
+   本仓库为此在 CI 上真红过一次：**run #27（2026-10-12）** ——
+   两个钩子在索引里都是 `100644` ⇒ `install_hooks.py` 返回 3、现场证明看不到
+   `[pre-commit]` 横幅 ⇒ **"一条命令装上"这个新功能在 Linux 上其实是坏的**，
+   而我在 Windows 上测了三遍都是绿的。
+   修法：`git update-index --chmod=+x scripts/hooks/pre-commit scripts/hooks/pre-push`
+   （改的是 git 索引里的模式）。`scripts/install_hooks.py` 会把这条当体检项**现算**
+   （`git ls-files -s`），不靠人记得。
 
 ★ 安装脚本会**自己证明生效**，不是只打印一句 ✔：
 真跑一次 `git hook run pre-commit`，要求输出里出现钩子自己的横幅 `[pre-commit]`
-—— 只把配置写进去不算数（路径解析、shebang、解释器缺一不可）。
-★ 它还会顺手体检那两个钩子文件（存在 / 非空 / **不是 CRLF** / 有 shebang）：
-CRLF 会让 shebang 变成 `#!/usr/bin/env bash\r`，Git Bash 报 bad interpreter，
-而且报错指不到原因。
+—— 只把配置写进去不算数（路径解析、shebang、可执行位、解释器缺一不可）。
+★ 它还会顺手体检那两个钩子文件（存在 / 非空 / **不是 CRLF** / 有 shebang /
+**索引里是 100755**）：CRLF 会让 shebang 变成 `#!/usr/bin/env bash\r`，
+Git Bash 报 bad interpreter，而且报错指不到原因。
 
 
 ## 为什么钩子里不派 cc / DSH
