@@ -83,9 +83,24 @@ def _git(*args: str, cwd: str | None = None) -> tuple[int, str]:
 
 
 def repo_root() -> Path:
+    """找出仓库根。
+
+    ★ 先按【脚本自身的位置】推（<repo>/scripts/install_hooks.py → <repo>），
+      再退回"按当前目录找"。
+      为什么必须这样：第一版只用了 `git rev-parse --show-toplevel`（跟着当前目录走），
+      于是从别的地方用【绝对路径】调本脚本时直接报 "not a git repository" ——
+      这是在一个**新 clone 里**实测出来的：README 教的写法（在仓库根跑
+      `python scripts/install_hooks.py`）碰巧能用，CI 里也碰巧能用，
+      但别人换个调用方式就炸。**"碰巧能用"不算能用。**
+    """
+    here = Path(__file__).resolve().parent.parent
+    code, out = _git("rev-parse", "--show-toplevel", cwd=str(here))
+    if code == 0 and out:
+        return Path(out)
     code, out = _git("rev-parse", "--show-toplevel")
     if code != 0 or not out:
-        print(f"✗ 这里不是 git 仓库（git rev-parse 返回 {code}：{out[:120]}）")
+        print(f"✗ 找不到 git 仓库（按脚本位置和当前目录都试过；"
+              f"git rev-parse 返回 {code}：{out[:120]}）")
         raise SystemExit(2)
     return Path(out)
 
