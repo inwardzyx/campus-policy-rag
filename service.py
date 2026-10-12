@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -222,6 +223,68 @@ class LLMCallError(Exception):
 _LLM_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="llm")
 
 
+# ★★ Token 计量（2026-10-12 补）：usage 一直都在 AIMessage 上，
+#   但三处调用点都只取 `.content` ⇒ usage 丢在那儿，谁也拿不到。
+#
+#   ★ 为什么在【这里】旁路记录，而不是把三处调用点改成
+#     `msg = _invoke_llm(...); msg.content ...; msg.usage_metadata`：
+#     因为那样要动三个地方的代码，任何一处手滑都可能改到 prompt / messages，
+#     而"改 prompt"会**静默改变模型行为** —— 那时候回归报告里的
+#     硬答率还是"旧数据"，没人发现。
+#     在这里记录则：调用点一个字符都不改，模型输入必然一字不变。
+#     ⇒ 用结构保证"只读不写"，而不是靠小心。
+#
+#   ★ 为什么用线程局部（threading.local）而不是全局字典：
+#     FastAPI 是多线程的（uvicorn 默认线程池），
+#     全局字典会被并发请求互相覆盖 ⇒ 算出来的均值是两个请求的混合物。
+#     线程局部保证每个请求读到的是自己那次调用的 usage。
+_LLM_USAGE = threading.local()
+
+
+def _record_usage(resp) -> None:
+    """把一次调用的 usage 记到当前线程上（取不到就记 None，不填 0）。
+
+    ★ 为什么要区分"没有 usage"和"usage 是 0"：
+      填 0 会让"没拿到"看起来像"真的没用 token"，
+      而均值里混一个 0 会把它拉低 —— 这与本项目在
+      agent 侧踩过的坑同源（`missing_usage` 那一栏就是为此存在的）。
+    """
+    um = getattr(resp, "usage_metadata", None)
+    if not isinstance(um, dict):
+        _LLM_USAGE.last = None
+        return
+    try:
+        inp = um.get("input_tokens")
+        out = um.get("output_tokens")
+        tot = um.get("total_tokens")
+        if inp is None or out is None:
+            _LLM_USAGE.last = None
+            return
+        cache_read = 0
+        det = um.get("input_token_details")
+        if isinstance(det, dict):
+            cache_read = det.get("cache_read") or 0
+        _LLM_USAGE.last = {
+            "input_tokens": int(inp),
+            "output_tokens": int(out),
+            "total_tokens": int(tot if tot is not None else inp + out),
+            "cache_read": int(cache_read),
+            # n_calls 用来算"每次查询调了几次模型"——
+            # 直打侧一次查询含改写 + 精排 + 生成，是 2~3 次。
+            "n_calls": getattr(_LLM_USAGE, "n_calls", 0) + 1,
+        }
+    except (TypeError, ValueError):
+        _LLM_USAGE.last = None
+
+
+def _take_usage() -> dict | None:
+    """取走并清空本线程累积的 usage（跨调用要清，否则会重复计数）。"""
+    u = getattr(_LLM_USAGE, "last", None)
+    _LLM_USAGE.last = None
+    _LLM_USAGE.n_calls = 0
+    return u
+
+
 def _invoke_llm(llm, messages, timeout=None):
     """调一次大模型，最多等 timeout 秒；超时和【调用期】报错统一包装成 LLMCallError。
 
@@ -252,7 +315,9 @@ def _invoke_llm(llm, messages, timeout=None):
         timeout = LLM_TIMEOUT_SEC
     fut = _LLM_POOL.submit(llm.invoke, messages)
     try:
-        return fut.result(timeout=timeout)
+        resp = fut.result(timeout=timeout)
+        _record_usage(resp)          # ★ 旁路记账，不改返回值
+        return resp
     except FuturesTimeout:
         fut.cancel()
         raise LLMCallError(f"大模型调用超时（超过 {timeout:g} 秒）")
@@ -734,6 +799,10 @@ class ChatResponse(BaseModel):
     # 是否命中了知识库。False = 库里没有，已拒答，一条资料都没喂给模型。
     # ★ 这个字段是"可追溯"的一部分：调用方能明确区分「答错了」和「拒绝作答」。
     knowledge_hit: bool = True
+    # ★ Token 计量（2026-10-12 加）。取不到时是 None 而不是 0 ——
+    #   填 0 会让"没拿到"看起来像"真的没用 token"。
+    #   默认 None 让旧调用方拿不到时也不报错。
+    usage: Optional[dict] = None
 
 
 @app.get("/health")
@@ -798,9 +867,14 @@ def chat(req: ChatRequest):
         #    之前的写法是"全部低分也硬塞第一条进去"，寄希望于提示词让模型拒答 ——
         #    但提示词会漏，喂了假资料模型就会照着编。真正可靠的做法是【不喂】。
         if not ranked or ranked[0][2] < 5:
+            # ★ 这里也要带 usage：短路虽然没调生成模型，
+            #   但【查询改写】和【rerank 打分】那两次调用已经花掉了 token。
+            #   只在成功路径记usage 的话，这部分开销会整段丢失，
+            #   而它恰恰是"拒答很便宜"这个说法最容易骗人的地方。
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
-                sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False)
+                sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False,
+                usage=_take_usage())
 
         picked = [x for x in ranked if x[2] >= 5][:3]     # 只留 5 分以上的，最多 3 条
         sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
@@ -820,7 +894,8 @@ def chat(req: ChatRequest):
         if not cands or max_vec < VEC_REJECT_THRESHOLD:
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
-                sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False)
+                sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
+                usage=_take_usage())
 
         picked = [x for x in cands if x[1] >= VEC_REJECT_THRESHOLD][:3]
         sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
@@ -838,13 +913,15 @@ def chat(req: ChatRequest):
         logger.error("生成答案失败：%s", e)
         return ChatResponse(
             answer="⚠️ 已找到相关资料，但模型调用失败（超时或限流），请稍后重试。",
-            sources=sources, took_ms=took(), rerank_used=use_rerank, knowledge_hit=True)
+            sources=sources, took_ms=took(), rerank_used=use_rerank, knowledge_hit=True,
+            usage=_take_usage())
 
     # ★ 2026-09-27：这里【显式】写上 knowledge_hit=True，不再靠上面的默认值。
     #   之前靠 ChatResponse 的字段默认值躺赢 —— 一旦有人改动那个默认值，
     #   成功路径的语义会悄悄跟着变，而且看这段代码的人根本看不出来它依赖了默认值。
     return ChatResponse(answer=answer, sources=sources, took_ms=took(),
-                        rerank_used=use_rerank, knowledge_hit=True)
+                        rerank_used=use_rerank, knowledge_hit=True,
+                        usage=_take_usage())
 
 
 # ==================================================================

@@ -77,3 +77,10 @@ agent/_mut/_*.py
 agent/_mut/_*.json
 agent/_mut/_*.md
 agent/_mut/_*.txt
+
+# ★ verify_direct_unchanged.py 采的基线（2026-10-12）
+#   它是【一次性的中间产物】：采完验完就该删。
+#   而且里面是真实模型输出（含学校制度的原文引用）——
+#   跟 _refusal_regression.json / _token_cost.json 一样属于"跑一次才生成"的东西，
+#   进仓库只会让人分不清"它是当前结果"还是"某次旧跑批的残留"。
+agent/_baseline_direct.json
