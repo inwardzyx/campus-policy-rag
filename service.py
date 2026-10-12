@@ -457,6 +457,20 @@ class RAG:
     def __init__(self):
         self.ready = False
         self._llm = None          # 真正的大模型对象，第一次用到才建（见下面的 llm）
+        # ★ 元信息不合格而被跳过的文件（2026-10-12 补）：原来它只活在 startup 那一瞬的
+        #   日志里，服务起来之后【没有任何接口】能告诉你"我少加载了几个文件"。
+        #   见 health() 与 kb/loader.py 里那句被修正的注释。
+        self.load_errors: list[str] = []
+        # ★★ 2026-10-12 修：chunks / rejected 原来【只在 startup() 里赋值】，
+        #   而 startup() 要跑十几秒（加载模型 + 建库）。
+        #   ⇒ 服务刚起来的那十几秒里访问 /health，会在 len(rag.chunks) 上抛
+        #     AttributeError → **返回 500，而不是 health() 文档里承诺的 status="loading"**
+        #     ——也就是说那个 loading 分支根本走不到，健康检查在最需要它的时候是坏的。
+        #   （CI 没发现，是因为容器 job 的探活用 `curl -sf`：`-f` 遇 5xx 就失败，
+        #     它只是在继续轮询，而不是读到了 loading。）
+        #   ⇒ 先把它们初始化成空，让 /health 在启动期真的能回答。
+        self.chunks: list[dict] = []
+        self.rejected: list[tuple] = []
 
     @property
     def llm(self):
@@ -491,6 +505,7 @@ class RAG:
         #   kb 先、inbox 后，保证「干净条款先入、脏副本作为重复/旧版被拦」，
         #   而不是反过来把干净条款挤掉。loader 不碰模型，可独立单测。
         raw_docs, load_errors = load_documents(DOCS_DIR)
+        self.load_errors = list(load_errors)      # ★ 存下来给 /health 看，别只打一行日志
         if load_errors:
             logger.warning(f"有 {len(load_errors)} 个文件解析失败（缺元信息/编码错），已跳过：")
             for e in load_errors:
@@ -838,10 +853,20 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 def health():
-    """健康检查：部署后第一件事就是访问它，看服务活着没"""
+    """健康检查：部署后第一件事就是访问它，看服务活着没
+
+    ★ 2026-10-12 补 `load_errors` / `load_error_files`：以前**只有启动那一瞬的日志**
+      能看出"有文件被跳过"，服务起来之后就没有任何接口看得见了 ——
+      而"某个 .md 元信息写错 ⇒ 它整篇静默不入库 ⇒ 该答的题变成拒答"是一条**静默缩水**路径。
+      `kb/loader.py` 里原本写着"startup 日志和 /health 的数字都能看见它"，
+      但当时 /health 只返回 chunks/rejected，那句话是**假的**；现在它成真了。
+    ★ 只返回**文件名**（`Path(...).name`），不返回完整路径 —— 后者会把本机目录结构漏出去。
+    """
     return {"status": "ok" if rag.ready else "loading",
             "chunks": len(rag.chunks),
-            "rejected": len(rag.rejected)}
+            "rejected": len(rag.rejected),
+            "load_errors": len(rag.load_errors),
+            "load_error_files": [Path(p).name for p in rag.load_errors]}
 
 
 @app.get("/guard-report")
@@ -856,7 +881,18 @@ def guard_report():
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    """核心接口：问题进来 → 粗捞 → rerank → 生成 → 带出处返回"""
+    """核心接口：问题进来 → 粗捞 → rerank → 生成 → 带出处返回
+
+    ★ 2026-10-12 补：入口处先【丢掉】本线程上一次留下的 usage 残留。
+      为什么必须有这一步：usage 是 `threading.local()` 累加的，而**清空只发生在
+      走到某个 return 的时候**（四个 ChatResponse 返回点各调一次 `_take_usage()`）。
+      于是任何"记了账、但中途抛异常"的请求会把残留留给**同一线程的下一个请求**，
+      那个请求的数字就凭空多一截 —— 而它看起来完全合理
+      （和 2026-10-12 刚修的那次"三次调用记成一次"是同一类病：**看着对，其实错**）。
+      在入口清一次，才是真正关掉这条路径的动作：残留只能害到"下一个请求"，而下一个请求
+      在这里就把脏数据丢掉了。
+    """
+    _take_usage()                      # ★ 丢弃残留（不是读取）—— 见 docstring
     t0 = time.time()
     if not rag.ready:
         return {"answer": "服务还在加载模型，请稍等几秒再试", "sources": [],

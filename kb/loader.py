@@ -208,7 +208,11 @@ def load_documents(root: str | Path, max_chars: int = 400) -> tuple[list[dict], 
         #   最容易踩的写法：标题漏了 ## 后的空格（写成「##第三条」），
         #   实测这种写法 `^##\s+` 一个都匹配不上 → 返回 1 段 → [1:] 是空的 → 循环一次都不进。
         #   当成坏文件走 errors，和上面"元信息不合格"同一个通道，
-        #   这样 startup 日志和 /health 的数字都能看见它。
+        #   ★ 2026-10-12 修正：这里原本写"startup 日志和 /health 的数字都能看见它"，
+        #     但当时 /health 只返回 chunks/rejected —— 那句话是**假的**
+        #     （服务起来之后就没有任何接口看得见"有文件被跳过"）。
+        #     ⇒ 现在 /health 真的加了 `load_errors` 与 `load_error_files`（见 service.py::health），
+        #       所以这句话才成立。**先修产品，再修这句话**，而不是反过来把注释改软。
         if len(sections) == 1:
             errors.append(str(path))
             continue

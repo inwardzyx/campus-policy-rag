@@ -253,3 +253,58 @@ def test_chat_endpoint_reports_accumulated_usage(rag, monkeypatch):
         "两者对不上就是记账漏了或重复了")
     assert u["n_calls"] >= 2, (
         f"默认路径至少是【改写 + 精排 + 生成】三次调用，实际只记了 {u['n_calls']} 次")
+
+
+def test_usage_residue_from_a_failed_request_is_not_charged_to_the_next(monkeypatch):
+    """★ 上一个请求"记了账、然后异常退出"留下的 usage 残留，不许算到下一个请求头上。
+
+    起因（2026-10-12）：usage 是 `threading.local()` 累加的，而**清空只发生在
+    走到某个 return 的时候**（四个 ChatResponse 返回点各调一次 `_take_usage()`）。
+    ⇒ 任何"记了账但中途抛异常"的请求，会把残留留给**同一线程的下一个请求**，
+      那个请求的数字就凭空多一截 —— 而它看起来完全合理。
+      这和刚修掉的「三次调用记成一次」是同一类病：**看着对，其实错**。
+    修法：`chat()` 入口先**丢掉**（不是读取）残留。这个用例就是那个修复的守门人：
+    把入口那行 `_take_usage()` 删掉，这里立刻红。
+    """
+    class _Resp:
+        usage_metadata = {"input_tokens": 999, "output_tokens": 999, "total_tokens": 1998}
+
+    svc._record_usage(_Resp())      # 模拟：上一个请求记了账，然后在 return 之前抛了异常
+
+    class _StubRag:
+        ready = True
+        load_errors = []
+        chunks = [{"doc": "d", "clause": "c", "text": "t"}]
+        rejected = []
+
+        def search(self, q, k=5):
+            return [({"doc": "d", "clause": "c", "text": "t"}, 0.9)]   # 高于拒答阈值
+
+        def answer(self, q, ctx):
+            return "答"
+
+    monkeypatch.setattr(svc, "rag", _StubRag())
+    resp = svc.chat(svc.ChatRequest(question="随便问一句",
+                                   use_rerank=False, use_rewrite=False))
+    got = (resp.usage or {}).get("total_tokens")
+    assert got != 1998, (
+        f"上一个请求的残留被算到这一个头上了：usage={resp.usage!r}"
+        "（说明 chat() 入口没有清空线程局部的 usage 累加器）")
+
+
+def test_health_answers_before_startup_finishes(monkeypatch):
+    """★ /health 在【服务还没就绪】时必须能给出回答，而不是 500。
+
+    起因（2026-10-12）：`chunks` / `rejected` 原来**只在 `startup()` 里赋值**，
+    而 `startup()` 要十几秒（加载模型 + 建库）——
+    于是那一段时间访问 `/health` 会在 `len(rag.chunks)` 上抛 AttributeError → **500**，
+    也就是说 `health()` 文档里承诺的 `status="loading"` **根本走不到**：
+    健康检查在最需要它的时候是坏的（部署平台/uptime 探针看到的全是 500）。
+
+    ★ CI 为什么没发现：容器 job 的探活用 `curl -sf`，`-f` 遇 5xx 就失败 ⇒
+    它只是"继续轮询"，而不是读到了 `loading`。**能跑通 ≠ 那个分支被测过。**
+    """
+    monkeypatch.setattr(svc, "rag", svc.RAG())        # 一个从没 startup 过的实例
+    h = svc.health()                                 # ← 修之前这里会抛 AttributeError
+    assert h["status"] == "loading", f"启动期应当回答 loading，实际 {h}"
+    assert h["chunks"] == 0 and h["rejected"] == 0 and h["load_errors"] == 0, h

@@ -156,7 +156,45 @@ def run_agent_multi_search(rag, question: str) -> dict:
     return {"trace": trace, "rounds": len(trace)}
 
 
+def _classify(base_refuse: bool, agent_refuse: bool) -> tuple[bool, bool]:
+    """把 (基线拒答, agent 拒答) 映射成 (救回, 弄坏)。
+
+    ★ 2026-10-12 修：这两行原来写反了 ——
+        旧写法 rescued = (not base) and (not agent)  ⇒ 实际是"两臂都没拒"
+        旧写法 broke   = base and (not agent)        ⇒ 这个才是【救回】的正确定义
+      后果：任何"被救回"的题会被印成「⚠ 误放行」，任何"被弄坏"的题会被印成「不变」，
+      **报告的标签会说反**。
+      ★ 本次 5 道题两臂都拒答（base=agent=True），正好落在真值表里唯一写对的那一格，
+        所以打印出来的"救回 0 / 误放行 0"是对的 —— **结论没错，错的是判据**；
+        但下次只要有一道题被救回或被弄坏，报告就会说反。
+
+    真值表：
+        (T, T) → 不变          (T, F) → ★救回
+        (F, T) → ⚠ 弄坏        (F, F) → 不变
+    """
+    return (base_refuse and not agent_refuse), ((not base_refuse) and agent_refuse)
+
+
+def _self_check() -> None:
+    """四格真值表自检。
+
+    ★ 照本仓规矩：**判据必须能证明它在坏情况下会响**。
+      把 `_classify` 改回错的写法，这里立刻断言失败 —— 所以这不是装饰。
+    """
+    want = {
+        (True,  True):  (False, False),
+        (True,  False): (True,  False),   # 基线拒、多查后放行 = 救回
+        (False, True):  (False, True),    # 基线放、多查后拒 = 弄坏
+        (False, False): (False, False),
+    }
+    for (b, a), exp in want.items():
+        got = _classify(b, a)
+        assert got == exp, f"判据错：(base拒={b}, agent拒={a}) 得到 {got}，应为 {exp}"
+    print("✓ 判据自检：四格真值表全部正确（改坏它会立刻在这里报错）")
+
+
 def main() -> None:
+    _self_check()
     qs = json.loads((REPO_ROOT / "evalset" / "questions.json").read_text(encoding="utf-8"))
     refuse = [q for q in qs if q["type"] == "refuse"]
     # ★ 只跑离线层没拦住的那两道 + 一道对照组。
@@ -207,14 +245,15 @@ def main() -> None:
             print(f"  ⇒ 多查后的最终判断：{'拒答' if agent_refuse else '放行'}"
                   f"（用了 {agent['rounds']} 轮）")
 
+            rescued, broke = _classify(base_refuse, agent_refuse)
             results[q["id"]] = {
                 "question": q["question"],
                 "base_score": base_score,
                 "base_refuse": base_refuse,
                 "agent_rounds": agent["rounds"],
                 "agent_refuse": agent_refuse,
-                "rescued": (not base_refuse) and (not agent_refuse),
-                "broke": base_refuse and (not agent_refuse),
+                "rescued": rescued,
+                "broke": broke,
                 "trace": agent["trace"],
             }
             print()

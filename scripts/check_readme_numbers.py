@@ -272,6 +272,42 @@ def _check_refuse_rate() -> list[str]:
     return []
 
 
+def _check_heldout_refuse_rate() -> list[str]:
+    """独立集**在线层**的拒答准确率 —— 单独一条，理由同 `_check_refuse_rate`。
+
+    ★ 为什么补它（2026-10-12）：README 里这个数原本写着 **40/61**，而两份落盘产物
+      （`report-rerank-heldout.md` 与 `-norw`）都是 **39/61**；同一份 README 在别处
+      写的也是 39/61 —— **自己跟自己不一致，而当时没有任何断言管它**。
+      实测过：把 README 的 `40/61` 改成 `999/61`，检查器照样 exit 0、报"数字对账通过"。
+      ⇒ 一个数只要没被断言管着，它就一定会漂。
+    ★ 两边都查（产物侧 + README 侧）—— 这正是 `_check_refuse_rate` 第一版栽过的地方。
+    """
+    p = REPO_ROOT / "evalset/report-rerank-heldout.md"
+    rd = REPO_ROOT / "README.md"
+    if not p.exists():
+        return ["✗ 在线层（独立集）拒答准确率：找不到 evalset/report-rerank-heldout.md"]
+    m = re.search(r"拒答题数：(\d+)\s*拒答准确率：(\d+)/(\d+)", p.read_text(encoding="utf-8"))
+    if not m:
+        return ["✗ 在线层（独立集）拒答准确率：正则没匹配到，产物格式可能变了"]
+    total, ok, den = m.group(1), m.group(2), m.group(3)
+    if den != total:
+        return [f"⚠ 在线层拒答准确率分母 {den} != 拒答题数 {total} —— 这两个不该不等"]
+    if rd.exists():
+        # ★ 要求后面跟 `=`，避免抓到别处同名的说法（本项目的老教训：判据抓到"别的"时先怀疑判据）
+        m2 = re.search(r"在线层（产品默认）\*\*(\d+)/(\d+)\s*=", rd.read_text(encoding="utf-8"))
+        if not m2:
+            return [
+                "✗ 在线层（独立集）拒答准确率：README 里找不到「在线层（产品默认）**x/y = 」"
+                "—— 可能改过说法（这本身就要看一眼），也可能真丢了"
+            ]
+        if f"{m2.group(1)}/{m2.group(2)}" != f"{ok}/{den}":
+            return [
+                f"✗ 在线层（独立集）拒答准确率：README 写 {m2.group(1)}/{m2.group(2)}，"
+                f"产物是 {ok}/{den}"
+            ]
+    return []
+
+
 def _agent_section(rd_text: str) -> str:
     """截出README 里 agent 那一节。
 
@@ -871,6 +907,7 @@ def check() -> tuple[list[str], list[str]]:
     warns: list[str] = []
 
     errors += _check_refuse_rate()
+    errors += _check_heldout_refuse_rate()
     errors += _check_todo_claims()
     _e, _w = _check_todo_registry_complete()
     errors += _e
