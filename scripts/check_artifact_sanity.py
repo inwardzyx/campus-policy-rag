@@ -125,6 +125,38 @@ ARTIFACTS = [
 #     必须再有一道"清单 ⊇ 磁盘实际产物"的反查，否则清单本身就成漏斗口。
 ARTIFACT_GLOB = "evalset/report*.md"
 
+# ★★ 不是所有产物都长一个样，所以判据按【产物类型】分派。
+#
+#   背景：2026-10-12 push 被拦，因为新增的两份产物没登记。
+#   而它们**根本不该套用检索评测那套判据**——
+#     拒答回归报告：抽不到「应答题数/Recall@5」是正常的（它不测检索）
+#     token 成本报告：同样没有 Recall 字段
+#   如果硬套，会报出一堆"格式变了"的假错，噪音多了就会被当噪音关掉。
+#
+#   ⇒ 做法：登记，但按类型派不同判据。
+#     RAG_EVAL_ARTIFACTS = 检索/重排评测（原有 7 份，判据 1~7）
+#     新增两类 = 有各自真正值得查的不变量（见下面各处注释）。
+#
+#   ★ 豁免不是选项：这个脚本自己的注释写着"漏检比误报危险得多"。
+#     一份不被检查的报告 = 坏了也没人喊 = 那正是它当初存在的理由被推翻。
+RAG_EVAL_ARTIFACTS = ARTIFACTS
+
+# ---- 类型二：agent 拒答回归报告 ----
+#   它能查什么（这些是真实的失效模式，不是凑数）：
+#     ① 硬答率与硬答题数必须自洽（分子分母对不上就是字段读串位）
+#     ② 硬答题数不得超过 no_hit 信号数（分子不可能大于分母）
+#     ③ 信号解析失败数不得超过总题数
+REFUSAL_REPORT = "evalset/report-agent-refusal-regression.md"
+
+# ---- 类型三：token 成本报告 ----
+#   ① missing_usage 必须为 0 —— 有缺 usage 就意味着有数字是补0/估算的，
+#      而"补 0 的均值"比"没有均值"更坏（它看起来像实测）
+#   ② truncated 必须为 0 —— 有题触到 MAX_ROUNDS 就说明这批数据有截断
+TOKEN_REPORT = "evalset/report-token-cost.md"
+
+EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT]
+ARTIFACTS = ARTIFACTS + EXTRA_ARTIFACTS
+
 
 def _on_disk() -> list[str]:
     """磁盘上实际存在的产物（相对 REPO_ROOT，正斜杠）。"""
@@ -195,6 +227,79 @@ def _extract(text):
     return out
 
 
+def _check_refusal_report(rel: str, text: str) -> list[str]:
+    """拒答回归报告的判据（与检索评测完全不同的不变量）。
+
+    为什么单独一组：这份报告不测检索，所以"抽不到 Recall@5"是**正常的**，
+    不是格式变了。硬套检索判据只会产出一堆假错。
+    """
+    errs = []
+    # 硬答题数（形如 "6、5、4"）
+    m = re.search(r"\| \*\*硬答题数\*\* \| \*\*([0-9、]+)\*\*", text)
+    if not m:
+        return [f"✗ {rel}：抽不到「硬答题数」—— 格式可能变了。"
+                f"⚠️ 不要直接改判据，先确认新格式"]
+    hard_n = [int(x) for x in m.group(1).split("、")]
+
+    # 硬答率（形如 "10.5%~15.8%（3 次：15.8% / 12.5% / 10.5%）"）
+    m2 = re.search(r"\| \*\*硬答率\*\* \| \*\*([0-9.]+)%[~]([0-9.]+)%"
+                   r"（\d+ 次：([^）]+)）", text)
+    if m2:
+        listed = [float(x.strip().rstrip("%"))
+                  for x in m2.group(3).split("/")]
+        # ① 三个数必须能在括号里找齐（字段读串位的信号）
+        if len(listed) != len(hard_n):
+            errs.append(
+                f"✗ {rel}：硬答率列了 {len(listed)} 个值，"
+                f"但硬答题数有 {len(hard_n)} 个 —— 两行不是同一组数"
+            )
+        # ② 区间端点必须落在列出来的值里
+        lo, hi = float(m2.group(1)), float(m2.group(2))
+        if listed and (abs(lo - min(listed)) > 0.06
+                       or abs(hi - max(listed)) > 0.06):
+            errs.append(
+                f"✗ {rel}：区间 {lo}%~{hi}% 与括号里列的值 {listed} 对不上"
+            )
+
+    # ③ 信号解析失败数不得超过总题数（分子不可能大于分母）
+    m3 = re.search(r"\| 信号解析失败 \| (\d+) \|", text)
+    n_q = re.search(r"跑了 \*\*(\d+)\*\* 遍", text)
+    if m3 and n_q:
+        miss = int(m3.group(1))
+        total = 61 * int(n_q.group(1))          # 61 = 本项目的拒答题集大小
+        if miss > total:
+            errs.append(
+                f"✗ {rel}：信号解析失败 {miss} > 总题数 {total}"
+                f"（{n_q.group(1)} 遍 × 61 题）—— 字段读串位了"
+            )
+    return errs
+
+
+def _check_token_report(rel: str, text: str) -> list[str]:
+    """token 成本报告的判据。
+
+    核心一条：missing_usage 必须为 0。
+    "有几次调用没拿到 usage" 时，那些题的数字要么是补0要么是估算 ——
+    而**补 0 算出来的均值比没有均值更坏**，因为它看起来像实测。
+    """
+    errs = []
+    for field, why in (
+        ("missing_usage",
+         "有调用没拿到 usage，那些题的数字是补0/估算出来的。"
+         "★ 补 0 的均值比没有均值更坏 —— 它看起来像实测"),
+        ("truncated",
+         "有题触到了 MAX_ROUNDS，这批数据有截断，均值不可信"),
+    ):
+        ms = re.findall(rf"`{field} = (\d+)`", text)
+        if not ms:
+            errs.append(f"✗ {rel}：抽不到 `{field}` —— 格式可能变了，"
+                        f"⚠️ 不要直接改判据，先确认新格式")
+            continue
+        if any(int(v) != 0 for v in ms):
+            errs.append(f"✗ {rel}：`{field}` 不是 0（读到 {ms}）—— {why}")
+    return errs
+
+
 def check_one(rel: str) -> list[str]:
     """检查一份产物，返回问题清单（空 = 通过）。"""
     p = REPO_ROOT / rel
@@ -204,6 +309,13 @@ def check_one(rel: str) -> list[str]:
     text = p.read_text(encoding="utf-8")
     if len(text) < 100:
         return [f"✗ {rel}：只有 {len(text)} 字节 —— 评测跑到一半崩了？"]
+
+    # ★ 按类型分派：不是所有产物都长一个样（见 ARTIFACTS 处的注释）
+    if rel == REFUSAL_REPORT:
+        return _check_refusal_report(rel, text)
+    if rel == TOKEN_REPORT:
+        return _check_token_report(rel, text)
+
     d = _extract(text)
     errs: list[str] = []
 
@@ -331,6 +443,11 @@ def main() -> int:
             p = REPO_ROOT / rel
             if not p.exists():
                 print(f"  {rel:44s} ⇒ ★文件不存在")
+                continue
+            # ★ 只对检索评测类打这行 —— 给拒答/成本报告打一排 "?"
+            #   会让人以为"这些产物缺数据"，而它们压根没有这些字段。
+            if rel in EXTRA_ARTIFACTS:
+                print(f"  {rel:44s} ⇒ （按类型走独立判据，不适用检索字段）")
                 continue
             d = _extract(p.read_text(encoding="utf-8"))
             print(

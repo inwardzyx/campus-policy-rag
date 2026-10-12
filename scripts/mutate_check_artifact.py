@@ -106,6 +106,53 @@ PAIR_MUTATIONS: list[tuple[str, tuple[tuple[str, str], ...], str]] = [
 ]
 
 
+# ★★ 新增产物类型的变异（2026-10-12 push 被拦时加的）。
+#
+#   为什么必须单独一组：上面的变异全部打在 report-vector-heldout.md 上，
+#   而拒答回归报告 / token 成本报告走的是**另外两套判据**。
+#   如果不给它们做变异，新判据就是"从没被验证过的绿"——
+#   而本项目的规矩是：**没被变异测试盯着的判据等于没有判据**。
+#
+#   结构与上面一致：(说明, 目标文件, 要替换的原文, 替换成什么, 期望判据)
+PER_ARTIFACT_MUTATIONS: list[tuple[str, str, str, str, str]] = [
+    (
+        "★ 拒答报告：硬答率列的值与硬答题数个数对不上（字段读串位）",
+        "evalset/report-agent-refusal-regression.md",
+        "| **硬答率** | **10.5%~15.8%（3 次：15.8% / 12.5% / 10.5%）**",
+        "| **硬答率** | **10.5%~15.8%（2 次：15.8% / 12.5%）**",
+        "拒答判据①（两行不是同一组数）",
+    ),
+    (
+        "★ 拒答报告：区间端点与括号里列的值对不上",
+        "evalset/report-agent-refusal-regression.md",
+        "| **硬答率** | **10.5%~15.8%（3 次：15.8% / 12.5% / 10.5%）**",
+        "| **硬答率** | **10.5%~45.8%（3 次：15.8% / 12.5% / 10.5%）**",
+        "拒答判据①（区间对不上）",
+    ),
+    (
+        "★ 拒答报告：信号解析失败数超过总题数（分子大于分母）",
+        "evalset/report-agent-refusal-regression.md",
+        "| 信号解析失败 | 9 |",
+        "| 信号解析失败 | 9999 |",
+        "拒答判据③（分子不可能大于分母）",
+    ),
+    (
+        "★★ token 报告：missing_usage 不是 0（有数字是补0/估算的）",
+        "evalset/report-token-cost.md",
+        "`missing_usage = 0`",
+        "`missing_usage = 7`",
+        "token 判据（补0的均值比没有均值更坏）",
+    ),
+    (
+        "★ token 报告：truncated 不是 0（这批数据有截断）",
+        "evalset/report-token-cost.md",
+        "`truncated = 0`",
+        "`truncated = 3`",
+        "token 判据（截断均值不可信）",
+    ),
+]
+
+
 # ★★★ 负向变异：这些**必须保持绿**。它们是测假阳性的唯一方向。
 # 实测踩过的假阳性：「漏答率与 Recall 反推值不同」—— 我一度想把它报成错，
 #     但那是【真实的口径差】（漏答算 knowledge_hit，Recall 算 gold 命中），
@@ -307,6 +354,34 @@ def main() -> int:
                 applied += 1
         finally:
             CHECK.write_text(check_src, encoding="utf-8", newline="")
+
+    # ---- 分类产物变异：每份产物打自己的那套判据 ----
+    for desc, rel, old, new, expect in PER_ARTIFACT_MUTATIONS:
+        p = REPO_ROOT / rel
+        if not p.exists():
+            not_applied.append(f"{desc}（找不到 {rel}）")
+            continue
+        orig = p.read_text(encoding="utf-8")
+        if old not in orig:
+            not_applied.append(f"{desc}（原文不存在：{old!r}）")
+            print(f"? 跳过：{desc}")
+            continue
+        p.write_text(orig.replace(old, new), encoding="utf-8", newline="")
+        try:
+            code, out = run_check()
+            if code == 0:
+                undetected.append(desc)
+                print(f"✗ 漏检：{desc}（期望由{expect} 抓到）")
+            else:
+                first = next(
+                    (ln.strip() for ln in out.splitlines() if ln.strip().startswith("✗")),
+                    "(没打印错误行)",
+                )
+                print(f"✓ 检出：{desc}")
+                print(f"    {first}")
+                applied += 1
+        finally:
+            p.write_text(orig, encoding="utf-8", newline="")
 
     # ---- 还原后必须还绿 ----
     code, out = run_check()
