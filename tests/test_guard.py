@@ -778,3 +778,48 @@ def test_health_script_min_len_is_not_drifted():
     import scripts.measure_chunk_health as health
     assert health.MIN_LEN_HINT == svc.MIN_LEN, (
         f"体检脚本抄的是 {health.MIN_LEN_HINT}，service 真值是 {svc.MIN_LEN} —— 该去改脚本了")
+
+
+# ==================================================================
+# 工具脚本的编码防线：谁都不许"崩在打印上"
+# ==================================================================
+# 同一个病在本仓库出现过 **4 次**，症状每次一样：
+#   stdout 被重定向/被捕获时（Windows 上是管道 + GBK），print 里的 ✓ / ⚠ / ⇒ 编不出来
+#   ⇒ UnicodeEncodeError ⇒ 退出码 1 ⇒ 调用方（git 钩子）把它读成"检查失败"，
+#     并打出一句**假话**：
+#     ① check_readme_numbers.py →「数字对账失败 —— 数字与产物不一致」
+#     ② mutate_check_numbers.py  → 崩在自己的结果打印上
+#     ③ check_artifact_sanity.py →「★ 产物不合理」（产物其实全过）
+#     ④ check_token_report.py    →「★ token 报告里的数字与实测数据对不上」（数字全对）
+#   ★ 前三次都是"发现一处、补一行"，而**修法不会自动传播** —— 所以第四次照样发生
+#     （它还是在新加的脚本上，并且**拦住了推送**）。
+# ⇒ 这个用例把"记得补一行"升级成"机器每次查一遍"：谁再犯，CI 红。
+#
+# ★ 为什么断言里只禁"崩在打印上"、不禁"非零退出"：
+#   `agent/_token_cost.json` 按 .gitignore 不进仓库，别人 clone / CI 里根本没有这份数据
+#   —— 缺数据导致非零退出是**合理**的（脚本自己会说清为什么），
+#     缺数据导致**崩溃**不是。判据要盯住真正要防的那一件事。
+_TOOLING_SCRIPTS = [
+    ("scripts/check_readme_numbers.py", []),
+    ("scripts/check_artifact_sanity.py", []),
+    ("scripts/check_token_report.py", []),
+    ("scripts/check_push_paths.py", ["--paths", "README.md"]),   # 自检模式，不必喂 stdin
+]
+
+
+@pytest.mark.parametrize("rel,args", _TOOLING_SCRIPTS)
+def test_tooling_script_does_not_crash_on_printing(rel, args):
+    """用【非 UTF-8 的 stdout】跑一遍（= git 钩子里的环境），不许崩在打印上。"""
+    import subprocess
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent      # 仓库根（本文件在 tests/ 下）
+    env = {**os.environ, "PYTHONIOENCODING": "gbk"}
+    r = subprocess.run([sys.executable, rel, *args], cwd=str(repo),
+                       env=env, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    blob = (r.stdout or "") + (r.stderr or "")
+    assert "UnicodeEncodeError" not in blob and "codec can't encode" not in blob, (
+        f"{rel} 在非 UTF-8 的 stdout 下崩了 —— 这正是那 4 次事故的病根"
+        f"（钩子会把崩溃读成'检查失败'，还打出一句假话）。\n"
+        f'修法：脚本开头加 sys.stdout.reconfigure(encoding="utf-8", errors="replace")\n'
+        f"退出码 {r.returncode}\n--- 输出尾部 ---\n{blob[-800:]}")

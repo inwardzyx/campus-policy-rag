@@ -26,6 +26,18 @@ import re
 import sys
 from pathlib import Path
 
+# ★★ 2026-10-12 补：stdout 必须显式转 UTF-8。
+#   这是同一个病的**第 4 次**（前三次：check_readme_numbers.py / mutate_check_numbers.py /
+#   check_artifact_sanity.py），而这次最难看 —— 它**拦住了推送，还报了一句假话**：
+#     pre-push 里跑本脚本时没有 PYTHONIOENCODING，stdout 是管道 + GBK，
+#     于是最后那句 print("✓ …") 的 ✓ 编不出来 ⇒ UnicodeEncodeError ⇒ 退出码 1
+#     ⇒ 钩子打出「★ token 报告里的数字与实测数据对不上（上面列出的那些）」。
+#     而**数字其实全对**，它只是崩在打印成功消息上。
+#   ★ 教训：修法不会自动传播。前三个脚本各补了一行，第四个（新加的）就没有 ——
+#     所以现在配了一条系统性防线：tests/test_tooling_encoding.py
+#     （用非 UTF-8 的 stdout 跑一遍钩子会调的所有脚本，谁崩谁红）。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "agent" / "_token_cost.json"
 REPORT = ROOT / "evalset" / "report-token-cost.md"
