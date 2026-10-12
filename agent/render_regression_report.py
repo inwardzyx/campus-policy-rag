@@ -31,11 +31,26 @@ def pct(x: float) -> str:
 
 
 def fmt_range(vals: list[float]) -> str:
-    """把多次跑的数值渲染成 'min~max（单点）' 或 'a / b / c'。"""
+    """把多次跑的数值渲染成 'min~max（单点）' 或 'a / b / c'。
+
+    ★ 空列表返回 '—' 而不是崩：没有数据 ≠ 0。
+      崩掉会让整份报告生成失败，而"生成失败"和"数据缺失"
+      在赶时间的时候很容易被混为一谈。
+    """
+    if not vals:
+        return "—"
     if len(set(vals)) == 1:
         return pct(vals[0])
     lo, hi = min(vals), max(vals)
     return f"{pct(lo)}~{pct(hi)}（{len(vals)} 次：{' / '.join(pct(v) for v in vals)}）"
+
+
+_CN_NUM = ("一", "二", "三", "四", "五", "六", "七", "八", "九", "十")
+
+
+def _cn_num(n: int) -> str:
+    """章节号中文数字。超范围就退回阿拉伯数字 —— 宁可难看，不要错。"""
+    return _CN_NUM[n - 1] if 1 <= n <= len(_CN_NUM) else str(n)
 
 
 def main():
@@ -46,6 +61,11 @@ def main():
     data = json.load(open(SRC, encoding="utf-8"))
     base = data["baseline"]
     runs = data["runs"]
+    # 逐题明细：拆直打侧"服务硬短路 vs 真调模型"要用。
+    # ★ 汇总块（runs[].*.refuse）与逐题块（per_question）必须来自同一次判据 ——
+    #   本轮核对时发现两者不一致（逐题重算了、汇总还是旧的），
+    #   于是一份报告里出现了两套数字。所以这里只读 per_question 现算，不信汇总。
+    per_q = data.get("per_question") or {}
     if not runs:
         print("[!!] 结果里没有任何 run —— 是不是跑失败了？")
         return 1
@@ -99,17 +119,41 @@ def main():
     a_undec = [r["agent"]["refuse"].get("text_judge", {}).get("n_undecidable")
                for r in runs]
 
+    # ★★ 直打侧必须拆成两层报，否则那个数字会被误读（本轮核对时抓到的）。
+    #   直打走 service.py，rerank 最高分 < 5 时【直接返回固定文本、压根不调模型】。
+    #   所以它的"文本拒答率"里混着"服务替模型拒答"：
+    #     run1  58/61 = 96.7%，但其中 40 题是服务硬短路（100% 拒答），
+    #     真正调了模型的 21 题里只拒答 18 题 = 85.7%。
+    #   ⇒ 只报合并数字会让人以为"直打侧拒答能力 96.7%，远胜 agent"，
+    #     而真相是它有 2/3 的拒答压根不来自模型。
+    # ★ 不假设 run 序号一定存在 —— 假数据/续跑场景下可能缺。
+    #   按 enumerate 的下标兜底，缺了就用位置。
+    d_canned_n, d_live_n, d_live_ref = [], [], []
+    for idx, r in enumerate(runs, 1):
+        rid = str(r.get("run", idx))
+        rows = (per_q.get(rid) or {}).get("direct") or []
+        canned = [x for x in rows if x.get("knowledge_hit") is False]
+        live = [x for x in rows if x.get("knowledge_hit") is not False]
+        d_canned_n.append(len(canned))
+        d_live_n.append(len(live))
+        d_live_ref.append(sum(1 for x in live
+                              if x.get("answer_refused") is True))
+    d_live_rate = [ref / n for ref, n in zip(d_live_ref, d_live_n) if n]
+
     # ★ 判据用例条数从判据模块真读，不手写。
     #   上一版这里手写着"8 条"，判据早就扩到 11 条而报告没跟上——
     #   手写的数字一定会掉队，这是本项目反复交的学费。
     n_cases = "（未读到）"
     n_und_cases = "（未读到）"
+    n_empty_cases = "（未读到）"
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from refusal_regression import (_REFUSAL_CASES,   # noqa: E402
+                                        _EMPTY_CASES,
                                         _UNDECIDABLE_CASES)
         n_cases = str(len(_REFUSAL_CASES))
         n_und_cases = str(len(_UNDECIDABLE_CASES))
+        n_empty_cases = str(len(_EMPTY_CASES))
     except Exception as e:  # 读不到就留占位，不猜
         print(f"[!!] 判据用例数读不到（{type(e).__name__}），报告里会留占位")
 
@@ -129,15 +173,27 @@ def main():
     hard_txt = ("、".join(str(v) for v in a_hard_n) if a_hard_n else "—")
     hard_rate = fmt_range(a_hard) if a_hard else None
 
-    if a_hard and max(a_hard) == 0:
-        verdict = ("**未发现硬答**：每一遍里，工具明确回报「库里没有」的题，"
-                   "模型都没有再编答案。")
-    elif a_hard:
-        verdict = (f"**发现硬答 {hard_txt} 题**：工具已经明确说了「库里没有」，"
-                   f"模型仍然编了答案出来。这才是本次验收要找的回归。")
-    else:
+    # ★★ 单遍时 verdict 必须跟着"不判定"走。
+    #   这是变异测试 M5 抓出来的真漏洞：
+    #   第六版把判定换成硬答率之后，verdict 那段只看 max(a_hard)，
+    #   没接上面 `regressed = borderline = False`（单遍守卫），
+    #   于是单遍跑出 15% 硬答率也会写"这才是本次验收要找的回归"。
+    #   ⇒ 观测到硬答 ≠ 可以下回归结论：单遍的波动无从量化。
+    single_run = len(runs) < 2
+
+    if not a_hard:
         verdict = ("**本次未观测到 no_hit 信号**，因而无法评估硬答率"
                    "（信号缺失 ≠ 硬答率为 0，别把这两种情况混同）。")
+    elif single_run:
+        verdict = (f"**本次不作判定**：只跑了 1 遍，观测到硬答 {hard_txt} 题"
+                   f"（硬答率 {hard_rate}），但单遍的波动无从量化，"
+                   "不能据此下回归结论。至少跑 2~3 遍再看。")
+    elif max(a_hard) == 0:
+        verdict = ("**未发现硬答**：每一遍里，工具明确回报「库里没有」的题，"
+                   "模型都没有再编答案。")
+    else:
+        verdict = (f"**发现硬答 {hard_txt} 题**：工具已经明确说了「库里没有」，"
+                   f"模型仍然编了答案出来。这才是本次验收要找的回归。")
 
     lines = [
         "# Agent 拒答回归验收报告",
@@ -154,6 +210,17 @@ def main():
         f"- 跑了 **{len(runs)}** 遍；全部请求错误数 **{errs}**"
         "（错误不计入分子分母，另计——把服务异常算成拒答能力差是口径错误）",
         "",
+    ]
+    # ★ 单遍时必须把"为什么不下结论"摆在结论旁边，而不是只藏在 verdict 里。
+    #   第六版重写判定时把这段警告弄丢了，变异测试 M2 抓出来的。
+    if single_run:
+        lines += [
+            "> ⚠️ **只跑了 1 遍，本次不作判定。** 同一问题问两次返回的文本逐字不同"
+            "（已实测），所以单遍的硬答率可能完全是随机波动 —— "
+            "**底噪无从量化**，拿它和任何阈值比较都是给自己找台阶。",
+            "",
+        ]
+    lines += [
         "## 二、主指标：硬答率（结构化信号）",
         "",
         "| 指标 | 数值 | 含义 |",
@@ -167,7 +234,10 @@ def main():
         f"| **硬答题数** | **{hard_txt}** | 拿到 `no_hit` 却仍然作答 |",
         f"| **硬答率** | **{hard_rate}** | 硬答题数 ÷ `no_hit` 题数 |",
         f"| 信号解析失败 | {sum(a_sig_missing)} |"
-        " 工具输出里没读到标记 —— 这是**独立报出**的，不并入 no_hit |",
+        " 这几遍里**模型一次工具都没调**（`n_tool_calls=0`），"
+        "所以没有任何工具输出可解析 —— **不是协议故障**。"
+        "它们是能力边界题（天气 / 奶茶店 / 饭店），模型直接答「我帮不上忙」。"
+        "**独立报出，既不并入 no_hit 也不并入硬答** |",
         "",
         "### 为什么主指标不用「拒答率」",
         "",
@@ -191,6 +261,43 @@ def main():
         + (fmt_range(a_text) if a_text else "—")
         + f"，其中 {sum(a_undec)} 题判不出（空答案/工具错误提示等，"
           "已排除出分母而不是硬猜）。",
+        "",
+        "### ⚠️ 直打侧的文本拒答率必须拆开看",
+        "",
+        f"直打侧合并文本拒答率 {fmt_range(d_text)} 看着漂亮，"
+        "**但其中大半不是模型拒的** —— `service.py` 在 rerank 最高分 < 5 时"
+        "直接返回固定文本、**压根不调模型**：",
+        "",
+        "| 遍 | 服务硬短路（未调模型） | 其中拒答 | 真调了模型 | 真调模型里的文本拒答率 |",
+        "|---|---|---|---|---|",
+    ]
+    for i, (cn, ln, lr) in enumerate(
+            zip(d_canned_n, d_live_n, d_live_ref), 1):
+        drows = (per_q.get(str(runs[i - 1].get("run", i))) or {}).get("direct") or []
+        cr = sum(1 for x in drows
+                 if x.get("knowledge_hit") is False
+                 and x.get("answer_refused") is True)
+        rate = f"{lr / ln:.1%}" if ln else "—"
+        lines.append(f"| {i} | {cn} 题 | {cr} 题 | {ln} 题 | {rate} |")
+    lines += [
+        "",
+        f"⇒ 剔掉服务硬短路后，直打侧真实模型拒答率 "
+        f"{fmt_range(d_live_rate)}，与 agent 侧同档。",
+        "",
+    ]
+    if d_text and a_text:
+        d_tot = sum(d_canned_n) + sum(d_live_n)
+        share = (sum(d_canned_n) / d_tot) if d_tot else 0.0
+        lines += [
+            f"⚠️ **只报上面那个合并数字会得出相反的结论**：它会让人以为"
+            f"「直打拒答能力 {max(d_text):.0%} 以上、远胜 agent 的 "
+            f"{max(a_text):.0%}」，"
+            f"而实际上三遍共 {sum(d_canned_n)} 题的拒答是**服务替模型拒的**"
+            f"（占直打侧 {share:.0%}），"
+            "模型根本没被调用。",
+            "",
+        ]
+    lines += [
         "",
         "## 三、这个实验**不能**回答的问题",
         "",
@@ -240,19 +347,29 @@ def main():
             "",
         ]
 
+    # ★ 章节号动态生成。
+    #   之前"五、工具调用"是有数据才渲染、后面的"六"却写死，
+    #   --only-refuse 时整节消失 ⇒ 报告里出现「四、（跳过）六」，编号跳号。
+    #   这类小错会让人怀疑整份报告的严谨度，所以从数据里算出来。
+    sec = 5
+
     if d_calls:
         lines += [
-            "## 五、工具调用",
+            f"## {_cn_num(sec)}、工具调用",
             "",
             f"- agent 应答题平均工具调用 "
             f"{(f'{min(d_calls):.2f}~{max(d_calls):.2f}' if len(set(d_calls)) > 1 else f'{d_calls[0]:.2f}')}"
             f" 次；调用上限 `MAX_ROUNDS=6`，实测无一题触顶",
             "",
         ]
+        sec += 1
 
     lines += [
-        "## 六、判据本身被推翻过三次（这部分比数字重要）",
+        f"## {_cn_num(sec)}、判据本身被推翻过三次（这部分比数字重要）",
         "",
+    ]
+    sec += 1
+    lines += [
         "| 版本 | 缺陷 | 它会造出的假结论 |",
         "|---|---|---|",
         "| v1 裸关键词 | 正确答案里的否定表述被判拒答 |"
@@ -276,13 +393,14 @@ def main():
         "⇒ 用例自检全绿也没能发现它，因为**用例只验输出、不验分支是否可达**。",
         "发现它的是一次**独立盲审**（不看我的结论、直接读代码）。",
         "",
-        f"判据现有自检 **{n_cases}** 条常规用例 + **{n_und_cases}** 条"
+        f"判据现有自检 **{n_cases}** 条常规用例 + **{n_empty_cases}** 条空答案用例"
+        f" + **{n_und_cases}** 条"
         "「已知判不准」用例，全过即拦提交。其中后者的期望值本身就是信息：",
         "",
         "- 期望 `拒答/作答` ⇒ 判据在这个形态上可信",
         "- 期望 **`无法判定`** ⇒ 真的分不出来，该题**排除出分母**而不是硬猜",
         "",
-        "### 三个判不准的形态（按误判方向分类）",
+        "### 四个判不准的形态（按误判方向分类）",
         "",
         "| 形态 | 判成 | 方向 | 处理 |",
         "|---|---|---|---|",
@@ -290,9 +408,34 @@ def main():
         " 已加主体约束修好 |",
         "| 因果收尾式拒答 + 补充说明 | 作答 | 保守（低估拒答率） |"
         " 已加 `_REFUSE_CAUSAL` 修好 |",
+        "| **「帮不上忙」+ 建议句带数字** | 作答 | 保守（低估拒答率） |"
+        " 第五批修好，见下 |",
         "| 空答案 / 工具错误提示 | 拒答 | ⚠️ 虚高 | 改为**第三态 `None`** |",
         "",
-        "## 七、复现方式",
+        "### ★ 第五批盲审：又抓到 1 处，且暴露一个更麻烦的问题",
+        "",
+        "跑完 3 遍后逐条读 r24 的原文，发现它**本来就是一条正确拒答**"
+        "（「这个问题我帮不上忙——我只能查学校的公开制度文件，里面没有…」）"
+        "却被判成作答。根因：`帮不上忙` 只命中 `_REFUSE_STRONG` 而不属于"
+        "`_REFUSE_CAUSAL`，于是压不过建议句里的「20人」（`_has_substance` 命中）。",
+        "",
+        "★ **这与已修的两条是同一形态** —— 说明第六版只修了"
+        "「没法告诉你 / 查不到」那一半措辞，漏了「帮不上忙」。"
+        "⇒ 词表修法只能止血：同一个意思换个说法就又漏了。"
+        "这也是主指标必须换成结构化信号的理由，"
+        "文本判据只配报数，不配判定。",
+        "",
+        "⚠️ **顺带查出一个更严重的问题**：上一轮我说「已用当前判据重算写回」，"
+        "其实只重算了 `per_question` 的逐题结果，"
+        "`runs[].direct.refuse` 那份**汇总块从没被覆盖** ——",
+        "于是一份报告里同时存在两套数字（直打侧 46/61 与 58/61）。"
+        "已改为渲染时统一调 `score_refuse` 从逐题重算，不信存好的汇总。",
+        "",
+        "> 这是本项目第 N 次「数字看起来像结论但其实是旧的」。"
+        "区别在于这次是**自己**发现的、而不是别人指出来的 —— "
+        "但也意味着前几轮的报告没人核对过。",
+        "",
+        f"## {_cn_num(sec)}、复现方式",
         "",
         "```bash",
         "# 必须先起 RAG 服务",
