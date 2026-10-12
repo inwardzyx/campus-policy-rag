@@ -399,6 +399,18 @@ def _todo_section() -> str | None:
       常被用来**留档旧说法**（「~~拒答集只有 5 条~~ → 已扩到 61 道」）。
       不剥的话，那句留档本身会被判成待办还在 —— 第一版就是这样，
       检查器报了它自己刚生成的留档。
+
+    ★★ 这一节的【边界】不是问题所在（2026-10-12 我先搞错了方向，记在这防止重犯）：
+      我看到「新增表格被判成待办」时，第一反应是"抓的节太大了"，
+      于是把下面的终止条件从 `(?=^## |\\Z)` 改成 `(?=^#{1,2} |\\Z)`。
+      实测抓到的长度**一点没变**（4985 → 4985）、假警报一条不少
+      ⇒ 因为那张表**本来就属于这一节**（在三级标题 `### 下一步的顺序` 底下），
+        而 `###` 本来就不会被 `^## ` 匹配上（`^##` 要求第 3 位是空格，`###` 是 `#`）。
+      ⇒ 那次改动除多认一个一级标题外**没有任何作用**，已回退成原来的 `^## `。
+      真正的修法在 `_todo_rows()`：认表靠【表头是「缺口」】，不靠"这节里所有表格行"。
+
+      ⇒ **教训：先把"抓的节错了"和"抓节对了但认表错了"分开，再动手。**
+        这次是后者。改完要能说出"这一改动改变了哪条输出"，说不出就别留。
     """
     rd = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     rd = re.sub(r"~~.*?~~", " ", rd, flags=re.S)
@@ -407,11 +419,53 @@ def _todo_section() -> str | None:
 
 
 def _todo_rows(seg: str) -> list[str]:
-    """表里每一行的第一格（缺口名）。表头与 `|---|---|` 分隔行跳过。"""
+    """表里每一行的第一格（缺口名）。**只认表头是「缺口」的那张表**，其余表格整张跳过。
+
+    ★★ 为什么改成"按表头认表"而不是"扫所有 `|` 开头的行"（2026-10-12 实测修的）：
+      〈还没做的〉这一节里同时存在**两种表格**：
+          | 缺口 | 现状 | 为什么现在不做 |     ← 真待办表，要登记
+          | # | 那一项主张什么 | 为什么不做 |         ← 论证用对照表，不是待办
+      旧实现扫遍全节所有 `|` 行，于是把后者也当成待办，报出 5 条假警报
+      （`#` / `A` / `B` / `C` / `D` 全部"未登记"）。
+
+      ★ 我第一次修错了方向，值得记下来：
+        当时以为是"抓的节太大了"，于是把 `_todo_section()` 的终止条件从
+        `^## ` 改成 `^#{1,2} `。实测抓到的长度没变（4985 → 4985）、假警报一条不少
+        —— 因为那张论证表**本来就属于这一节**（在 `### 下一步的顺序` 底下），
+        边界收得再对也不该把它排除掉。
+        ⇒ **先把"抓的节错了"和"抓节对了但认表错了"分开，再动手。**
+          这次是后者：节抓对了，是"什么算待办行"这条判据太宽。
+
+    ★ 为什么按表头认是可靠信号，而不是又一层脆弱假设：
+      「缺口」是这一族检查自己定的列名。真待办表换成别的列名时，
+      `_check_todo_registry_complete` 里`seg is None` 之外的另一条路也保不住 ——
+      所以下面**显式补一条自检**：找不到「缺口」表头时报错，而不是安静地扫到零行。
+    """
+    lines = seg.splitlines()
+    keep: set[int] = set()
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if s.startswith("|"):
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if cells and cells[0] == "缺口":
+                j = i
+                while j < len(lines):
+                    sc = lines[j].strip()
+                    if not sc.startswith("|"):
+                        break
+                    cs = [c.strip() for c in sc.strip("|").split("|")]
+                    if set(cs[0]) <= set("-: "):     # 分隔行，跳过但继续往下
+                        j += 1
+                        continue
+                    keep.add(j)
+                    j += 1
+                i = j
+                continue
+        i += 1
     rows = []
-    for line in seg.splitlines():
-        if not line.strip().startswith("|"):
-            continue
+    for idx in sorted(keep):
+        line = lines[idx]
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if not cells or set(cells[0]) <= set("-: "):
             continue
@@ -432,7 +486,17 @@ def _check_todo_registry_complete() -> tuple[list[str], list[str]]:
                   "这一族检查失去作用对象，请同步更新本脚本"], [])
     errs: list[str] = []
     manual: list[str] = []
-    for row in _todo_rows(seg):
+    todo_rows = _todo_rows(seg)
+    # ★ 自检：认表靠的是"表头叫缺口"。哪天这一节被改版、列名换了或表被删了，
+    #   这里必须【响】，而不是安静地扫到零行然后报"全部已登记"。
+    #   一个永远绿的检查器比没有检查器更坏（见 CLAUDE.md 协作黑板）。
+    if not todo_rows:
+        errs.append(
+            "✗ 待办表没扫到任何一行：〈还没做的〉里找不到表头为「缺口」且有数据行的表格。\n"
+            "  这不是'待办都做完了'，是检查器认不出这张表了（认表靠的就是这个表头）。\n"
+            "  要么把表头改回「缺口」，要么同步改本函数的认表逻辑 —— 别默默放着。")
+        return (errs, manual)
+    for row in todo_rows:
         hit = [t for t in TODO_REGISTRY if re.search(t["row"], row)]
         if not hit:
             errs.append(
