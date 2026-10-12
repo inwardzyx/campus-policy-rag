@@ -110,10 +110,26 @@ def main():
         print(f"\n  ⇒ 换算关系：recursion_limit = 2 × 轮数"
               f"（1 步 START + 轮数步 agent + (轮数-1) 步 tools）")
         print(f"  ⇒ 我手写版 MAX_ROUNDS=6，换过去是 12，不是 6 也不是 11。")
-        print(f"\n  ★★★ 教训：这个公式是我【先猜后验】的，猜的是 2×轮数-1，"
+        print(f"\n  ★★★ 公式是我【先猜后验】的，猜的是 2×轮数-1，"
               f"实测是 2×轮数。")
         print(f"     差 1 步。START 那一步我压根没想过。"
               f"⇒ 不实测就写公式=在写猜测，而且看起来特别像推导。")
+
+        print("\n" + "=" * 62)
+        print("阶段 4 回来补的一条：这个换算在【真实图】上偏保守一倍")
+        print("=" * 62)
+        print("  agent/langgraph_agent.py 用 MAX_ROUNDS=6 → recursion_limit=12")
+        print("  实测 10 道题的节点执行数：[1, 1, 3, 3, 3, 3, 4, 4, 4, 5]")
+        print("  最大 5，而上限是 12 —— 余量多了一倍多。")
+        print()
+        print("  ⇒ 换算没错（数的是 super-step），是【这个最小图比真实图省步数】：")
+        print("    真实图里一轮只调一个工具时是 agent+tools 两步，与最小图一致；")
+        print("    但 10 道题里模型最常用的模式是\"一轮调两个工具\"，")
+        print("    那时 ToolNode 可能并行处理 ⇒ 步数不再翻倍。")
+        print()
+        print("  ★ 取舍说明：宁可留余量。超限的代价是抛 GraphRecursionError（硬失败），")
+        print("    余量的代价只是多几次循环判断的开销。")
+        print("    真要收紧上限，必须先用真实图量 —— 别拿这里的最小图数据去设。")
 
 
 if __name__ == "__main__":
