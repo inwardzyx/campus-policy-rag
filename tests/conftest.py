@@ -103,3 +103,42 @@ class _SlowLLM:
         # 实际测试中超时（0.05 秒）先触发，这一行不会被观察到 —— 留着是为了
         # 将来有人把超时调长之后，它不至于变成"永远不返回"的另一颗哑弹。
         return _FakeResp("{}")
+
+
+class _UsageResp:
+    """带 usage_metadata 的假返回。
+
+    ★ 为什么 _FakeResp 不直接给它加 usage：
+      usage 是【计量改动】才会去读的字段，而本文件绝大多数测试压根不关心计量。
+      把它塞进共用的 _FakeResp，等于让所有测试都假装自己能报 token ——
+      哪天真有 bug 让 usage 变成幻觉，这些测试也照样绿。
+      ⇒ 用两个分开的假货：要测计量的用例显式换 _UsageLLM。
+    """
+
+    def __init__(self, content, inp=100, out=20, cache_read=0, total=None):
+        self.content = content
+        self.usage_metadata = {
+            "input_tokens": inp,
+            "output_tokens": out,
+            "total_tokens": total if total is not None else inp + out,
+            "input_token_details": {"cache_read": cache_read},
+        }
+
+
+class _UsageLLM:
+    """每次调用都返回一个带 usage 的假返回，且【每次的 token 数不同】。
+
+    ★ 每次不同是故意的：这样"只报最后一次"和"全部累加"两种实现测出来的
+      结果不一样（3 次分别是 100/200/300 时，累加=600、只留最后=300），
+      判据才真的能区分这两种实现 —— 如果每次都一样，
+      覆盖写和累加写会得到同一个数，测了等于没测。
+    """
+
+    def __init__(self, reply="{}"):
+        self.reply = reply
+        self.calls = 0
+
+    def invoke(self, messages):
+        self.calls += 1
+        n = self.calls
+        return _UsageResp(self.reply, inp=100 * n, out=10 * n)

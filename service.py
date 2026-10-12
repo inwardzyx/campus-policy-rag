@@ -242,47 +242,78 @@ _LLM_USAGE = threading.local()
 
 
 def _record_usage(resp) -> None:
-    """把一次调用的 usage 记到当前线程上（取不到就记 None，不填 0）。
+    """把一次调用的 usage **累加**到当前线程上（取不到就跳过，不填 0）。
 
     ★ 为什么要区分"没有 usage"和"usage 是 0"：
       填 0 会让"没拿到"看起来像"真的没用 token"，
       而均值里混一个 0 会把它拉低 —— 这与本项目在
       agent 侧踩过的坑同源（`missing_usage` 那一栏就是为此存在的）。
+      ⇒ 做法是：这一项取不到就整项不动（保留之前累加出来的数），
+        并且把 missing_calls 加一，让"漏了几次"本身也变成一个可读的数。
+
+    ★★★ 必须是【累加】而不是【覆盖】。踩过的坑：
+      原来这里写的是 `_LLM_USAGE.last = {...}` —— 每调一次就把上一次冲掉。
+      而一次 /chat 要调三次模型（查询改写 → rerank 打分 → 生成），
+      于是返回的 usage 只剩【最后一次】（生成）那一段，
+      input_tokens 报 157 而真实值在 700上下 —— 少算了三分之二。
+      更有欺骗性的是 n_calls：因为 n_calls 是在同一个赋值里现算的
+      `getattr(_LLM_USAGE, "n_calls", 0) + 1`，而那个属性从没人写过，
+      每次都读到 0 ⇒ 恒等于 1 ⇒ 【每一次】请求都显示只调了 1 次模型。
+      这两个数一起看像"合理"，实际全错 —— 只能靠"拿真实响应逐段对照"发现。
     """
     um = getattr(resp, "usage_metadata", None)
+    prev = getattr(_LLM_USAGE, "acc", None) or {
+        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cache_read": 0,
+    }
+    n_calls = getattr(_LLM_USAGE, "n_calls", 0)
+    missing = getattr(_LLM_USAGE, "missing_calls", 0)
     if not isinstance(um, dict):
-        _LLM_USAGE.last = None
+        # ★ 这次没拿到，但之前累加的数要保住 —— 不能整段清零
+        _LLM_USAGE.missing_calls = missing + 1
         return
     try:
         inp = um.get("input_tokens")
         out = um.get("output_tokens")
         tot = um.get("total_tokens")
         if inp is None or out is None:
-            _LLM_USAGE.last = None
+            _LLM_USAGE.missing_calls = missing + 1
             return
         cache_read = 0
         det = um.get("input_token_details")
         if isinstance(det, dict):
             cache_read = det.get("cache_read") or 0
-        _LLM_USAGE.last = {
-            "input_tokens": int(inp),
-            "output_tokens": int(out),
-            "total_tokens": int(tot if tot is not None else inp + out),
-            "cache_read": int(cache_read),
-            # n_calls 用来算"每次查询调了几次模型"——
-            # 直打侧一次查询含改写 + 精排 + 生成，是 2~3 次。
-            "n_calls": getattr(_LLM_USAGE, "n_calls", 0) + 1,
+        _LLM_USAGE.acc = {
+            "input_tokens": prev["input_tokens"] + int(inp),
+            "output_tokens": prev["output_tokens"] + int(out),
+            "total_tokens": prev["total_tokens"]
+                           + int(tot if tot is not None else inp + out),
+            "cache_read": prev["cache_read"] + int(cache_read),
         }
+        # ★ 真正写进【线程属性】—— 原来漏了这一行，n_calls 才恒等于 1
+        _LLM_USAGE.n_calls = n_calls + 1
     except (TypeError, ValueError):
-        _LLM_USAGE.last = None
+        _LLM_USAGE.missing_calls = missing + 1
 
 
 def _take_usage() -> dict | None:
-    """取走并清空本线程累积的 usage（跨调用要清，否则会重复计数）。"""
-    u = getattr(_LLM_USAGE, "last", None)
-    _LLM_USAGE.last = None
+    """取走并清空本线程累积的 usage（跨调用要清，否则会重复计数）。
+
+    ★ 返回 None 的条件只有一种：整次请求【一次都没成功记账】。
+      「记到了 N 次、其中 M 次拿不到」是有效数据，要如实返回并带上 missing_calls。
+    """
+    acc = getattr(_LLM_USAGE, "acc", None)
+    n = getattr(_LLM_USAGE, "n_calls", 0)
+    missing = getattr(_LLM_USAGE, "missing_calls", 0)
+    _LLM_USAGE.acc = None
     _LLM_USAGE.n_calls = 0
-    return u
+    _LLM_USAGE.missing_calls = 0
+    if not acc or n == 0:
+        return None
+    out = dict(acc)
+    out["n_calls"] = n
+    # ★ 记到了但有漏的，也算非零 —— 报告侧据此判断这批数据能不能信
+    out["missing_calls"] = missing
+    return out
 
 
 def _invoke_llm(llm, messages, timeout=None):

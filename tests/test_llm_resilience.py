@@ -30,7 +30,7 @@ import pytest                                      # noqa: E402
 import service as svc                              # noqa: E402
 
 # 假模型从 conftest.py 拿 —— 三个测试文件共用一份，不再各抄一遍（见 conftest.py 的说明）
-from conftest import _FakeLLM, _FakeResp, _SlowLLM  # noqa: E402
+from conftest import _FakeLLM, _FakeResp, _SlowLLM, _UsageLLM  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -139,3 +139,117 @@ def test_chat_degrades_instead_of_faking_rejection(rag, monkeypatch):
     d = r.json()
     assert d["knowledge_hit"] is True, "命中了就是命中了，不能因为模型挂了就说库里没有"
     assert "模型调用失败" in d["answer"], f"应如实说明是模型的问题，实际：{d['answer'][:80]}"
+
+
+# ==================================================================
+# ⑥ Token 计量：usage 必须【累加】，不能只留最后一次
+# ==================================================================
+# 这一组盯的是一个已经真发生过的 bug（2026-10-12 修）：
+#   一次 /chat 要调三次模型（查询改写 → rerank 打分 → 生成），
+#   而记账写成 `_LLM_USAGE.last = {...}`（覆盖），于是：
+#     · 返回的 usage 只剩【最后一次】（生成）那一段 —— 少算约 2/3
+#     · n_calls 恒等于 1（它在同一个赋值里现算 getattr(...,0)+1，
+#       而那个线程属性从没人写过，每次都读到 0）
+#   两个数一起看【像合理的】，所以第一轮跑批完全没发现异常。
+#   只有"逐段对照真实响应"或者"让每次调用的 token 数不同"才暴露得出来。
+class _NoUsage:
+    """连 usage_metadata 都没有的返回 —— 模拟"拿不到"（老版本 langchain 就是这样）。"""
+
+    def __init__(self, content="{}"):
+        self.content = content
+
+
+def test_usage_is_accumulated_across_calls():
+    """★ 三次调用、三份不同的 usage，取出来必须是【和】而不是【最后一份】。
+
+    断言写成具体数字而不是"比最后一次大" —— 后者两种实现都能过，等于没测。
+    ★ 三次的值写成 100 / 200 / 300 这种一眼能加的（和 = 600），
+      别写成 100*n 然后在断言里手算 —— 我第一版就是这么写的，
+      把 100+200+300 算成了 300，测的是自己的算术不是代码。
+    """
+    svc._LLM_USAGE.acc = None
+    svc._LLM_USAGE.n_calls = 0
+    svc._LLM_USAGE.missing_calls = 0
+
+    from conftest import _UsageResp
+    for inp, out in ((100, 10), (200, 20), (300, 30)):
+        svc._record_usage(_UsageResp("{}", inp=inp, out=out))
+
+    u = svc._take_usage()
+    assert u is not None, "记到了 3 次，取 usage 不该返回 None"
+    assert u["input_tokens"] == 600, (
+        f"100+200+300 应得 600，实际 {u['input_tokens']} —— "
+        f"若是 300 说明只留了最后一次，那正是 2026-10-12 修掉的那个 bug")
+    assert u["output_tokens"] == 60, f"10+20+30 应得 60，实际 {u['output_tokens']}"
+    assert u["n_calls"] == 3, f"应报 3 次调用，实际 {u['n_calls']} —— 恒等于 1 就是那个 bug"
+
+
+def test_missing_usage_does_not_erase_what_was_recorded():
+    """★ 某一次拿不到 usage，【不能把之前记下的清零】。
+
+    这正是 service.py 里那两处短路 return 的处境：
+    改写和精排已经花了 token，只是生成那一步没拿到/没调用。
+    一笔有、一笔没有，正确结果是"记到的那部分照报 + 明说漏了几次"，
+    而不是"清零"也不是"整项当 0"。
+    """
+    from conftest import _UsageResp
+    svc._LLM_USAGE.acc = None
+    svc._LLM_USAGE.n_calls = 0
+    svc._LLM_USAGE.missing_calls = 0
+
+    svc._record_usage(_UsageResp("{}", inp=100, out=10))
+    svc._record_usage(_NoUsage())                      # 这次没拿到
+
+    u = svc._take_usage()
+    assert u is not None, "记到过一次就不该返回 None"
+    assert u["input_tokens"] == 100, f"拿不到的那次不该影响已记下的 100，实际 {u['input_tokens']}"
+    assert u["n_calls"] == 1, f"只有一次成功记账，实际 {u['n_calls']}"
+    assert u["missing_calls"] == 1, f"漏掉 1 次要如实报出来，实际 {u.get('missing_calls')}"
+
+
+def test_take_usage_resets_between_requests():
+    """取走之后必须清干净 —— 否则第二个请求会把第一个的数算进来。"""
+    from conftest import _UsageResp
+    svc._LLM_USAGE.acc = None
+    svc._LLM_USAGE.n_calls = 0
+    svc._LLM_USAGE.missing_calls = 0
+
+    svc._record_usage(_UsageResp("{}", inp=100, out=10))
+    first = svc._take_usage()
+    second = svc._take_usage()
+    assert first["input_tokens"] == 100
+    assert second is None, f"取过一次就该是空，实际 {second} —— 会重复计数"
+
+
+def test_no_usage_at_all_returns_none():
+    """一次都没记到就返回 None（不是 0）—— "没拿到"和"真的是 0"必须能区分。"""
+    svc._LLM_USAGE.acc = None
+    svc._LLM_USAGE.n_calls = 0
+    svc._LLM_USAGE.missing_calls = 0
+    svc._record_usage(_NoUsage())
+    assert svc._take_usage() is None, "一次都没成功记账就该是 None"
+
+
+def test_chat_endpoint_reports_accumulated_usage(rag, monkeypatch):
+    """★ 端到端：打一次 /chat，usage 的 n_calls 必须等于真实调用次数。
+
+    这是唯一能抓住"覆盖 vs 累加"的判据 —— 因为它把记账挂在真实调用链上，
+    而真实链路里改写/精排/生成各调一次模型。
+    假模型每次 token 数不同（100/200/300），所以两种实现给出的数不同。
+    """
+    from fastapi.testclient import TestClient
+
+    fake = _UsageLLM('{"scores": [{"id": 1, "score": 9, "reason": "相关"}]}')
+    monkeypatch.setattr(svc.rag, "_llm", fake)
+
+    client = TestClient(svc.app)
+    r = client.post("/chat", json={"question": "什么情况会被开除学籍？",
+                                   "use_rerank": True})
+    assert r.status_code == 200, f"期望 200，实际 {r.status_code}"
+    u = r.json().get("usage")
+    assert isinstance(u, dict), f"响应里应有 usage，实际 {r.json().get('usage')!r}"
+    assert u["n_calls"] == fake.calls, (
+        f"记账说调了 {u['n_calls']} 次，假模型实际被调了 {fake.calls} 次 —— "
+        "两者对不上就是记账漏了或重复了")
+    assert u["n_calls"] >= 2, (
+        f"默认路径至少是【改写 + 精排 + 生成】三次调用，实际只记了 {u['n_calls']} 次")
