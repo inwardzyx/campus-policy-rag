@@ -42,3 +42,11 @@ _reviews/_*.log
 # 录 README 动图时的中间产物（帧可能上百张）与 Chrome 临时 profile
 .demo_frames/
 .demo_chrome_profile/
+
+# 本地起 RAG 服务时重定向出来的 stdout 日志（含时间戳和每次请求的原文，噪音大）
+_rag_server.log
+
+# 归因实验的临时副本（跑一次就删，不进仓库：
+#   它只是 mcp/_loop_out.json 的一份拷贝，用来和另一版做对比，
+#   结论已经写死在 mcp/verify_mcp_parity.py 的 docstring 里了）
+mcp/_loop_out_run2.json

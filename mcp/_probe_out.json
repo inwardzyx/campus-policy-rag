@@ -1,0 +1,158 @@
+[
+  {
+    "id": "s1",
+    "type": "answer_raw",
+    "question": "纪律处分里警告和严重警告分别对应什么后果？",
+    "want_tool": "search_policy",
+    "picked": [
+      "search_policy",
+      "ask_policy"
+    ],
+    "args": {
+      "search_policy": {
+        "query": "纪律处分 警告 严重警告"
+      },
+      "ask_policy": {
+        "question": "纪律处分里警告和严重警告分别对应什么后果？"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s2",
+    "type": "answer_raw",
+    "question": "学生请假一周以内由谁审批？原文是哪一条？",
+    "want_tool": "search_policy",
+    "picked": [
+      "search_policy",
+      "search_policy"
+    ],
+    "args": {
+      "search_policy": {
+        "query": "学生 请假 审批权限"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s3",
+    "type": "answer_raw",
+    "question": "国家奖学金的评选条件里，家庭经济困难认定是怎么算的？",
+    "want_tool": "search_policy",
+    "picked": [
+      "ask_policy",
+      "search_policy",
+      "search_policy"
+    ],
+    "args": {
+      "ask_policy": {
+        "question": "国家奖学金的评选条件里，家庭经济困难认定是怎么算的？"
+      },
+      "search_policy": {
+        "query": "家庭经济困难 认定"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s4",
+    "type": "answer_final",
+    "question": "我想申请勤工助学，具体需要走什么流程？",
+    "want_tool": "ask_policy",
+    "picked": [
+      "ask_policy"
+    ],
+    "args": {
+      "ask_policy": {
+        "question": "我想申请勤工助学，具体需要走什么流程？"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s5",
+    "type": "answer_final",
+    "question": "综合测评怎么算分？",
+    "want_tool": "ask_policy",
+    "picked": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "args": {
+      "ask_policy": {
+        "question": "综合测评怎么算分？"
+      },
+      "search_policy": {
+        "query": "综合测评 算分"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s6",
+    "type": "answer_final",
+    "question": "我上学期的绩点是多少？",
+    "want_tool": null,
+    "picked": [],
+    "args": {},
+    "direct_answer": "I can't look that up for you — the policy database only contains the school's public regulations, not personal records like grades or GPA. There's no tool here that can access your transcript.\n\nTo get your GPA, you'd need to check your student portal (教务系统) or contact the 教务处/学院教务办公室 directly."
+  },
+  {
+    "id": "s7",
+    "type": "negative",
+    "question": "帮我查一下我的GPA和绩点",
+    "want_tool": null,
+    "picked": [
+      "ask_policy"
+    ],
+    "args": {
+      "ask_policy": {
+        "question": "帮我查一下我的GPA和绩点"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s8",
+    "type": "negative",
+    "question": "下个月的学杂费是多少？什么时候交？",
+    "want_tool": null,
+    "picked": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "args": {
+      "ask_policy": {
+        "question": "下个月的学杂费是多少？什么时候交？"
+      },
+      "search_policy": {
+        "query": "学杂费 缴纳 时间"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s9",
+    "type": "negative",
+    "question": "图书馆周末几点开门？",
+    "want_tool": null,
+    "picked": [
+      "ask_policy"
+    ],
+    "args": {
+      "ask_policy": {
+        "question": "图书馆周末几点开门？"
+      }
+    },
+    "direct_answer": null
+  },
+  {
+    "id": "s10",
+    "type": "negative",
+    "question": "帮我取消一下我的请假申请",
+    "want_tool": null,
+    "picked": [],
+    "args": {},
+    "direct_answer": "我无法帮你取消请假申请——我没有权限访问或操作你的个人申请记录，这类操作需要你本人在学校的请假系统（或教务/学工系统）里自行撤回。\n\n不过我可以帮你查一下**学校关于请假撤销/销假的规定**，看看流程上有什么要求。需要的话告诉我，我帮你检索。"
+  }
+]

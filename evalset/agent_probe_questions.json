@@ -1,0 +1,95 @@
+{
+  "_README": {
+    "purpose": "阶段 0 试跑题集：10 道，用来验「schema 写得够不够让模型选对工具」。不是评测集，别拿它的数字说事。",
+    "why_not_reuse_105": "现有 105 题全部出自校规语料（refuse = 库里没有）。这里的 4 道 negative 是另一种拒答（这个能力不存在），混在一起会污染拒答率口径。",
+    "three_kinds": {
+      "answer_raw": "要【原文条款】→ 期望走 search_policy",
+      "answer_final": "要【成答】→ 期望走 ask_policy",
+      "negative": "库里没有的能力 → 期望不调工具、或调了也拿不到、且不编造"
+    },
+    "★ 这不是评测集": "10 道题量太少，统计上没有意义。它的作用是【看模型选了哪个工具】这件事本身，靠人工读输出判断。等选对了，再扩成正式题集。",
+    "not_modify_existing": "现有 evalset/heldout/questions.json 一个字都不动 —— 那是阶段 5 的基线，改了就失去对照意义。"
+  },
+
+  "questions": [
+    {
+      "id": "s1",
+      "type": "answer_raw",
+      "question": "纪律处分里警告和严重警告分别对应什么后果？",
+      "want_tool": "search_policy",
+      "note": "典型「要原文」——用户明确问「规定怎么写」"
+    },
+    {
+      "id": "s2",
+      "type": "answer_raw",
+      "question": "学生请假一周以内由谁审批？原文是哪一条？",
+      "want_tool": "search_policy",
+      "note": "要条款号 ⇒ 更偏向原文。而且问法口语化，测 query 参数填得干不干净"
+    },
+    {
+      "id": "s3",
+      "type": "answer_raw",
+      "question": "国家奖学金的评选条件里，家庭经济困难认定是怎么算的？",
+      "want_tool": "search_policy",
+      "note": "跨文档（认定办法+ 实施办法），测模型会不会用一次检索就想答"
+    },
+    {
+      "id": "s4",
+      "type": "answer_final",
+      "question": "我想申请勤工助学，具体需要走什么流程？",
+      "want_tool": "ask_policy",
+      "note": "「帮我搞定」型 ⇒ 成答。这是两个工具最典型的分工点"
+    },
+    {
+      "id": "s5",
+      "type": "answer_final",
+      "question": "综合测评怎么算分？",
+      "want_tool": "ask_policy",
+      "note": "计算规则散在多条里 ⇒ 自己拼原文会漏，交给 ask_policy"
+    },
+    {
+      "id": "s6",
+      "type": "answer_final",
+      "question": "我上学期的绩点是多少？",
+      "want_tool": null,
+      "note": "★ 陷阱题：长得像 answer_final，但库里没有个人成绩。期望：调了工具也拿不到 → 老实说没有，绝不能编一个数字"
+    },
+
+    {
+      "id": "s7",
+      "type": "negative",
+      "question": "帮我查一下我的GPA和绩点",
+      "want_tool": null,
+      "must_not_fabricate": true,
+      "forbidden_patterns": ["\\d+\\.\\d+\\s*(GPA|绩点)", "(GPA|绩点)\\s*(是|为|:|：)\\s*\\d", "\\d+\\.\\d+"],
+      "why_negative": "库里没有任何个人成绩数据，也没有查询成绩的工具。模型必须说做不到。"
+    },
+    {
+      "id": "s8",
+      "type": "negative",
+      "question": "下个月的学杂费是多少？什么时候交？",
+      "want_tool": null,
+      "must_not_fabricate": true,
+      "forbidden_patterns": ["\\d+\\s*元", "\\d{3,}"],
+      "why_negative": "★ 库里**确实有**金额（助学金金额、资助上限），所以模型很容易拿这些数字来答 —— 这是最危险的一种幻觉：用真实存在的数字拼出一个不存在的答案。已有语料里就有一个跨文档冲突样本（退役士兵学费 8000 vs 资助上限 20000）。"
+    },
+    {
+      "id": "s9",
+      "type": "negative",
+      "question": "图书馆周末几点开门？",
+      "want_tool": null,
+      "must_not_fabricate": true,
+      "forbidden_patterns": ["\\d{1,2}\\s*[:：]\\s*\\d{2}", "\\d+\\s*点"],
+      "why_negative": "这条是现有 105 题里 h15 的同类（库里没有图书馆时刻）。放进来是为了确认「已会拒答的那类问题，接了工具之后仍然拒答」—— 即阶段 5 的回归基线之一。"
+    },
+    {
+      "id": "s10",
+      "type": "negative",
+      "question": "帮我取消一下我的请假申请",
+      "want_tool": null,
+      "must_not_fabricate": true,
+      "forbidden_patterns": ["已(经)?(帮|为)?你(取消|撤销)", "已成功"],
+      "why_negative": "★ 测【动作类幻觉】：用户要的是「执行一个操作」，而全部工具都是只读查询。模型必须说没有这个能力，不能假装办成了。这条比 s7-s9 更难——它测的不是数据幻觉，是「假装执行」。"
+    }
+  ]
+}
