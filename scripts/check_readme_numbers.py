@@ -207,6 +207,25 @@ ASSERTIONS: list[Assertion] = [
         note="清洗前源语料口径。与入库后体检的 4195 字不是同一个数，"
         "README 必须分开标注，不能在同一格里混用",
     ),
+    # ============ agent 侧（2026-10-12 新增）============
+    # ★ 为什么必须加：README 加完 agent 那一节后，这个对账器**全绿**——
+    #   但那是"没检查"不是"检查通过"（grep 过，它一个 agent 相关的数都不查）。
+    #   同一类事故的第 N 次：不查＝没有。
+    #
+    # ★ 硬答数 / 硬答率 / 直打拆解这三条**故意不放进 ASSERTIONS**，
+    #   全部走专项检查（_check_agent_hard_counts / _check_agent_hard_rate /
+    #   _check_direct_split）。原因：通用路径一个 pattern 只产出一个值，
+    #   而这三条要校的是「三遍分别是 6/38、5/40、4/38」这种多值组合 ——
+    #   实测硬塞进去会得到一个永远报错的检查（"README 写 12.9，产物是三个值"）。
+    #   ⇒ **宁可多写一个专项函数，也不要一个"看起来在查"的通用条目。**
+    Assertion(
+        name="agent token 均值 total",
+        readme_value="1972",
+        src="evalset/report-token-cost.md",
+        pattern=r"\*\*均值\*\* \| \*\*\d+\*\* \| \*\*\d+\*\* \| \*\*(\d+)\*\*",
+        expect=None,
+        readme_pattern=r"input / output / total（均值） \| \d+ / \d+ / \*\*(\d+)\*\*",
+    ),
 ]
 
 
@@ -238,6 +257,110 @@ def _check_refuse_rate() -> list[str]:
                 f"✗ 离线层拒答准确率：README 写 {m2.group(1)}/{m2.group(2)}，"
                 f"产物是 {ok}/{den}"
             ]
+    return []
+
+
+def _agent_section(rd_text: str) -> str:
+    """截出README 里 agent 那一节。
+
+    ★ 为什么必须限定范围：README 里有好几张以 "| 1 |" 开头的表
+      （变异测试前后对照、入库把关等），不限范围的话正则会抓到**别的表**，
+      然后报一句"对不上"—— 而错的是判据不是文档。
+      （这是本项目的老教训：判据抓到"别的"时，先怀疑判据。）
+    """
+    m = re.search(r"^## ★ 接了agent.*?^---$", rd_text, re.M | re.S)
+    return m.group(0) if m else ""
+
+
+def _check_agent_hard_counts() -> list[str]:
+    """README 那张「遍 / 硬答数÷no_hit / 硬答率」表，逐行对产物。
+
+    ★ 为什么要专项而不用通用ASSERTIONS：
+      通用路径一个 pattern 只产出一个值，而这张表要校的是
+      「6/38、5/40、4/38」三个分数对。硬套会变成永远报错或永远不报。
+    """
+    errs: list[str] = []
+    p = REPO_ROOT / "evalset/report-agent-refusal-regression.md"
+    rd = REPO_ROOT / "README.md"
+    if not p.exists() or not rd.exists():
+        return ["✗ agent 硬答数：找不到产物或 README"]
+
+    # 产物侧：硬答题数 "6、5、4"
+    m = re.search(r"\| \*\*硬答题数\*\* \| \*\*([0-9、]+)\*\*",
+                  p.read_text(encoding="utf-8"))
+    if not m:
+        return ["✗ agent 硬答数：产物里抽不到「硬答题数」—— 格式可能变了"]
+    hard_n = [int(x) for x in m.group(1).split("、")]
+
+    # README侧：只在 agent 那一节里找，避免抓到别的表
+    sec = _agent_section(rd.read_text(encoding="utf-8"))
+    if not sec:
+        return ["✗ agent 硬答数：README 里找不到「接了agent」那一节"]
+    pairs = re.findall(r"^\| [123] \| (\d+) / (\d+) \|", sec, re.M)
+    if len(pairs) != len(hard_n):
+        return [f"✗ agent 硬答数：README 表里 {len(pairs)} 行，"
+                f"产物里有 {len(hard_n)} 个硬答数 —— 对不上"]
+    for i, ((a, _b), exp) in enumerate(zip(pairs, hard_n), 1):
+        if int(a) != exp:
+            errs.append(f"✗ agent 硬答数：README 第 {i} 遍写 {a}，产物是 {exp}")
+    return errs
+
+
+def _check_agent_hard_rate() -> list[str]:
+    """README 的合计硬答率 12.9% 与"15 / 116"，必须能自己算出来。
+
+    ★ 不写死12.9%：直接拿 15 ÷ 116 算 —— 写死的话，
+      分子分母任一变了而12.9% 没变，就抓不到。
+    """
+    errs: list[str] = []
+    p = REPO_ROOT / "evalset/report-agent-refusal-regression.md"
+    rd = REPO_ROOT / "README.md"
+    if not p.exists() or not rd.exists():
+        return ["✗ agent 硬答率：找不到产物或 README"]
+
+    txt = rd.read_text(encoding="utf-8")
+    m = re.search(r"\*\*合计\*\* \| \*\*(\d+) / (\d+)\*\* \| \*\*([0-9.]+)%\*\*", txt)
+    if not m:
+        return ["✗ agent 硬答率：README 里找不到「合计 | 15 / 116 | 12.9%」那行"]
+    hard, tot, shown = int(m.group(1)), int(m.group(2)), float(m.group(3))
+    calc = hard / tot * 100 if tot else 0.0
+    if abs(calc - shown) > 0.1:
+        errs.append(f"✗ agent 硬答率：README 写 {shown}%，"
+                    f"但 {hard}/{tot} 自己算是 {calc:.1f}%")
+
+    # 分子分母都要与产物那三遍对得上
+    m2 = re.search(r"\| \*\*硬答题数\*\* \| \*\*([0-9、]+)\*\*",
+                   p.read_text(encoding="utf-8"))
+    m3 = re.search(r"\| agent `no_hit` 信号占比 \|.*", p.read_text(encoding="utf-8"))
+    if m2 and abs(sum(int(x) for x in m2.group(1).split("、")) - hard) > 0:
+        errs.append(
+            f"✗ agent 硬答率：README 说三遍合计硬答 {hard}，"
+            f"产物三遍加起来是 {sum(int(x) for x in m2.group(1).split('、'))}"
+        )
+    if not m3:
+        errs.append("✗ agent 硬答率：产物里找不到 no_hit 信号占比行，合计分母无从核对")
+    return errs
+
+
+def _check_direct_split() -> list[str]:
+    """README 那句"三遍共 121 次拒答（66%）"必须与产物一致。
+
+    ★ 这条最要紧：它是防止"直打侧 95% 拒答率"被误读成模型能力的那句话。
+      它一旦漂了，README 就开始骗人。
+    """
+    p = REPO_ROOT / "evalset/report-agent-refusal-regression.md"
+    rd = REPO_ROOT / "README.md"
+    if not p.exists() or not rd.exists():
+        return ["✗ 直打拆解：找不到产物或 README"]
+    m = re.search(r"而实际上三遍共 (\d+) 题的拒答是", p.read_text(encoding="utf-8"))
+    if not m:
+        return ["✗ 直打拆解：产物里抽不到「三遍共 N 题的拒答」"]
+    actual = int(m.group(1))
+    m2 = re.search(r"三遍共 (\d+) 次拒答", rd.read_text(encoding="utf-8"))
+    if not m2:
+        return ["✗ 直打拆解：README 里找不到「三遍共 N 次拒答」那句"]
+    if int(m2.group(1)) != actual:
+        return [f"✗ 直打拆解：README 写 {m2.group(1)}，产物是 {actual}"]
     return []
 
 
@@ -712,6 +835,12 @@ def check() -> tuple[list[str], list[str]]:
     errors += _check_completed_list_metrics()
     errors += _check_recall()
     errors += _check_scale_ranks()
+    # ★ agent 侧（2026-10-12）：README 加了agent 那一节之后本脚本全绿，
+    #   但 grep 过——它一个 agent 相关的数都不查。
+    #   那是"没检查"不是"检查通过"。同一类事故的第 N 次：不查＝没有。
+    errors += _check_agent_hard_counts()
+    errors += _check_agent_hard_rate()
+    errors += _check_direct_split()
     # ★ 过期陈述（文档说某物不存在，但它其实在）——
     #   ⚠️ 只提示不拦提交，理由见 _check_stale_text 的 docstring（盲审后降级：
     #     变异与规则同源 ⇒"能响"是自证；且有实测假阳性）
