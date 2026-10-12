@@ -17,7 +17,60 @@
   靠真机跑 / 手工验，不靠这一个假模型来兜。
 """
 
+import sys
 import time
+from pathlib import Path
+
+# ★ 本文件除了"假模型"，还顺手做一件事：跑测试时提醒「本地钩子装没装」。
+#   见文件末尾的 pytest_sessionstart —— 那里写了为什么放在这儿。
+
+
+# ==================================================================
+# 跑测试时提醒一句：本地那两道防线装了吗
+# ==================================================================
+# 为什么放在这里（2026-10-11）：
+#   `scripts/hooks/README.md:160-163` 自己写着 —— 本地钩子（pre-commit / pre-push）
+#   是【唯一真正会挡】的两道防线，而它们**不进仓库**，换 clone 就没了
+#   ⇒ 别人（面试官也会 clone）clone 下来默认一道都没有。
+#   而 README「30 秒跑起来」第 3 步就是跑 pytest ⇒ 这里是【人一定会看到】的地方。
+#
+# ★ 为什么只提醒、不让测试变红：
+#   clone 下来看到 "60 passed" 变成 "59 passed, 1 failed"，只会让人以为这作品是坏的。
+#   "提醒"是能看见，"失败"是看起来坏了 —— 两回事。
+# ★ 判断逻辑【不在本文件里重写一遍】，而是从 scripts/install_hooks.py 复用
+#   —— 本文件自己的 docstring 就写过教训：「同一颗哑弹抄两份」。
+def pytest_sessionstart(session):
+    scripts_dir = str(Path(__file__).resolve().parent.parent / "scripts")
+    try:
+        sys.path.insert(0, scripts_dir)
+        try:
+            import install_hooks
+        finally:
+            # 只为这次导入加路径，不污染整个测试会话的 sys.path
+            if scripts_dir in sys.path:
+                sys.path.remove(scripts_dir)
+        root = install_hooks.repo_root()
+        ok, why = install_hooks.installed(root)
+    except (SystemExit, Exception):
+        # 不是 git 仓库（比如把 zip 下载下来解压）⇒ 根本不存在 git 钩子这回事，
+        # 这段提醒不适用。★ 这不是"静默吞掉故障"：没有 git 就无所谓钩子。
+        return
+    if ok:
+        return
+    tr = session.config.pluginmanager.get_plugin("terminalreporter")
+    lines = [
+        "",
+        f"⚠️  本地钩子【没装】—— {why}",
+        "    它们是这个仓库【唯一真正会挡】的两道防线（远端 CI 只会喊、不拦合并），",
+        "    而 .git/hooks/ 不进仓库，所以新 clone 默认一道都没有。",
+        "    装它（一条命令，幂等）：  python scripts/install_hooks.py",
+        "",
+    ]
+    if tr is not None:
+        for ln in lines:
+            tr.write_line(ln)          # 走 terminalreporter：不受 pytest 捕获影响
+    else:
+        print("\n".join(lines))
 
 
 class _FakeResp:

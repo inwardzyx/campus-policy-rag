@@ -378,6 +378,17 @@ TODO_REGISTRY = [
         "why": "异步取消是否实现，静态判不出来（要看运行时行为）",
         "how": "`service.py::_invoke_llm` 是否仍是「线程池 + future.result(timeout=)」",
     },
+    {
+        "row": r"CI 红了不拦合并",
+        "label": "CI 红了不拦合并（知情取舍，等触发条件）",
+        "kind": "manual",
+        "why": "它不是「忘了做」，而是【决定暂时不做】—— 触发条件写在表里了："
+               "「CI 红了却被人合进去」真的发生过一次。而那件事发生在 GitHub 上"
+               "（branch rules 的配置 + 有没有人绕过红灯合并），本机静态判不出来。",
+        "how": "看 GitHub 的 Settings → Rules（新版 rulesets）里 "
+               "`Require status checks to pass` 是不是【仍未勾选】；"
+               "并确认 README 那条触发条件还在、没被悄悄改掉或删掉。",
+    },
 ]
 
 

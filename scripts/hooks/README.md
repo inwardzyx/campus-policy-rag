@@ -3,13 +3,39 @@
 ## 装（每个新clone 都要做一次）
 
 ```bash
-cp scripts/hooks/pre-commit .git/hooks/pre-commit
-cp scripts/hooks/pre-push   .git/hooks/pre-push
-chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+python scripts/install_hooks.py
 ```
 
 ⚠️ `.git/hooks/` **不进仓库**，所以别人 clone 下来默认没有这个钩子。
-这是 git 的设计，不是 bug。→ 要让别人也有，就得写进 README 的setup 步骤。
+这是 git 的设计，不是 bug（否则 clone 一个别人的仓库就等于执行他的代码）。
+⇒ 能做的是两件事，**现在两件都做了**：
+1. **一条命令装上**（幂等，重复跑没事）：`scripts/install_hooks.py`
+2. **装在别人一定会看到的地方**：README〈30 秒跑起来〉第 4 步；
+   以及跑 pytest 时 `tests/conftest.py` 会打一行 ⚠️ 提醒
+   —— ★ **只提醒、不让测试变红**（clone 下来看到 "60 passed" 变成
+   "59 passed, 1 failed"，只会让人以为这作品是坏的；"提醒"是能看见，
+   "失败"是看起来坏了，两回事）。
+
+### 为什么是 core.hooksPath，而不是往 .git/hooks/ 拷副本
+
+旧办法是 `cp scripts/hooks/pre-commit .git/hooks/` + `chmod +x`。两个问题：
+
+1. **副本会过期**：改了仓库里那份，`.git/hooks/` 里那份还是旧的。
+   这不是理论 —— 见下面「两个钩子里都有同一个已踩过的坑」里那次真实复发：
+   「修好提交之后 `scripts/hooks/pre-commit` 又被覆盖回旧版，
+    差点让'检查通过'变成一句假话」。
+   ⇒ `core.hooksPath=scripts/hooks` 让 git **直接跑仓库里那份**：没有第二份副本，
+     "副本过期"这一整类问题不存在；改了立刻生效，而且改动进 git 历史、可 review。
+2. `chmod +x` 在本项目的 Windows 上是**空操作**（那边靠 shebang 跑），
+   写了容易让人以为做过什么。
+
+★ 安装脚本会**自己证明生效**，不是只打印一句 ✔：
+真跑一次 `git hook run pre-commit`，要求输出里出现钩子自己的横幅 `[pre-commit]`
+—— 只把配置写进去不算数（路径解析、shebang、解释器缺一不可）。
+★ 它还会顺手体检那两个钩子文件（存在 / 非空 / **不是 CRLF** / 有 shebang）：
+CRLF 会让 shebang 变成 `#!/usr/bin/env bash\r`，Git Bash 报 bad interpreter，
+而且报错指不到原因。
+
 
 ## 为什么钩子里不派 cc / DSH
 

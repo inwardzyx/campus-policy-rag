@@ -172,20 +172,32 @@ python -m pytest tests/ -v          # 期望：60 passed（0 失败）
 # ★ 这一步【不需要 DEEPSEEK_API_KEY】：三个会碰模型的测试文件都注入了假模型
 #   （tests/conftest.py），一条都不真调。想顺便看"留了谁 / 拦了谁"：加 -s
 
-# 4. 起服务
+# 4. 装本地钩子（一条命令；不装也能跑，但你会失去本仓库【唯一真正会挡】的两道防线）
+python scripts/install_hooks.py
+# ★ 为什么需要这一步：pre-commit / pre-push 是**唯一真正会挡**的防线
+#   （远端 CI 只会喊、**不拦合并** —— 那是知情取舍，见 README「CI」那节），
+#   而 .git/hooks/ 【不进仓库】⇒ 任何新 clone 默认一道都没有。
+#   git 没有「clone 之后自动执行」的钩子（这是设计，不是缺陷：否则 clone 别人的仓库
+#   就等于执行他的代码），所以只能靠这一步。它是幂等的，重复跑没事。
+# ★ 用 core.hooksPath 让 git **直接跑仓库里那份**，而不是往 .git/hooks/ 拷副本 ——
+#   副本会过期，本仓库为此真踩过一次（scripts/hooks/README.md:31-36）。
+# ★ 如果你在第 3 步看到一行 ⚠️「本地钩子【没装】」的提醒，说的就是这件事。
+
+# 5. 起服务
 python service.py
 ```
 
-启动大概 3~4 秒（加载 embedding 模型 + 建库，只在启动时做一次）。
+启动大概 12~15 秒（加载 embedding 模型 + 建库，只在启动时做一次）。
+★ 首次启动还要先下载 92MB 的模型，会更久一点（之后就命中缓存了）。
 终端最后出现这两行就说明起来了：
 
 ```
-就绪：68 块入库，拦下 15 块，耗时 3.6 秒
+就绪：263 块入库，拦下 23 块，耗时 12.4 秒
 Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 ```
 
 打开 <http://127.0.0.1:8000> 是聊天页面，<http://127.0.0.1:8000/docs> 是自动生成的接口文档，
-<http://127.0.0.1:8000/health> 返回 `{"status":"ok","chunks":68,"rejected":15}`。
+<http://127.0.0.1:8000/health> 返回 `{"status":"ok","chunks":263,"rejected":23}`。
 
 ![自动生成的接口文档：/health、/guard-report、/chat 三个端点 + 请求/响应 schema](docs/images/demo-api-docs.png)
 
@@ -1319,9 +1331,21 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 
 ---
 
-## CI：每次 push 自动跑，把"漏答 0"变成质量门
+## CI：每次 push 自动跑 —— 红灯看得见，但**它不拦合并**（知情取舍）
 
 `.github/workflows/ci.yml` —— 有意拆成三个 job：
+
+> ⚠️ 先把这道防线的**真实状态**说清，免得你以为它比实际更硬：
+> **CI 红了，PR 上的 Merge 按钮照样能点。** GitHub 只有在仓库设置里把某个检查标成
+> `Require status checks to pass`（required check）时，红灯才真正锁住合并 ——
+> 而本仓库**故意没开**这一项。因为开它会**禁掉"直接 push 到 main"**（GitHub 自己在那栏
+> 底下写着：*commits must first be pushed to another ref where the checks pass*），
+> 对单人项目（一天推好几次）来说代价大于它当下解决的问题。
+> ⇒ 所以这道是**提醒**，不是门禁。**本地两道钩子才是唯一真正会挡的**，
+> 装它一条命令：`python scripts/install_hooks.py`；而 `.git/hooks/` 不进仓库 ——
+> 这才是这道防线真正的薄弱点。
+> 完整论证 + "什么时候该翻成门禁"（= 当**"CI 红了却被人合进去"真的发生过一次**）
+> 见 `scripts/hooks/README.md` 的〈远端那道防线〉一节。
 
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
@@ -1425,6 +1449,7 @@ docker run --rm -p 8000:8000 rag-cs
 | **没部署** | 只能本地跑 | 免费平台要塞 `DEEPSEEK_API_KEY`，**别人点开就能刷你的 key**；平台一 sleep 就 502，比没链接更糟。替代方案**已落地**：README 顶部那段 10 秒实录动图（`docs/images/demo.gif`），可见即可信 |
 | **粗捞池只有 5 条** | `search(k=5)`，而库已有 263 块 | 演示口径是"粗捞 20 精排 3"，代码里是 5。q12 曾因口语化掉出前 5—— **两层修法都试过**：`normalize_query()` 同义词表（2026-10-10，融合第 10 → 第 1 名）与**LLM 查询改写**（held-out Recall@5 35/44 → 42/44）。★ 两层都**不是靠扩池**，且扩池本身有反证：q12 在池=5 与池=10 里**位置都是第 10 名**，扩池只是放宽截断线。**扩池已量（2026-10-11）**：独立集 105 题、产品默认路径（`evalset/probe_pool_size.py`）—— gold 进池 35→37，但**漏答率不变（1/44）**，**拒答准确率 42/61 → 36/61**（多放行 6 道）⇒ **明确不扩**，不再是拍板 |
 | **超时只能"不等"，不能"掐断"** | 超时后那个后台线程其实还在跑完 | `llm.invoke()` 是同步阻塞的，用线程池 + `future.result(timeout=)` 只能保证主线程不再干等；`cancel()` 对已经开始执行的任务无效。要真正掐断得改异步 + 客户端级超时，属于下一阶段，这里先如实记着 |
+| **CI 红了不拦合并**（知情取舍） | CI 会红、PR 页面上看得见，但 **Merge 按钮照样能点** | 开 `Require status checks to pass` 会**禁掉"直接 push 到 main"**（GitHub 原话：*commits must first be pushed to another ref where the checks pass*）⇒ 每次推送都得走 PR + 等几分钟；单人项目一天推好几次，代价大于它当下解决的问题。**翻成门禁的触发条件：当"CI 红了却被人合进去"真的发生过一次。** 在那之前靠本地两道钩子（**唯一真正会挡的**，`python scripts/install_hooks.py` 装，一条命令）+ PR 页面上看得见的红灯。完整论证见 `scripts/hooks/README.md` 的〈远端那道防线〉一节 |
 
 ### 下一步的顺序
 
