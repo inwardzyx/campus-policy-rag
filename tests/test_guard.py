@@ -823,3 +823,44 @@ def test_tooling_script_does_not_crash_on_printing(rel, args):
         f"（钩子会把崩溃读成'检查失败'，还打出一句假话）。\n"
         f'修法：脚本开头加 sys.stdout.reconfigure(encoding="utf-8", errors="replace")\n'
         f"退出码 {r.returncode}\n--- 输出尾部 ---\n{blob[-800:]}")
+
+
+# ==================================================================
+# SIGNAL 协议里的【计量字段】：工具必须把自己花掉的 token 报上来
+# ==================================================================
+# 背景（2026-10-12）：agent 的 token 账原来只统计它自己那几轮 LLM 调用，
+# 而每次工具调用打的都是 /chat（服务内部还要跑 改写/精排/生成）——
+# 那部分账被 `str(out)` 整个丢掉，于是"agent 贵 1.99 倍"是**低估**的
+# （cc 独立回放 13 次真实工具调用实测：补进账后约 3.3×，区间 2.8~3.7×）。
+#
+# ★ 这个用例盯住三条，每条都对应一种**会让数字悄悄错**的写法：
+#   ① 报上来的数必须能原样解回来（不然账目对不上）
+#   ② 没有 usage 时必须写 `?`，且解析成 None —— **绝不能解析成 0**
+#      （0 = "真的没花"，None = "没拿到"；混了就是本仓反复剿的那类错）
+#   ③ 旧格式的标记行（没有计量字段）仍然要能解析出 hit_status，且 usage 返回 None
+#      （向后兼容：不能让老数据突然被判成"花了 0"）
+def test_signal_line_carries_tool_side_usage():
+    """工具侧的账：报上来 → 解得回来；没拿到 → 是 None 而不是 0。"""
+    from mcp.tools_impl import (_signal_line, parse_signal,
+                                parse_signal_usage)
+
+    usage = {"input_tokens": 681, "output_tokens": 205,
+             "total_tokens": 886, "cache_read": 128, "n_calls": 3}
+    line = _signal_line("hit", "search_policy", 3, usage=usage)
+
+    got = parse_signal_usage(line)
+    assert got == {"total": 886, "n_calls": 3, "input": 681,
+                   "output": 205, "cache_hit": 128}, f"解回来对不上：{got}"
+    # ① 新字段不许把老的命中判据弄坏
+    assert parse_signal(line) == "hit", "加了计量字段之后 hit_status 解析坏了"
+
+    # ② 没拿到 usage ⇒ 写 `?`，解析成 None —— **不是 0**
+    none_line = _signal_line("no_hit", "ask_policy", 0, usage=None)
+    assert "tokens_total=?" in none_line, f"没拿到时应当写 `?`：{none_line!r}"
+    assert parse_signal_usage(none_line) is None, (
+        "没拿到 usage 时必须解析成 None —— 解析成 0 会让'没拿到'看起来像'真的没用'")
+
+    # ③ 旧格式（没有计量字段）仍然只解出命中状态，usage 为 None
+    old = "\n\n[检索信号] hit_status=no_hit tool=ask_policy n_sources=0"
+    assert parse_signal(old) == "no_hit", "旧格式的命中判据被弄坏了"
+    assert parse_signal_usage(old) is None, "旧格式不该被当成'花了 0 token'"

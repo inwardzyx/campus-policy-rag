@@ -200,6 +200,14 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                     HumanMessage(content=q["question"])]
             ai_msgs = []
             truncated = False
+            # ★★ 工具内部花掉的 token（2026-10-12 补）：原来**完全没进账**。
+            #   每次工具调用打的都是 /chat，服务内部还要跑 改写/精排/生成，
+            #   而那部分账被 `str(out)` 整个丢掉了 ⇒ "agent 贵 1.99 倍"是低估。
+            #   现在工具通过 SIGNAL 协议把 usage 带回来（mcp/tools_impl.py::_usage_fields），
+            #   这里把它单独攒成【第二本账】，**不与 agent 自己的账合并** ——
+            #   两本账并列才看得出"贵在哪一层"。
+            tool_agg = {"input": 0, "output": 0, "total": 0, "cache_hit": 0, "n_calls": 0}
+            tool_missing = 0        # 有几次工具调用**没报上账**（≠ 花了 0）
             try:
                 for rnd in range(MAX_ROUNDS):
                     resp = bound.invoke(msgs)
@@ -208,11 +216,24 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                         break
                     msgs.append(resp)
                     for tc in resp.tool_calls:
-                        from mcp.tools_impl import TOOL_IMPL, ToolError
+                        from mcp.tools_impl import (TOOL_IMPL, ToolError,
+                                                    parse_signal_usage)
                         fn = TOOL_IMPL.get(tc["name"])
                         out = (f"没有名为 {tc['name']} 的工具。现有工具："
                                f"{sorted(TOOL_IMPL)}。" if fn is None
                                else _safe_call(fn, tc["args"]))
+                        # ★ 把工具内部的账收上来。None = 没拿到（不是 0）——
+                        #   旧标记行 / 写了 `?` 都走这里，必须计成"缺失"而不是 0。
+                        tu = parse_signal_usage(str(out))
+                        if tu is None:
+                            tool_missing += 1
+                        else:
+                            for k_src, k_dst in (("input", "input"),
+                                                 ("output", "output"),
+                                                 ("total", "total"),
+                                                 ("cache_hit", "cache_hit"),
+                                                 ("n_calls", "n_calls")):
+                                tool_agg[k_dst] += tu[k_src]
                         from langchain_core.messages import ToolMessage
                         msgs.append(ToolMessage(content=str(out),
                                                 tool_call_id=tc["id"]))
@@ -224,13 +245,20 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                 continue
             usage = sum_usage(ai_msgs)
             usage["cost"] = cost_of(usage)
+            tool_agg["cost"] = cost_of(tool_agg)
             rows.append({"id": q["id"], "type": q["type"], "usage": usage,
+                         # ★ 第二本账：工具内部（/chat 那一侧）花掉的。
+                         #   reported_total = usage.total + tool_usage.total 才是这道题的真账。
+                         "tool_usage": tool_agg,
+                         "tool_usage_missing": tool_missing,
                          "n_tool_calls": sum(len(t.tool_calls or [])
                                              for t in ai_msgs),
                          "truncated": truncated, "error": None})
             print(f"  [agent {i}/{len(qs)}] {q['id']:5} "
                   f"LLM 调用 {usage['n_calls']} 次　"
                   f"入 {usage['input']} / 出 {usage['output']} / 合计 {usage['total']} token"
+                  f"　★工具侧 {tool_agg['n_calls']} 次调用 / {tool_agg['total']} token"
+                  f"{'（有 %d 次没报上账）' % tool_missing if tool_missing else ''}"
                   f"{'　★有调用没拿到 usage' if usage['missing_usage'] else ''}")
     finally:
         PL.TOOL_IMPL = original

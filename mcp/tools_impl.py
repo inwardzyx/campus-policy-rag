@@ -106,15 +106,17 @@ def search_policy(query: str, k: int = 5) -> str:
         不是"模型会不会硬答"。后者要靠 hard_answer_rate 单独测。
     """
     data = _get_json("/chat", {"question": query, "use_rerank": False, "top_k": k})
+    # ★ 把服务内部的账带上去（见 _usage_fields）：不然这部分 token 全在 agent 账外
+    u = data.get("usage")
     if not data.get("knowledge_hit", True):
-        return NO_HIT_TEXT + _signal_line("no_hit", "search_policy")
+        return NO_HIT_TEXT + _signal_line("no_hit", "search_policy", usage=u)
     srcs = data.get("sources", [])
     if not srcs:
-        return NO_HIT_TEXT + _signal_line("no_hit", "search_policy")
+        return NO_HIT_TEXT + _signal_line("no_hit", "search_policy", usage=u)
     lines = []
     for s in srcs:
         lines.append(f"· {s['doc']}（相似度 {s['score']:.4f}）\n  {s['text'][:200]}")
-    return "\n".join(lines) + _signal_line("hit", "search_policy", len(srcs))
+    return "\n".join(lines) + _signal_line("hit", "search_policy", len(srcs), usage=u)
 
 
 def ask_policy(question: str) -> str:
@@ -123,17 +125,18 @@ def ask_policy(question: str) -> str:
     ★ 同 search_policy：末尾带结构化命中标记（SIGNAL 协议，见上）。
     """
     data = _get_json("/chat", {"question": question, "use_rerank": True})
+    u = data.get("usage")        # ★ 同 search_policy：把服务内部的账带上去
     # ★ knowledge_hit 是本项目自己加的字段，它把「库里没有」和「服务异常」分开。
     #   不看它，模型收到的就只是一句冷冰冰的"我不知道"，
     #   而模型分不清来源时，最可能的行为是硬答。
     if not data.get("knowledge_hit", True):
-        return NO_HIT_TEXT + _signal_line("no_hit", "ask_policy")
+        return NO_HIT_TEXT + _signal_line("no_hit", "ask_policy", usage=u)
     src = data.get("sources", [])
     if src:
         doc_names = sorted({s.get("doc", "?") for s in src})
         return (f"{data['answer']}\n\n依据文件：{'、'.join(doc_names)}"
-                + _signal_line("hit", "ask_policy", len(src)))
-    return data.get("answer", "") + _signal_line("no_hit", "ask_policy")
+                + _signal_line("hit", "ask_policy", len(src), usage=u))
+    return data.get("answer", "") + _signal_line("no_hit", "ask_policy", usage=u)
 
 
 def health() -> dict:
@@ -167,13 +170,47 @@ SIGNAL_PREFIX = "[检索信号]"
 SIGNAL_KEY = "hit_status"       # ★ 脚本只认这个 key，别改名字
 
 
-def _signal_line(status: str, tool: str, n_src: int = 0) -> str:
+def _usage_fields(usage: dict | None) -> str:
+    """把 `/chat` 返回里的 usage 折进标记行 —— 让【工具内部的账】也能被记上。
+
+    ## 为什么必须带（2026-10-12 补）
+
+    agent 的账（`agent/token_cost.py`）原来只统计**它自己那几轮**的 LLM 调用；
+    而每次工具调用打的都是 `/chat`，服务内部还要跑 改写 / 精排 / 生成。
+    ⇒ 那部分 token **一次都没进账**（工具返回被 `str(out)` 整个丢掉），
+      于是"agent 比直打贵 1.99 倍"是**低估**的。
+    实测复核（cc 独立回放 13 次真实工具调用读 `/chat` 的 usage）：
+      `search_policy` 实测 ~514 token/次、`ask_policy` ~872 token/次、合计均值 ~734；
+      补进账后倍率约 **3.3×（2.8~3.7×）** —— 1.99 落在区间之外。
+    ⇒ 让工具**自己把账报上来**，是这条链上唯一既不用改服务、也不用改 MCP 传输的办法。
+
+    ## ★★ usage 为 None 时写 `?` 而不是 0
+
+    `service.py::_take_usage()` 返回 None 有两种可能：
+      · 整次请求**一次都没调模型**（离线层撞上向量短路，真的花 0）
+      · 调了，但**一次都没拿到 usage**
+    **这两者不能都写成 0** —— 填 0 会让"没拿到"看起来像"真的没用"
+    （`service.py` 里 `_record_usage` 的注释为同一件事写过一遍）。
+    所以这里写 `?`，脚本侧见到 `?` 要计入"工具侧账目缺失"，而不是计入 0。
+    """
+    if not usage:
+        return " tokens_total=? tokens_calls=?"
+    return (f" tokens_total={int(usage.get('total_tokens', 0))}"
+            f" tokens_calls={int(usage.get('n_calls', 0))}"
+            f" tokens_input={int(usage.get('input_tokens', 0))}"
+            f" tokens_output={int(usage.get('output_tokens', 0))}"
+            f" tokens_cache_hit={int(usage.get('cache_read', 0))}")
+
+
+def _signal_line(status: str, tool: str, n_src: int = 0,
+                 usage: dict | None = None) -> str:
     """生成末尾的命中标记行。
 
     status ∈ {"hit", "no_hit"}；no_hit 表示库里确实没有这条。
+    usage = `/chat` 响应里的 usage（工具内部花掉的 token），见 `_usage_fields`。
     """
     return (f"\n\n{SIGNAL_PREFIX} {SIGNAL_KEY}={status} "
-            f"tool={tool} n_sources={n_src}")
+            f"tool={tool} n_sources={n_src}" + _usage_fields(usage))
 
 
 def parse_signal(tool_text: str) -> str | None:
@@ -195,6 +232,40 @@ def parse_signal(tool_text: str) -> str | None:
                 v = part.split("=", 1)[1].strip()
                 return v if v in ("hit", "no_hit") else None
     return None
+
+
+def parse_signal_usage(tool_text: str) -> dict | None:
+    """从标记行里解析【工具内部花掉的 token】。解析不了就返回 None，不猜。
+
+    返回：{"total": int, "n_calls": int, "input": int, "output": int, "cache_hit": int}
+    返回 None 有三种情况，**都必须与"花了 0 token"区分开**：
+      · 没有标记行（旧版本 / 走了别的分支）
+      · 标记行里没有计量字段（更旧的版本）
+      · 标记行里写的是 `?` —— 工具明确说"这份账我没拿到"
+    ⇒ 调用方见到 None 要计入"工具侧账目缺失"，而不是计入 0。
+      这和 `service.py::_take_usage()` 那条"分清没拿到与真的是 0"是同一个原则。
+    """
+    if not tool_text or SIGNAL_PREFIX not in tool_text:
+        return None
+    for line in tool_text.splitlines():
+        line = line.strip()
+        if not line.startswith(SIGNAL_PREFIX):
+            continue
+        kv: dict[str, str] = {}
+        for part in line[len(SIGNAL_PREFIX):].split():
+            if "=" in part:
+                k, _, v = part.partition("=")
+                kv[k.strip()] = v.strip()
+        if "tokens_total" not in kv or kv["tokens_total"] == "?":
+            return None                      # 没字段 / 明确"没拿到" —— 都不是 0
+        try:
+            return {"total": int(kv["tokens_total"]),
+                    "n_calls": int(kv.get("tokens_calls", 0)),
+                    "input": int(kv.get("tokens_input", 0)),
+                    "output": int(kv.get("tokens_output", 0)),
+                    "cache_hit": int(kv.get("tokens_cache_hit", 0))}
+        except ValueError:
+            return None                      # 字段坏了也不猜
 
 
 # ★★ 这就是【唯一源】：MCP 侧的 tools/list 和 bind_tools 侧的描述都从这里派生。
