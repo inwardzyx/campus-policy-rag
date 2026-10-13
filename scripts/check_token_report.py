@@ -176,26 +176,56 @@ def main() -> int:
         hits = [x for x in d_list if x["n_calls"] < 3]
         miss = [x for x in d_list if x["n_calls"] >= 3]
 
-        # 声称值 → 用同一个函数从数据算出来。凡是报告里写了 x，
-        # 就在这里用 (名称, 报告里写的数, 算出来的数) 三元组登记。
+        # ★★ 2026-10-13 改：声称值**从报告正文里抽**，不再在这里硬编码。
+        #
+        #   原来这里是 (名称, 报告里写的数, 算出来的数) —— 中间那个数是【抄进来的常量】。
+        #   后果：它其实是"报告正文的副本"，正文漂了它不知道。
+        #   实测（同一份报告）：正文写着缓存命中率 **66.5%**（22139/33281），
+        #   而数据早就是 **61.2%**（20475/33455）—— 本脚本照样 exit 0。
+        #   ⇒ 一个把被检查对象抄一份到自己家里的检查器，检查的是它自己。
+        #
+        #   现在：正则从**报告文本**里抠出它写的那个数（抠不到就报"正文里抽不到"），
+        #   再和从 JSON 现算的值比。正文一漂就红。
+        txt = REPORT.read_text(encoding="utf-8")
+
+        def grab(pat: str, scale: int = 1):
+            """从报告正文里抠出它写的那个数；抠不到返回 None（→ 报错，不静默放过）。"""
+            m = re.search(pat, txt)
+            return None if not m else int(round(float(m.group(1)) * scale))
+
         claims = [
-            ("直打均值", 957, round(d_tot)),
-            ("agent 均值", 1900, round(a_tot)),
-            ("拒答 input 均值", 633,
+            ("直打均值",
+             grab(r"\*\*均值：直打 (\d+) token/题"), round(d_tot)),
+            ("agent 均值",
+             grab(r"\*\*均值：直打 \d+ token/题\s*agent (\d+) token/题"), round(a_tot)),
+            ("拒答 input 均值",
+             grab(r"\| 硬短路拒答（没调生成） \| \d+ \| (\d+) \|"),
              round(sum(x["input_tokens"] for x in hits) / len(hits)) if hits else 0),
-            ("应答 input 均值", 831,
+            ("应答 input 均值",
+             grab(r"\| 调了生成作答 \| \d+ \| (\d+) \|"),
              round(sum(x["input_tokens"] for x in miss) / len(miss)) if miss else 0),
-            ("拒答题数", 7, len(hits)),
-            ("应答题数", 13, len(miss)),
-            ("output 占比%×10", 120,
+            ("拒答题数",
+             grab(r"\| 硬短路拒答（没调生成） \| (\d+) \|"), len(hits)),
+            ("应答题数",
+             grab(r"\| 调了生成作答 \| (\d+) \|"), len(miss)),
+            ("output 占比%×10",
+             grab(r"output 占比 ([\d.]+)%", 10),
              round(a_out / a_tot * 1000) if a_tot else 0),
-            ("缓存命中率%×10", 612, round(a_cache / a_in * 1000) if a_in else 0),
-            ("直打侧调用总次数", 53, sum(x["n_calls"] for x in d_list)),
-            ("agent 侧调用总次数", 40, sum(x["n_calls"] for x in a_list)),
+            ("缓存命中率%×10",
+             grab(r"缓存命中率 ([\d.]+)%", 10),
+             round(a_cache / a_in * 1000) if a_in else 0),
+            ("直打侧调用总次数",
+             grab(r"直打侧 (\d+) 次 LLM 调用"), sum(x["n_calls"] for x in d_list)),
+            ("agent 侧调用总次数",
+             grab(r"agent 侧 (\d+) 次调用"), sum(x["n_calls"] for x in a_list)),
         ]
         for name, claimed, real in claims:
-            if claimed != real:
-                bad.append(f"  汇总「{name}」：报告写 {claimed}，数据算出 {real}")
+            if claimed is None:
+                bad.append(f"  汇总「{name}」：**报告正文里抽不到这个数** —— "
+                           f"这句话被改过说法、或整句被删了。"
+                           f"（正文是给人看的，但这里的判据靠它，得让两者都成立）")
+            elif claimed != real:
+                bad.append(f"  汇总「{name}」：报告正文写 {claimed}，数据算出 {real}")
     else:
         bad.append(f"  行数对不上：报告 {len(rows)} 行，"
                    f"direct {len(d_list)} / agent {len(a_list)}")
