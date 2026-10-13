@@ -154,17 +154,52 @@ def check_burst_then_429(api: str, burst: int) -> None:
         raise Failed(f"429 的原因应当是 rate，实际 {body}")
 
 
+def boot_id(api: str) -> str:
+    """拿服务本次进程的 boot_id（`/health` 报的）。
+
+    ★ 为什么需要它（盲审 F1，我自己写的假绿）：③⑦ 的声称是"**重启之后** X 还在"，
+      而第一版只检查"重启命令的退出码是 0"。实测 `--restart-cmd "true"`（什么也没重启）
+      ⇒ 七条断言**全绿**：计数当然没变，因为压根没重启。
+      ⇒ 判据必须能区分"重启过"与"命令返回 0"：boot_id 只在进程启动时生成一次，
+        重启后必须对不上；对得上就说明**这次重启没发生**，后面的结论一概不算。
+    """
+    code, _, body = http("GET", f"{api}/health")
+    if code != 200 or not isinstance(body, dict):
+        raise Failed(f"/health 取不到（{code}）")
+    got = body.get("boot_id")
+    if not got:
+        raise Failed("服务没有报 boot_id ⇒ 它是旧版本的进程（没重启到新代码？）")
+    return str(got)
+
+
+def redis_run_id(r) -> str:
+    """Redis 本次运行的 run_id（`INFO server` 里那个）。同一个用途：证明重启真的发生了。"""
+    info = r.info("server")
+    rid = info.get("run_id")
+    if not rid:
+        raise Failed("Redis 没报 run_id ⇒ 没法证明它真的重启过")
+    return str(rid)
+
+
 def check_counts_survive_restart(api: str, restart_cmd: str, burst: int, timeout: float) -> None:
     """★ 这一段是"用 Redis"的全部意义：进程重启后额度还得在。"""
     before = (http("GET", f"{api}/limits")[2] or {}).get("usage", {}).get("requests_used")
     if before is None or before < burst:
         raise Failed(f"重启前 requests_used={before!r}，至少应当是 {burst}（突发那几次没记账？）")
-    print(f"    重启前 requests_used={before}；执行：{restart_cmd}")
+    boot_before = boot_id(api)
+    print(f"    重启前 requests_used={before} boot_id={boot_before}；执行：{restart_cmd}")
     run_restart_cmd(restart_cmd)
     wait_ready(api, timeout, what="重启后就绪")
+    boot_after = boot_id(api)
+    if boot_after == boot_before:
+        raise Failed(
+            f"重启命令跑完了，但服务的 boot_id 没变（还是 {boot_before}）"
+            f"⇒ **这次重启没有真的发生**（比如命令是个 no-op、或重启的是别的容器）。"
+            f"这种情况下『重启后计数还在』是废话，不算证据。命令：{restart_cmd}")
     after = (http("GET", f"{api}/limits")[2] or {}).get("usage", {}).get("requests_used")
     if after != before:
         raise Failed(f"重启后计数变了（{before} → {after}）⇒ 配额其实存在进程内存里，不是 Redis")
+    print(f"    重启后 boot_id={boot_after}（变了 ⇒ 确实重启过），计数仍为 {after}")
 
 
 def run_restart_cmd(cmd: str, timeout: float = 180.0) -> None:
@@ -212,7 +247,9 @@ def check_daily_quota_speaks(api: str, r, who: str, day: str, burst: int, daily_
       断言"reason 必须是 daily_req"必红，而且红得**像是日额度没生效**（诊断指偏方向）。
     """
     r.hset(f"bucket:{who}", mapping={"tokens": burst, "ts": 1})   # ts=1 ⇒ refill 时补到容量上限
-    r.set(f"q:{day}:{who}:req", 999)
+    # ★ 带 ex（盲审 F10）：第一版 `r.set(...)` 不带过期 ⇒ 脚本自己往 Redis 里丢了一个
+    #   **永不过期**的 key。判据顺手制造垃圾，是很讽刺的一件事。
+    r.set(f"q:{day}:{who}:req", 999, ex=3600)
     code, headers, body = http("POST", f"{api}/chat", REFUSE_BODY)
     if code != 429:
         raise Failed(
@@ -222,15 +259,42 @@ def check_daily_quota_speaks(api: str, r, who: str, day: str, burst: int, daily_
     if reason != "daily_req":
         raise Failed(f"该按日额度拒（daily_req），实际 reason={reason!r}：{body}")
     ra = headers.get("Retry-After") or headers.get("retry-after")
-    if not ra or not (1 <= int(ra) <= 86_400):
-        raise Failed(f"日额度的 Retry-After 应当是到 UTC 零点的秒数，实际 {ra!r}")
+    # ★ 断言"到 UTC 零点"要真的算一遍（盲审 F6）：第一版只查 `1 <= ra <= 86400` ——
+    #   把实现改成返回常数 3600，那条断言**照样通过**，而"什么时候恢复"就变成假的。
+    expect = 86_400 - (time.time() % 86_400)
+    if not ra or abs(int(ra) - expect) > 10:
+        raise Failed(f"日额度的 Retry-After 应当是『到 UTC 零点』的秒数"
+                     f"（此刻约 {expect:.0f}），实际 {ra!r}")
 
 
-def check_usage_missing_is_visible(api: str) -> None:
-    lim = (http("GET", f"{api}/health")[2] or {}).get("limits", {})
-    if (lim.get("usage_missing") or 0) < 1:
-        raise Failed("拒答路径拿不到 usage，但 usage_missing 是 0 ⇒ 缺口被静默抹平了"
-                     "（本项目已记过同类：把'没拿到'记成 0，看起来像'真的没花钱'）")
+def check_usage_missing_is_visible(api: str, r, who: str, day: str, burst: int) -> None:
+    """⑥ 拿不到 usage 时，**这一次**必须留下痕 —— 用增量判，不看历史累计值。
+
+    ★★ 盲审 F3 打的就是这里的第一版：它断言 `usage_missing >= 1`。
+      可 `usage_missing` 是 Redis 里一个**全局且无 TTL 的累计指标**，
+      而脚本开头的 reset 只清 `who` 那三个键、不清指标 ——
+      于是只要**历史上**有过一次，这条断言就永远绿。
+      cc 做过 A/B：把被测行为改成"None 不留痕"（`limits.py` 里 `_bump_local` 那行换成 `pass`），
+      ⑥ 仍然 ✓；只有先把 `metric:usage_missing` 删掉，它才变红。**那是一条假判据。**
+      ⇒ 现在读基线 → 触发一次"必然拿不到 usage"的请求 → 要求 **+≥1**。
+    """
+    def metric() -> int:
+        v = r.get("metric:usage_missing")
+        return int(v) if v is not None else 0
+
+    # 保证这次请求能过闸门（桶在前面几步已经被打空）
+    r.hset(f"bucket:{who}", mapping={"tokens": burst, "ts": 1})
+    m0 = metric()
+    code, _, body = http("POST", f"{api}/chat", REFUSE_BODY)
+    if code != 200:
+        raise Failed(f"为验 ⑥ 发的这次请求被闸门挡了（{code}）：{body}")
+    m1 = metric()
+    if m1 <= m0:
+        raise Failed(
+            f"这次请求必然拿不到 usage（拒答路径不调模型），但 usage_missing 没涨"
+            f"（{m0} → {m1}）⇒ 缺口被静默抹平了"
+            f"（本项目已记过同类：把『没拿到』记成 0，看起来像『真的没花钱』）")
+    print(f"    usage_missing {m0} → {m1}（增量口径；历史累计值不作数）")
 
 
 def wait_redis(r, timeout: float = 60.0) -> None:
@@ -297,10 +361,18 @@ def check_counters_survive_redis_restart(api: str, r, who: str, day: str,
         raise Failed(f"重启前就找不到状态（{req_key}={before_req!r} buckets={before_bucket!r}）"
                      f" —— 前几步没把状态写进 Redis？")
     errs_before = (http("GET", f"{api}/health")[2] or {}).get("limits", {}).get("store_errors", 0)
-    print(f"    重启前：{req_key}={before_req}，桶={before_bucket}；执行：{cmd}")
+    run_before = redis_run_id(r)                 # ★ 证明"重启真的发生了"（盲审 F1）
+    print(f"    重启前：{req_key}={before_req}，桶={before_bucket}，"
+          f"Redis run_id={run_before[:8]}；执行：{cmd}")
 
     run_restart_cmd(cmd)
     wait_redis(r)
+    run_after = redis_run_id(r)
+    if run_after == run_before:
+        raise Failed(
+            f"重启命令跑完了，但 Redis 的 run_id 没变（还是 {run_before[:8]}）"
+            f"⇒ **Redis 并没有真的重启**，那么『重启后额度还在』是废话，不算证据。"
+            f"命令：{cmd}")
 
     after_req = r.get(req_key)
     if after_req is None:
@@ -359,6 +431,8 @@ def main() -> int:
         print(f"✗ 连不上 Redis（{args.redis}）：{e}")
         return 2
 
+    ran: list[str] = []          # ★ 只记"真的跑过并通过"的项（盲审 F2：跳过的绝不许被算进结论）
+    skipped: list[str] = []
     try:
         print("── 等服务就绪 ──")
         wait_ready(api, args.ready_timeout)
@@ -373,17 +447,21 @@ def main() -> int:
 
         print("── ① 限流存储必须是 redis ──")
         lim = check_store_is_redis(api, args.fail_mode)
+        ran.append("①")
         print(f"  ✓ store=redis store_ok=True fail_mode={lim['fail_mode']}")
 
         print(f"── ② 突发 {args.burst} 次后必须 429 ──")
         check_burst_then_429(api, args.burst)
+        ran.append("②")
         print("  ✓ 429 + Retry-After + reason=rate")
 
         if args.restart_cmd:
             print("── ③ 重启服务后日计数还在（Redis 的全部意义）──")
             check_counts_survive_restart(api, args.restart_cmd, args.burst, args.ready_timeout)
-            print("  ✓ 重启前后计数一致")
+            ran.append("③")
+            print("  ✓ 确实重启过，且重启前后计数一致")
         else:
+            skipped.append("③（没给 --restart-cmd）")
             print("── ③ 跳过：没给 --restart-cmd（本机跑可以给一个重启脚本）──")
 
         print("── ④ 计数确实在 Redis 里 ──")
@@ -392,30 +470,46 @@ def main() -> int:
         if not who or not day:
             raise Failed(f"/limits 没报出 who/day：{usage!r}")
         check_redis_holds_counters(r, who, day)
+        ran.append("④")
         print(f"  ✓ q:{day}:{who}:req 在 Redis 里，且桶/计数都有 TTL")
+
+        # ★ ⑥ 必须排在 ⑤ 前面：⑤ 会把日用量写成 999，之后任何请求都会被 429 挡在
+        #   闸门外面、进不到管道，而 ⑥ 需要的正是"一次真的走完管道、且拿不到 usage 的请求"。
+        print("── ⑥ 拿不到 usage 必须留痕（增量口径）──")
+        check_usage_missing_is_visible(api, r, who, day, args.burst)
+        ran.append("⑥")
+        print("  ✓ 这一次请求让 usage_missing 涨了")
 
         print("── ⑤ 日额度满了必须按 daily_req 拒 ──")
         check_daily_quota_speaks(api, r, who, day, args.burst, args.daily_req)
+        ran.append("⑤")
         print("  ✓ 429 + reason=daily_req + Retry-After≤86400")
-
-        print("── ⑥ 拿不到 usage 必须留痕 ──")
-        check_usage_missing_is_visible(api)
-        print("  ✓ usage_missing 有记数")
 
         if args.restart_redis_cmd:
             print("── ⑦ 重启 Redis 后额度状态还在（AOF 生效）──")
             check_counters_survive_redis_restart(api, r, who, day,
                                                  args.restart_redis_cmd, args.ready_timeout)
-            print("  ✓ 计数与令牌桶都还在，服务也重新看见了它")
+            ran.append("⑦")
+            print("  ✓ Redis 确实重启过，计数与令牌桶都还在，服务也重新看见了它")
         else:
+            skipped.append("⑦（没给 --restart-redis-cmd）")
             print("── ⑦ 跳过：没给 --restart-redis-cmd（本机可以给一个重启 Redis 的脚本）──")
     except Failed as e:
         print()
         print(f"✗ {e}")
         return 1
 
+    # ★★ 收尾只说**真跑过**的（盲审 F2）：第一版无条件宣称"全过……且 Redis 自己重启也不丢账"，
+    #    而 ③⑦ 被跳过时那句话是假的 —— 跳过 ≠ 通过，两者绝不能在输出上长得一样。
     print()
-    print("✓ 全过：这套配额在【真服务 + 真 Redis】下确实挡住了，且 Redis 自己重启也不丢账")
+    if skipped:
+        print(f"✓ 已跑的 {len(ran)} 项全过（{'、'.join(ran)}）")
+        print(f"⚠ 未验的 {len(skipped)} 项：{'、'.join(skipped)}")
+        print("  ⇒ 这两项要的是『重启之后还在』，没有重启命令就等于**没测** —— "
+              "本脚本不替它们下结论。")
+        return 0
+    print(f"✓ 七项全过：这套配额在【真服务 + 真 Redis】下挡住了，"
+          f"且服务重启、Redis 重启都不丢账（两项都验过『重启真的发生了』）")
     return 0
 
 
