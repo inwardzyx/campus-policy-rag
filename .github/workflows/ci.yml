@@ -287,6 +287,7 @@ jobs:
             --api http://127.0.0.1:8080 \
             --redis redis://127.0.0.1:6379/0 \
             --restart-cmd "$DC restart rag" \
+            --restart-redis-cmd "$DC restart redis" \
             --burst 3 --daily-req 5 --ready-timeout 600
 
       - name: 收尾：把 compose 栈拆掉

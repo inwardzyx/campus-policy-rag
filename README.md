@@ -1739,10 +1739,18 @@ Redis 服务本身、启动顺序（服务必须等 Redis 健康，否则那段�
    拿掉内存版的锁、拿掉 Redis 的 `EXPIRE`、去掉时钟回拨保护、拿掉 `chat()` 里的闸门、
    拿掉记账 —— 五处分别注入，对应用例**全部报红**。
    ★ 这一轮还当场抓出我自己写的**两条假用例**（拿掉实现后仍然绿），已重写，详见 `tests/test_limits.py` 里的注释。
-4. **端到端**：CI 的容器 job 里**真的** `docker compose up`，然后断言
-   `limits.store == "redis"`、突发用完返 429、**重启服务容器后日计数还在**
-   （这是"用 Redis"的全部意义）、直接改 Redis 里的额度就会被拦、
-   以及拿不到 usage 时 `usage_missing` 必须留痕。断言写在 `.github/workflows/ci.yml` 里，不在这里复述。
+4. **端到端**：CI 的容器 job 里**真的** `docker compose up`，然后跑 `scripts/verify_limits_e2e.py`
+   （本机对真 uvicorn + 真 Redis 跑的是**同一份**脚本，断言不抄第二遍）。它验七件事：
+   `limits.store == "redis"`、突发用完返 429 且带 `Retry-After`、**重启服务后日计数还在**、
+   计数确实在 Redis 里且 key 有 TTL、直接把 Redis 里的额度顶满就会被拦、
+   拿不到 usage 时 `usage_missing` 必须留痕，以及 **重启 Redis 之后额度状态还在**（AOF 生效）。
+
+   ★ 最后那条是刻意单独立的：它证明的是"**Redis 自己**也不会把额度丢了" ——
+     少了它，一个 `--appendonly no` 的 Redis 能让前面六条全绿，
+     真实后果却是"Redis 一重启，当天的额度就归零"（一个能被触发的绕过口子）。
+     脚本会**先查这台 Redis 有没有开持久化**再下结论：配置不对就说配置不对，
+     不许伪装成"数据丢了"（第一版就是先写键、后开 AOF，报出来像是判据在正常干活，
+     实际是测试自己的编排错了）。断言写在脚本与 `.github/workflows/ci.yml` 里，不在这里复述。
 
 ### 这一层**还没做**的（不藏）
 
