@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""核 CLAUDE.md 里「假绿的三种形态」那一节写的规矩，代码里到底有没有在遵守。
+r"""核 CLAUDE.md 里「假绿的三种形态」那一节写的规矩，代码里到底有没有在遵守。
 
 ★ 为什么要给**规矩文档**也配一条判据：
   这一族教训（假绿）全部来自"我自己写完自己读一遍"。
@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -39,6 +40,9 @@ ROOT = Path(__file__).resolve().parent.parent
 RULES = ROOT / "CLAUDE.md"
 # ★★ 本脚本自己也要被这套规矩管着，所以放在同一个列表里。
 SELF = "scripts/check_judge_rules.py"
+
+# ★ ① 确实误伤的脚本放这里，**每一行都要写明理由**（没有理由的白名单就是"关掉判据"）。
+CLAIM_SCAN_SKIP: dict[str, str] = {}
 
 
 def _judge_files() -> list[str]:
@@ -83,31 +87,57 @@ def check_rules_section(text: str) -> list[str]:
     return bad
 
 
+def _claim_shaped_tuples(src: str) -> list[tuple[int, str]]:
+    """找『三元组 + 首项字符串 + 次项数字字面量』—— 声称值的形状本身。
+
+    ★ 为什么用 ast 而不是正则：形状是结构，正则只能认风格（见下面的三版教训）。
+      这一条不会误伤 `t.get("done_at", 1)`（不是元组）、
+      也不会误伤 MUTATIONS 的 `(说明, 原文, 替换, 期望)`（四项）。
+    """
+    out: list[tuple[int, str]] = []
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return out
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Tuple) or len(node.elts) != 3:
+            continue
+        a, b = node.elts[0], node.elts[1]
+        if not (isinstance(a, ast.Constant) and isinstance(a.value, str)):
+            continue
+        if not (isinstance(b, ast.Constant) and isinstance(b.value, (int, float))
+                and not isinstance(b.value, bool)):
+            continue
+        label = a.value if len(a.value) <= 24 else a.value[:24] + "…"
+        out.append((node.lineno, f'("{label}", {b.value!r}, …)'))
+    return out
+
+
 def check_no_hardcoded_claims() -> list[str]:
-    """① 对账脚本里不许出现"声称值 = 抄来的常量"。
+    r"""① 对账脚本里不许出现"声称值 = 抄来的常量"。
 
-    ★★ 第一版这一条**全是误伤**，已按教训重写：
-      原来用 `\(\s*["'][^"']+["']\s*,\s*-?\d` 去抓 `("名字", 数字` 这个形状，
-      结果它把普通代码也匹配上了 —— 实际抓到的 5 条里：
-        `rd.rfind("\n", 0, m.start())`      ← 字符串里有个逗号跟数字
-        `t.get("done_at", 1)`               ← 同上
-        `x.get("missing_calls", 0)`         ← 同上
-      三条全是**函数调用里的默认参数**，没有一条是声称值。
+    ★★ 这条改到第三版了，三版的教训都留着（因为**同一类错最容易原样再犯**）：
+
+      第一版（line 正则）**全是误伤**：它用 `\(\s*["'][^"']+["']\s*,\s*-?\d` 去抓
+      `("名字", 数字` 这个形状，实际抓到的 5 条里 3 条是函数调用的默认参数
+      （`rd.rfind("\n", 0, m.start())`、`t.get("done_at", 1)`、`x.get("missing_calls", 0)`）。
       ⇒ **判据自己报假错，比没有判据更坏**（CLAUDE.md 已记过这条）。
-        教训：一个靠"括号里有个逗号加数字"来认声称值的判据，
-        必然把 `f(a, 1)` 全抓一遍。
 
-    ★ 那这一条还剩什么可机械判的？
-      诚实的答案是：**没有了**。声称值长什么样，只有语义知道。
-      所以改成：
-        只认一种【明确的、无歧义的】标记 —— 在 claims 这一处，
-        第二个元素是数字**字面量**且这一行同时出现 `round(` / `len(`。
-        仍然有误伤可能，但比第一版窄得多。
-      并且**只对含 claims/grab 的脚本生效** ——
+      第二版（同一行还得出现 `round(`/`len(`/`*`）把误伤压下去了，但**漏掉真货**：
+      声称值完全可以不带 round —— 2026-10-13 实测，往 claims 列表里插一行
+      `("伪造的声称值", 155, 1.0)`，第二版照样报绿。
+      ⇒ "看这一行有没有 round(" 是**认风格**，不是认结构。
+
+      第三版（本版）**认结构**：ast 找『三元组 + 首项字符串 + 次项数字字面量』。
+      声称值的形状就是它，与后面跟 `round(...)` 还是变量无关；
+      而函数调用默认参数不是元组、`MUTATIONS` 的元组是四项 ⇒ 都不误伤。
+
+    ★ 仍然判不了的：**语义** —— "这个 155 到底是不是抄来的"，只有人知道。
+      所以本判据只钉形状；确认是误伤就登记进 CLAIM_SCAN_SKIP 并写明理由。
+    ★ 并且**只对含 claims/grab 的脚本生效** ——
       没在维护"文档 ↔ 数据"断言的脚本不该被这条扫。
     """
     bad: list[str] = []
-    pat = re.compile(r"""\(\s*["'][^"']+["']\s*,\s*-?\d+\s*,""")
     scanned = 0
     for rel in _judge_files():
         f = ROOT / rel
@@ -118,15 +148,14 @@ def check_no_hardcoded_claims() -> list[str]:
         #   对它们之外的脚本扫这条，纯属制造噪音。
         if "claims" not in src and "grab(" not in src:
             continue
+        if rel in CLAIM_SCAN_SKIP:
+            continue
         scanned += 1
-        for i, line in enumerate(src.splitlines(), 1):
-            if not pat.search(line):
-                continue
-            if "round(" in line or "len(" in line or "*" in line:
-                bad.append(
-                    f"  {rel}:{i} 疑似把声称值硬编码成常量：{line.strip()[:80]}\n"
-                    f"    ⇒ 若这确实是「文档里写的数」，请改成从被检查对象解析（grab(pat)）。\n"
-                    f"      判据本身有误伤可能 —— 确认是误伤就把这条挪到脚本顶部白名单并写明理由。")
+        for lineno, shape in _claim_shaped_tuples(src):
+            bad.append(
+                f"  {rel}:{lineno} 疑似把声称值硬编码成常量：{shape}\n"
+                f"    ⇒ 若这确实是「文档里写的数」，请改成从被检查对象解析（grab(pat)）。\n"
+                f"      判据本身有误伤可能 —— 确认是误伤就把 {rel} 登记进 CLAIM_SCAN_SKIP 并写明理由。")
 
     # ★★★ 自检（反向验证逼出来的）：扫了 0 个脚本 ⇒ 报红，不许安静放过。
     #   实测把 `src = _read(f)` 改成 `src = ""` 之后，本函数一行都不扫，
@@ -276,14 +305,12 @@ def main() -> int:
     bad: list[str] = []
     hints: list[str] = []
 
-    if not RULES.exists():
-        print(f"✗ 缺 {RULES.relative_to(ROOT)}")
-        return 1
-    text = _read(RULES)
-
     r = check_rules_section(text)
     if r:
-        bad.extend(["✗ 规矩那一节还在"] + r)
+        # ★ 这句原来写的是「✗ 规矩那一节还在」—— 报红的时候说"还在"，
+        #   读的人（半年后的我）会以为是别的东西出错了，方向被这句话带偏。
+        #   ★ 教训：报错文案**要说"哪里不对"**，不是"哪个对象存在"。
+        bad.extend(["✗ 认不出 CLAUDE.md 里那一节规矩（它被改名/删了？）"] + r)
     else:
         print("✓ 规矩那一节还在")
 
