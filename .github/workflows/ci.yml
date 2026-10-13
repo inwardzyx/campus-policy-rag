@@ -32,6 +32,22 @@ jobs:
   fast:
     name: 快 job · 加载器（不装模型）
     runs-on: ubuntu-latest
+    # ★ Redis 服务容器（2026-10-13 加，起因是盲审 F5/R13）：
+    #   `tests/test_limits.py` 那 40 多个用例**之前一个都不在 CI 里跑** ——
+    #   而 README 把它列成"这些闸门不是摆设"的**第 1 条证据**，文件里还写着
+    #   "CI 里就是这么用 REQUIRE_REDIS 的"。两句话都是假的：线从来没接。
+    #   ⇒ 这里真起一个 Redis，并按下面那步用 REQUIRE_REDIS=1 跑，
+    #     这样"Redis 不可用"会变成红，而不是静默跳过一半用例（默认 23 passed / 15 skipped）。
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +104,14 @@ jobs:
 
       - name: 跑加载器测试
         run: python -m pytest tests/test_loader.py -v
+
+      - name: 跑限流/配额判定（两种存储各一遍，Redis 来自上面的 service 容器）
+        # ★ REQUIRE_REDIS=1：Redis 没起来要**红**，不许静默跳过 ——
+        #   这个开关的意义就是"别让一半判据悄悄不跑"。
+        env:
+          REQUIRE_REDIS: "1"
+          TEST_REDIS_URL: redis://127.0.0.1:6379/0
+        run: python -m pytest tests/test_limits.py -v
 
   # ----------------------------------------------------------------
   # 慢 job：装全套依赖 + 下模型，跑质量门

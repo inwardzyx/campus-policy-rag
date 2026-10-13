@@ -128,15 +128,39 @@ def main() -> int:
                     help="自检用：直接给路径，不走 git")
     A = ap.parse_args()
 
+    raw_stdin = ""
     if A.paths is not None:
         files = A.paths
         print(f"[push 路径检查] 直接检查 {len(files)} 条路径（自检模式）")
     else:
-        text = sys.stdin.read()
-        files = paths_being_pushed(text)
+        raw_stdin = sys.stdin.read()
+        files = paths_being_pushed(raw_stdin)
         print(f"[push 路径检查] 本次要推的提交涉及 {len(files)} 条路径")
 
     bad = check(files)
+    # ★★ 0 条路径不许报绿（盲审 F7，2026-10-13 补）：
+    #   这一条盯的是**判据自己瞎掉**的形态 —— 空 stdin（钩子协议变了、被谁重定向了、
+    #   或者 `git rev-list` 返回了空）会让这个检查一条路径都不查，然后打一句"✔ 没有命中"。
+    #   本项目已记过两次"扫不到东西的检查器一定在报绿"，而这是**最该挡的那道出口检查**。
+    #   ⚠️ 但要区分两种"0 条"（第一版没区分，于是把合法的"删远端分支"判成红）：
+    #     · `--paths` 自检模式给空列表 —— 调用方自己的事；
+    #     · stdin 里**全是**删除（local sha 全 0）—— 删远端 ref 本来就没有文件要检查；
+    #     · 其余情况下的 0 条 —— 协议/取数坏了，必须红。
+    if not files and A.paths is None:
+        def _is_delete(line: str) -> bool:
+            parts = line.split()
+            return len(parts) >= 2 and parts[1].startswith("0000")
+
+        lines = [ln for ln in raw_stdin.splitlines() if ln.strip()]
+        if lines and all(_is_delete(ln) for ln in lines):
+            print("[push 路径检查] 本次只是在删远端 ref（local sha 全 0）⇒ 没有文件要检查")
+            return 0
+        print("[push 路径检查] ✗ 从 stdin 算出来的待推路径是 **0 条** —— 这不对：")
+        print("  要么钩子的 stdin 协议变了（githooks(5)：ref 行走 stdin），")
+        print("  要么 `git rev-list/diff-tree` 没取到东西。")
+        print("  ⇒ 检查**没有覆盖任何文件**，所以不许报「没有命中禁推模式」。")
+        print("  自测命令：printf 'refs/heads/main <sha> refs/heads/main <sha>\\n' | bash .git/hooks/pre-push origin url")
+        return 1
     if not bad:
         print("[push 路径检查] ✔ 没有命中禁推模式")
         return 0
