@@ -162,6 +162,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          # ★ 为什么 docker job 也要 setup-python（它明明只在调 docker）：
+          #   最后那段端到端断言跑在**宿主机**上（它要用 `docker compose restart` 重启服务），
+          #   而那个脚本需要 redis-py 去读 key/TTL、并改写额度来取证。
+          #   版本与其他两个 job 保持一致，只为"同一套环境"这句话站得住。
+          python-version: "3.14"
+
+      - name: 装 redis 客户端（给宿主机上的端到端脚本用）
+        # ★ 为什么装在宿主机而不是把脚本塞进容器跑：
+        #   ③ 要"重启服务再看计数还在不在"，而容器里没有 docker CLI、重启不了自己。
+        #   装一个包，比在容器里想办法重启自己简单得多。
+        run: python -m pip install --quiet "redis==8.1.0"
+
       - name: 构建镜像
         run: docker build -t rag-cs:ci .
 
