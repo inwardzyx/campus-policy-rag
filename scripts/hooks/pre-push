@@ -89,6 +89,21 @@ echo
 #   ⇒ 别人 clone 下来没有这份数据。
 #   这里的处理是：**缺数据就说缺、且给出怎么补，不当成"检查通过"**。
 #   不能反过来"没数据就当过了" —— 那样这道防线在别人机器上是假的。
+#
+# ★★ 为什么下面那道"规矩判据"不按数据有无来跳过：
+#   它只读代码（scripts/*.py + CLAUDE.md），**不碰任何产物**。
+#   ⇒ 没有"在别人机器上变成空壳"的可能，必须无条件跑。
+#   （反过来看：今天刚踩过的坑就是这个 —— 一个扫不到东西的检查器照样报绿。）
+#   ⚠️ CLAUDE.md 按 .gitignore **不进仓库**。所以这道检查在别人 clone 下来时
+#   会报「找不到规矩那一节」⇒ 那是**正确地报红**，不是误报；
+#   真要单独用这份纪律，先把 CLAUDE.md 的〈假绿的三种形态〉一节抄进你自己的笔记。
+if (cd "$REPO" && "$PY" scripts/check_judge_rules.py); then
+    echo "[pre-push] 判据纪律 OK"
+else
+    echo "[pre-push] ★ 判据纪律：CLAUDE.md 写的规矩，代码里还没遵守（上面列出的那些）"
+    fail=1
+fi
+
 DATA="$REPO/agent/_token_cost.json"
 if [ -f "$DATA" ]; then
     if (cd "$REPO" && "$PY" scripts/check_token_report.py); then
