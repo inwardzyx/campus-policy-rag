@@ -17,15 +17,34 @@
     第 3 步  ★ 语义相似度分布 —— "同 gold"的题对 vs "不同 gold"的题对，
                                两组余弦能不能分开。分得开 ⇒ 语义缓存可行。
 
-    第 4 步  前置断言        —— 分不开就判实验无效并退出，不硬写结论
+    第 4 步  前置断言        —— 分不开就判实验无效，不硬写结论
 
 ★ 纪律（沿用 stale_doc_robustness.py 的教训）：
     这个脚本最容易输出的错误答案是 "0 命中" 和 "命中率 0%"。
     0 长得像 "系统很严谨"，但它其实只说明【这 20 道题是专门造的】，
     不说明真实流量没有重复。结论段会强制把这句话写出来。
 
+★★ 落盘（2026-10-13 补，起因是盲审指出"结论没有留痕"）：
+    这个脚本原来**只 print**，于是 README 里那两个数（`0.3136` / `0.7606`）
+    一直是"照脚本逻辑推断 + 换算"出来的，**没有实测输出文件**，也没进任何对账判据
+    ⇒ 语料一变它就悄悄过期，而"缓存被实验判死"这个结论**经不起追问一句"这数哪来的"**。
+    现在它写两份产物（都在 git 里，别人 clone 也能对账）：
+      · `evalset/report-cache-feasibility.json` —— 机器读：含**190 对原始余弦**，
+        所以对账方可以**自己重算**极值，不必信存下来的数
+      · `evalset/report-cache-feasibility.md`  —— 人读：所有数字都从上面那份生成，不手写
+    README:1226 那一行的数字由 `scripts/check_readme_numbers.py` **从产物里抽**并核对。
+
+★★ 退出码语义（也改了，理由很实在）：
+    原来是 `1 = 判死`（一个**成功的结论**）、`2 = 样本不足`、`0 = 两组可分`。
+    任何"跑通 = exit 0"的自动化接上去都会把结论**读反**：
+    绿灯的含义恰好是"缓存可行"。现在：
+      · `0` = 跑完并把产物落盘了（**判定在产物里**，不靠退出码传）
+      · `2` = 前置不成立（样本不足等），产物仍会落盘，但 verdict 写"样本不足"
+      · `1` = 真异常（读文件失败、模型起不来……），这种才该被当成"脚本坏了"
+
 跑法（仓库根目录）：
     D:\\Python-project\\.venv\\Scripts\\python.exe experiments/cache_feasibility.py
+    不需要 API key：全程只用 embedding 与余弦，一次生成都不调。
 """
 from __future__ import annotations
 
@@ -34,10 +53,13 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 QUESTIONS = REPO_ROOT / "evalset" / "questions.json"
+REPORT_JSON = REPO_ROOT / "evalset" / "report-cache-feasibility.json"
+REPORT_MD = REPO_ROOT / "evalset" / "report-cache-feasibility.md"
 sys.path.insert(0, str(REPO_ROOT))
 
 os.environ.setdefault("LANGSMITH_TRACING", "false")
@@ -45,6 +67,9 @@ os.environ.setdefault("LANGSMITH_TRACING", "false")
 import numpy as np                                   # noqa: E402
 
 import service as svc                                # noqa: E402
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 
 # ==================================================================
@@ -83,13 +108,73 @@ def cos(a: np.ndarray, b: np.ndarray) -> float:
 
 
 # ==================================================================
+# 落盘：JSON 是真相源，md 全部由它生成（所以两边不可能漂）
+# ==================================================================
+def write_artifacts(res: dict) -> None:
+    res["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    res["exit_code_semantics"] = ("0=跑完并落盘（判定见 verdict）；"
+                                 "2=前置不成立（样本不足）；1=脚本真异常")
+    REPORT_JSON.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    s, d = res["step3_same_gold"], res["step3_diff_gold"]
+    md = f"""# 实验报告：能不能给 rerank 加缓存（`experiments/cache_feasibility.py` 的产物）
+
+> ★ 这份文件是**生成的**，不要手改：所有数字来自 `report-cache-feasibility.json`，
+> 而 README 里那一行的数字由 `scripts/check_readme_numbers.py` 从这份 JSON **抽取并核对**。
+> 重跑：`python experiments/cache_feasibility.py`（不需要 API key）
+
+- 生成时间：{res['generated_at']}
+- 语料：入库 **{res['corpus_chunks']}** 块 / 拦下 **{res['corpus_rejected']}** 块
+- 题目：**{res['n_questions']}** 道（`evalset/questions.json`）
+
+## 结论
+
+**{res['verdict_zh']}**
+
+## 数字
+
+| 量的是什么 | 实测 |
+|---|---|
+| 精确重复（问题字符串一字不差） | **{res['step1_exact_duplicate_groups']}/{res['n_questions']}** 组（去重后 {res['step1_unique_questions']} 种问法） |
+| 候选集重复（top-5 集合完全相同） | **{res['step2_shared_groups']}/{res['n_questions']}** 组（能"省" {res['step2_n_saved_rerank_calls']} 次精排） |
+| 同 gold 题对的余弦 | {s['n']} 对：最小 **{s['min']:.4f}** / 中位 {s['median']:.4f} / 最大 {s['max']:.4f} |
+| 不同 gold 题对的余弦 | {d['n']} 对：最小 {d['min']:.4f} / 中位 {d['median']:.4f} / 最大 **{d['max']:.4f}** |
+| 两组分得开吗（前置断言） | **{'分得开' if res['step4_separable'] else '重叠 —— 分不开'}** |
+
+## 怎么读这个结论（★ 别读错）
+
+- **"精确重复 0/20" 是最弱的一条腿**：这 20 道题是**专门造出来避免重复**的，
+  0 只说明"这个题集里没有重复"，**不说明真实流量没有重复**。
+- **真正的判死理由是第 3/4 步**：同 gold 题对的最低余弦（{s['min']:.4f}）
+  **低于**不同 gold 题对的最高余弦（{d['max']:.4f}）⇒ 两组**重叠** ⇒
+  任何阈值都会误命中。而误命中的后果不是"慢"，是**用户问 A、系统端出 B 的答案，且一声不响**。
+- 更根本的一条（不依赖上面任何数字）：`rerank()` 的 prompt **含 query**
+  ⇒ 精排分依赖问题本身 ⇒ "候选集相同就复用"**在原理上**就是错的。
+
+## 原始数据
+
+{res['n_pairs']} 对题的全部余弦都在 `report-cache-feasibility.json` 的 `pairs_all` 里
+（含 `same_gold` 标记）—— 对账方可以**自己重算**上面那两个极值，不必信这份报告。
+"""
+    REPORT_MD.write_text(md, encoding="utf-8", newline="")
+    print(f"\n[落盘] {REPORT_JSON.relative_to(REPO_ROOT)}")
+    print(f"[落盘] {REPORT_MD.relative_to(REPO_ROOT)}")
+    print("       （README 那一行的数字由 check_readme_numbers.py 从 JSON 抽取核对）")
+
+
+# ==================================================================
 # 主流程
 # ==================================================================
 def main() -> int:
     qs = load_questions()
     svc.rag.startup()
-    print(f"[前置] 入库 {len(svc.rag.chunks)} 块，拦下 {len(svc.rag.rejected)} 块")
-    print(f"[前置] 题目 {len(qs)} 道\n")
+    res: dict = {
+        "n_questions": len(qs),
+        "corpus_chunks": len(svc.rag.chunks),
+        "corpus_rejected": len(svc.rag.rejected),
+    }
+    print(f"[前置] 入库 {res['corpus_chunks']} 块，拦下 {res['corpus_rejected']} 块")
+    print(f"[前置] 题目 {res['n_questions']} 道\n")
 
     # ---------------- 第 1 步：精确重复率 ----------------
     print("=" * 68)
@@ -99,14 +184,17 @@ def main() -> int:
     for q in qs:
         seen.setdefault(q["question"].strip(), []).append(q["id"])
     dup_groups = {k: v for k, v in seen.items() if len(v) > 1}
+    res["step1_unique_questions"] = len(seen)
+    res["step1_exact_duplicate_groups"] = len(dup_groups)
     print(f"去重后 {len(seen)} 种问法 / 共 {len(qs)} 道题")
     if dup_groups:
         for text, ids in dup_groups.items():
             print(f"  重复：{ids} → {text}")
     else:
         print("精确重复：0 组")
-    print("\n★ 结论：精确字符串缓存【不可能有命中】，这一路直接判死。")
-    print("  （这是预期内的 —— 评测集本来就要避免重复，否则等于送分。）\n")
+    print("\n★ 结论：精确字符串缓存【在本题集上】不可能有命中。")
+    print("  （★ 注意这句话的适用范围 —— 评测集本来就要避免重复，否则等于送分；")
+    print("    它不说明真实流量没有重复。判死的真正依据在第 3/4 步。）\n")
 
     # ---------------- 第 2 步：候选集重复率 ----------------
     print("=" * 68)
@@ -119,6 +207,9 @@ def main() -> int:
     shared = {s: ids for s, ids in by_set.items() if len(ids) > 1}
     id2q = {q["id"]: q for q in qs}
     n_saved = sum(len(ids) - 1 for ids in shared.values())
+    res["step2_distinct_top5_sets"] = len(by_set)
+    res["step2_shared_groups"] = len(shared)
+    res["step2_n_saved_rerank_calls"] = n_saved
     print(f"不同的 top-5 集合：{len(by_set)} 种 / {len(qs)} 道题")
     print(f"共享同一集合的组：{len(shared)} 组")
     for s, ids in shared.items():
@@ -139,47 +230,64 @@ def main() -> int:
     vecs = embed_all(qs)
     ids = [q["id"] for q in qs]
 
+    pairs_all: list[dict] = []
     same_pairs, diff_pairs = [], []
     for a, b in itertools.combinations(ids, 2):
         s = cos(vecs[a], vecs[b])
-        (same_pairs if gold_key(id2q[a]) == gold_key(id2q[b]) else diff_pairs).append(
-            (a, b, s))
+        same = gold_key(id2q[a]) == gold_key(id2q[b])
+        pairs_all.append({"a": a, "b": b, "cos": round(s, 6), "same_gold": same})
+        (same_pairs if same else diff_pairs).append((a, b, s))
+    res["n_pairs"] = len(pairs_all)
+    res["pairs_all"] = pairs_all
 
-    def stat(name, pairs):
+    def stat(name, pairs, key):
         if not pairs:
             print(f"  {name}：0 对（无法比较）")
+            res[key] = {"n": 0, "min": None, "median": None, "max": None}
             return None
         vals = sorted(p[2] for p in pairs)
         n = len(vals)
         med = vals[n // 2]
         print(f"  {name}：{n} 对　最小 {vals[0]:.4f}　中位 {med:.4f}　最大 {vals[-1]:.4f}")
+        res[key] = {"n": n, "min": round(vals[0], 6), "median": round(med, 6),
+                    "max": round(vals[-1], 6)}
         return vals
 
     print(f"\n共 {len(ids) * (len(ids) - 1) // 2} 对题：")
-    vs = stat("同 gold", same_pairs)
-    vd = stat("不同 gold", diff_pairs)
+    vs = stat("同 gold", same_pairs, "step3_same_gold")
+    vd = stat("不同 gold", diff_pairs, "step3_diff_gold")
 
     # ---------------- 第 4 步：★ 前置断言 ----------------
     print("\n" + "=" * 68)
     print("第 4 步　★ 前置断言：两组分不分开？分不开就判实验无效")
     print("=" * 68)
     if not vs or not vd:
-        print("样本不足，无法判断（本次不出结论，退出）。")
+        print("样本不足，无法判断（本次不出结论）。")
+        res["step4_separable"] = None
+        res["verdict"] = "insufficient_samples"
+        res["verdict_zh"] = "样本不足，这次不出结论（不能靠『看起来像』硬写一个）"
+        write_artifacts(res)
         return 2
     # 分开的判据：同 gold 的【最小值】必须高于不同 gold 的【最大值】。
     # 只有完全 separable 才敢谈阈值；重叠就得靠更多数据，不能靠调阈值硬凑。
     sep = vs[0] > vd[-1]
+    res["step4_separable"] = bool(sep)
     print(f"同 gold 最低 {vs[0]:.4f}　vs　不同 gold 最高 {vd[-1]:.4f}")
     if not sep:
         print("\n★★ 实验结论：两组【重叠】⇒ 靠余弦阈值分不开同义问法和不同问法。")
         print("   ⇒ 语义缓存【不可行】，任何阈值都会误命中，直接判死。")
         print("   ⇒ 要做只能上 LLM 判等价（更贵）或人工定白名单，不在本实验范围。")
-        return 1
+        res["verdict"] = "overlap_kills_semantic_cache"
+        res["verdict_zh"] = ("判死：同 gold 与不同 gold 两组余弦【重叠】"
+                             "⇒ 任何阈值都会误命中，语义缓存不可行")
+        write_artifacts(res)
+        return 0                      # ★ 0 = 跑完并落盘（判定在产物里，见 docstring）
     print("\n两组完全 separable ⇒ 阈值可选，落在中间即可。")
 
     print("\n各阈值下的语义缓存表现（命中 = 与已问过的某题余弦 ≥ 阈值）：")
     print(f"  {'阈值':>6}  {'命中数':>6}  {'命中率':>8}  {'误命中':>6}  说明")
     best = None
+    sweep = []
     for th in (0.99, 0.97, 0.95, 0.92, 0.90, 0.85, 0.80):
         hit = wrong = 0
         order = [q["id"] for q in qs]
@@ -197,10 +305,19 @@ def main() -> int:
         rate = hit / len(qs) * 100
         note = "安全" if wrong == 0 else f"⚠ 有 {wrong} 次答案会错"
         print(f"  {th:>6.2f}  {hit:>6}  {rate:>7.1f}%  {wrong:>6}  {note}")
+        sweep.append({"threshold": th, "hits": hit, "wrong": wrong})
         if wrong == 0 and (best is None or hit > best[1]):
             best = (th, hit, rate)
+    res["step5_threshold_sweep"] = sweep
     if best:
         print(f"\n★ 最优安全阈值 {best[0]:.2f}：命中 {best[1]}/{len(qs)}（{best[2]:.1f}%），0 误命中。")
+        res["verdict"] = "separable"
+        res["verdict_zh"] = (f"两组可分：最优安全阈值 {best[0]:.2f}，"
+                             f"命中 {best[1]}/{len(qs)}，0 误命中")
+    else:
+        res["verdict"] = "separable_but_no_safe_threshold"
+        res["verdict_zh"] = "两组可分，但扫过的阈值里没有一条做到 0 误命中"
+    write_artifacts(res)
     return 0
 
 

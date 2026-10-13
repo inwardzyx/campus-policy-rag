@@ -86,6 +86,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -154,7 +155,20 @@ REFUSAL_REPORT = "evalset/report-agent-refusal-regression.md"
 #   ② truncated 必须为 0 —— 有题触到 MAX_ROUNDS 就说明这批数据有截断
 TOKEN_REPORT = "evalset/report-token-cost.md"
 
-EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT]
+# ---- 类型四：缓存可行性（**负结果**）报告 ----
+#   起因（2026-10-13）：这份结论三天前就有了，但脚本**只 print**，
+#   于是 README 里那两个数（0.3136 / 0.7606）一直是"照脚本逻辑推断"出来的，
+#   既没有实测输出、也不在任何判据的射程内 —— 语料一变它会悄悄过期，
+#   而"缓存被实验判死"这个结论**经不起追问一句『这数哪来的』**。
+#   ⇒ 现在脚本落盘两份（md 给人看、json 给机器读），并在这里立三条不变量：
+#     ① `verdict` 必须与 `step4_separable` **自洽** —— 判定不能和数字相反
+#        （这个脚本原来的退出码 `1 = 判死` 就是同一个坑的另一种形态：很容易被读反）
+#     ② `n_pairs` 必须等于 C(n_questions, 2) —— 分母对不上说明题集变了而产物没重跑
+#     ③ 两组极值必须能**从 `pairs_all` 重算出来** —— 能重算的量，就别信存下来的那个
+CACHE_REPORT = "evalset/report-cache-feasibility.md"
+CACHE_REPORT_JSON = "evalset/report-cache-feasibility.json"
+
+EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT, CACHE_REPORT]
 ARTIFACTS = ARTIFACTS + EXTRA_ARTIFACTS
 
 
@@ -300,6 +314,78 @@ def _check_token_report(rel: str, text: str) -> list[str]:
     return errs
 
 
+def _check_cache_report(rel: str, text: str) -> list[str]:
+    """缓存可行性报告的判据（三条不变量，都是真实的失效模式）。
+
+    ★ 为什么这份"负结果"也值得配判据（而不是"反正结论是不做"）：
+      它现在是 README〈被实验否掉的想当然〉里被引用的**证据**。
+      证据没有留痕、没有判据 ⇒ 语料一变它就悄悄过期，而结论还在那里挂着。
+      "不做某个功能"和"做了某个功能"一样需要一个能被检查的落点。
+    """
+    errs: list[str] = []
+    jp = REPO_ROOT / CACHE_REPORT_JSON
+    if not jp.exists():
+        return [f"✗ {rel}：找不到它的数据源 {CACHE_REPORT_JSON} —— "
+                f"这份报告是**生成的**，光是 md 在、json 不在，说明有人手放了它"]
+    try:
+        d = json.loads(jp.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return [f"✗ {CACHE_REPORT_JSON}：不是合法 JSON（{e}）—— 跑到一半崩过？"]
+
+    # ① 判定必须与数字自洽
+    sep = d.get("step4_separable")
+    verdict = d.get("verdict", "")
+    if sep is None:
+        errs.append(f"✗ {CACHE_REPORT_JSON}：step4_separable 是 null（样本不足）—— "
+                    f"这次没有结论，README 不该引用它")
+    elif sep is True and verdict not in ("separable", "separable_but_no_safe_threshold"):
+        errs.append(f"✗ {CACHE_REPORT_JSON}：两组【可分】却写着 verdict={verdict!r} —— "
+                    f"判定与数字相反")
+    elif sep is False and verdict != "overlap_kills_semantic_cache":
+        errs.append(f"✗ {CACHE_REPORT_JSON}：两组【重叠】却写着 verdict={verdict!r} —— "
+                    f"判定与数字相反（这正是把结论读反的形态）")
+
+    # ② 分母自洽：n_pairs 必须等于 C(n_questions, 2)
+    n = d.get("n_questions")
+    pairs = d.get("pairs_all") or []
+    if not isinstance(n, int) or n < 2:
+        errs.append(f"✗ {CACHE_REPORT_JSON}：n_questions={n!r} 不合理")
+    elif len(pairs) != n * (n - 1) // 2:
+        errs.append(f"✗ {CACHE_REPORT_JSON}：pairs_all 有 {len(pairs)} 对，"
+                    f"而 {n} 道题应当是 {n * (n - 1) // 2} 对 —— "
+                    f"题集变了而产物没重跑？")
+    if d.get("n_pairs") != len(pairs):
+        errs.append(f"✗ {CACHE_REPORT_JSON}：n_pairs={d.get('n_pairs')!r} "
+                    f"与 pairs_all 的长度 {len(pairs)} 对不上")
+
+    # ③ 极值必须能从原始对里**重算**出来（能重算的量，别信存下来的那个）
+    for key, flag in (("step3_same_gold", True), ("step3_diff_gold", False)):
+        got = d.get(key) or {}
+        vals = [p["cos"] for p in pairs if p.get("same_gold") is flag]
+        if not vals:
+            errs.append(f"✗ {CACHE_REPORT_JSON}：{key} 的原始对是空的")
+            continue
+        real_min, real_max = min(vals), max(vals)
+        if got.get("n") != len(vals):
+            errs.append(f"✗ {CACHE_REPORT_JSON}：{key}.n={got.get('n')!r}，"
+                        f"按 pairs_all 重算是 {len(vals)}")
+        if got.get("min") is None or abs(float(got["min"]) - real_min) > 1e-6:
+            errs.append(f"✗ {CACHE_REPORT_JSON}：{key}.min={got.get('min')!r}，"
+                        f"按 pairs_all 重算是 {real_min:.6f}")
+        if got.get("max") is None or abs(float(got["max"]) - real_max) > 1e-6:
+            errs.append(f"✗ {CACHE_REPORT_JSON}：{key}.max={got.get('max')!r}，"
+                        f"按 pairs_all 重算是 {real_max:.6f}")
+
+    # ④ md 与 json 同源：md 里必须出现 json 算出来的那两个极值
+    s, dd = d.get("step3_same_gold") or {}, d.get("step3_diff_gold") or {}
+    if s.get("min") is not None and f"{s['min']:.4f}" not in text:
+        errs.append(f"✗ {rel}：md 里找不到同 gold 最小值 {s['min']:.4f} —— "
+                    f"md 与 json 不同源（md 是生成的，出现这种情况说明有人手改了 md）")
+    if dd.get("max") is not None and f"{dd['max']:.4f}" not in text:
+        errs.append(f"✗ {rel}：md 里找不到不同 gold 最大值 {dd['max']:.4f} —— 同上")
+    return errs
+
+
 def check_one(rel: str) -> list[str]:
     """检查一份产物，返回问题清单（空 = 通过）。"""
     p = REPO_ROOT / rel
@@ -315,6 +401,8 @@ def check_one(rel: str) -> list[str]:
         return _check_refusal_report(rel, text)
     if rel == TOKEN_REPORT:
         return _check_token_report(rel, text)
+    if rel == CACHE_REPORT:
+        return _check_cache_report(rel, text)
 
     d = _extract(text)
     errs: list[str] = []

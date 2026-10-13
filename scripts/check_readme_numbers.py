@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -470,6 +471,57 @@ def _check_recall() -> list[str]:
                 "✗ 应答题 Recall@5：README 里找不到任何 x/15 形式且等于 15/15 的表述"
                 "（可能已被改成别的数）"
             )
+    return errs
+
+
+def _check_cache_feasibility() -> list[str]:
+    """README〈被实验否掉的想当然〉里那一行的缓存数字 ↔ 实验产物。
+
+    ★ 为什么要有它（2026-10-13）：那些数原来**根本没有落盘** —— 是"照脚本逻辑推断 + 换算"
+      出来的（两位独立审稿人分别指出）。而"缓存被实验判死"是 README 当**证据**引用的结论：
+      『多数人会凭直觉加缓存，写清楚为什么不可能比写我加了缓存值钱得多』。
+      证据没有出处 ⇒ 语料一变它就悄悄过期，而结论还挂在那儿。
+      ⇒ 实验现在落盘（`evalset/report-cache-feasibility.json`），这一行必须与它一致。
+    ★ 抽不到一律算错：措辞变了要说出来，不要静默当通过（这条洞本项目已记过多次）。
+    ★ 比整数：把两边都乘到整数再比，绕开浮点格式化那点事（0.313601 与 0.3136 本来就同源）。
+    """
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    jp = REPO_ROOT / "evalset" / "report-cache-feasibility.json"
+    if not jp.exists():
+        return ["✗ 缓存可行性：找不到 evalset/report-cache-feasibility.json —— "
+                "README 引用的那几个数就没有出处了"
+                "（先跑 experiments/cache_feasibility.py，它会落盘）"]
+    d = json.loads(jp.read_text(encoding="utf-8"))
+    s, dd = d["step3_same_gold"], d["step3_diff_gold"]
+
+    def grab(pat: str, scale: float = 1.0):
+        m = re.search(pat, readme)
+        return None if not m else int(round(float(m.group(1)) * scale))
+
+    claims = [
+        ("精确重复组数", grab(r"精确重复 \*\*(\d+)/\d+\*\*"), d["step1_exact_duplicate_groups"]),
+        ("候选集重复组数", grab(r"候选集重复 \*\*(\d+)/\d+\*\*"), d["step2_shared_groups"]),
+        ("同 gold 题对最低余弦（×10000）",
+         grab(r"同 gold 题对最低余弦 \*\*([\d.]+)\*\*", 10000), round(s["min"] * 10000)),
+        ("不同 gold 最高余弦（×10000）",
+         grab(r"不同 gold 最高 \*\*([\d.]+)\*\*", 10000), round(dd["max"] * 10000)),
+        ("题对数", grab(r"（(\d+) 对题"), d["n_pairs"]),
+    ]
+    errs: list[str] = []
+    for name, claimed, real in claims:
+        if claimed is None:
+            errs.append(f"✗ 「{name}」：README 正文里**抽不到这个数** —— "
+                        f"那句话被改过说法或删了（正文是给人看的，但判据靠它）")
+        elif claimed != real:
+            errs.append(f"✗ 「{name}」：README 写 {claimed}，产物算出 {real}")
+    # 分母也核一下：题集变了而 README 没跟着改，是最常见的漂法
+    m = re.search(r"精确重复 \*\*\d+/(\d+)\*\*", readme)
+    if m and int(m.group(1)) != d["n_questions"]:
+        errs.append(f"✗ 「精确重复的分母」：README 写 {m.group(1)}，"
+                    f"产物（questions.json 的题数）是 {d['n_questions']}")
+    # 判定方向也要一致：README 说"两组重叠/判死"，产物不能是"可分"
+    if d.get("step4_separable") is not False and "重叠" in readme:
+        errs.append("✗ 「判定」：README 写『两组重叠』，而产物说两组可分 —— 方向相反")
     return errs
 
 
@@ -915,6 +967,9 @@ def check() -> tuple[list[str], list[str]]:
     errors += _check_completed_list_metrics()
     errors += _check_recall()
     errors += _check_scale_ranks()
+    # ★ 缓存可行性（2026-10-13）：那一行的数字以前没有落盘，是"推断"出来的。
+    #   现在实验落盘了，README 就必须与产物一致 —— 否则"被实验判死"这个结论没有出处。
+    errors += _check_cache_feasibility()
     # ★ agent 侧（2026-10-12）：README 加了agent 那一节之后本脚本全绿，
     #   但 grep 过——它一个 agent 相关的数都不查。
     #   那是"没检查"不是"检查通过"。同一类事故的第 N 次：不查＝没有。
