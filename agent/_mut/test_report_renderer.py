@@ -85,6 +85,31 @@ EXPECTED = {
                  "剔掉服务硬短路后"],
         "must_not": [],
     },
+    #★ 2026-10-13 新增：逐遍硬答题号明细 + 跨遍稳定性。
+    #   这一节是响应"报告把 15.8%→12.5%→10.5% 叙述成在收敛"这个洞加的，
+    #   而它自己也有一个覆盖缺口：`make_fake` 原来 agent 侧逐题是空列表，
+    #   ⇒ 这一节在全部用例里都走"未算出"分支，测了个寂寞。
+    #   反向验证（删掉这一整节）必须报漏检，否则就是又一个假绿。
+    "M7_stability": {
+        #★ 断言必须锁【只有这一节才有】的结构（表头 + 那句结论）。
+        #   "并集"这个词报告别处也出现过，只拿它当判据就是在判"别的"。
+        #   ⚠️ 这份假数据里三遍题号【两两完全不重叠】⇒ 交集为空，
+        #     而真数据是"交集 1 题"。两个形状都要能过同一套判据，
+        #     否则判据就是照着真数据写的。
+        "must": ["逐遍硬答题号明细",
+                 "| 遍 | 硬答题数 | 题号 |",
+                 "**每遍都硬答的只有 0 题**",
+                 "不能读成改善",
+                 "两遍之间翻转的题数"],
+        "must_not": ["跨遍稳定**"],
+    },
+    # ★ 负向用例：三遍题号【完全一致】时，绝不能说"不能读成改善" ——
+    #   那才是真的稳定存在，此时该警告的反而是"只有 1 题稳定"之外的另一件事。
+    #   没有这条，"该报警时报、不该报时报"就是同一条判据的两个方向。
+    "M8_stable_across_runs": {
+        "must": ["**每遍都硬答的只有 3 题**", "q0", "q1", "q2"],
+        "must_not": ["不能读成改善"],
+    },
 }
 
 
@@ -115,8 +140,29 @@ def main() -> int:
 
     cases = build()
     bad = []
-    print(f"变异测试：{len(cases)} 个用例（守卫是否会被改坏）\n")
+
+    # ★★★ 用例缺失必须算失败（2026-10-13 补）。
+    #   这个洞是反向验证抓出来的：把新加的那一整节渲染删掉之后，
+    #   对应的用例 M7 **直接从输出里消失了**，而收尾仍然打印
+    #   「全部 N 个用例通过」、退出码仍是 0。
+    #   根因：循环遍历的是 make_fake.build() 返回的用例，
+    #   而【断言】住在 EXPECTED 里 —— 两边没有对账，
+    #   断言没配数据就等于这条判据从来没跑过。
+    #   ⇒ 判据的方向必须反过来：以 EXPECTED 为准，
+    #     少一条用例就报错，而不是"有多少跑多少"。
+    missing_cases = [k for k in EXPECTED if k not in cases]
+    missing_assert = [k for k in cases if k not in EXPECTED]
+    for k in missing_cases:
+        bad.append((k, f"★EXPECTED 里有断言，但 make_fake 没造这份数据"
+                         f"⇒ 这条判据根本没跑（它从来没被验证过）"))
+    for k in missing_assert:
+        bad.append((k, "★造了数据但没有断言 ⇒ 跑了但没人验"))
+
+    print(f"变异测试：{len(cases)} 个用例"
+          f"（断言 {len(EXPECTED)} 条）\n")
     for name, data in cases.items():
+        if name not in EXPECTED:
+            continue                      # 没有断言的，上面已记为 bad
         ok, problems = run_case(name, data)
         print(f"  {'[OK]  ' if ok else '[!!]  '}{name}")
         for p in problems:
@@ -137,7 +183,8 @@ def main() -> int:
     if bad:
         print(f"[!!] {len(bad)} 处不符 —— 守卫被改坏了")
         return 1
-    print(f"[OK] 全部 {len(cases)} 个用例通过")
+    print(f"[OK] 全部 {len(cases)} 个用例通过"
+          f"（断言 {len(EXPECTED)} 条，无缺失）")
     return 0
 
 

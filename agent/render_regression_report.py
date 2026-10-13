@@ -140,6 +140,48 @@ def main():
                               if x.get("answer_refused") is True))
     d_live_rate = [ref / n for ref, n in zip(d_live_ref, d_live_n) if n]
 
+    # ★★★ 2026-10-13 新增：硬答的【题号明细】与【跨遍稳定性】。
+    #
+    #   为什么加：报告原来只给每遍的硬答**数**（6/5/4），读起来像"在收敛"。
+    #   而实际逐题号一比就知道，三遍硬答的题**几乎完全不同**——
+    #   并集 11 题、三遍都硬答只有 1 题、8 题只在一遍里出现过。
+    #   ⇒ 那个"15.8%→12.5%→10.5%"不是同一批题在减少，是每遍换一批新的。
+    #   ⇒ 只报每遍的数字，会让人得出一个**看似有结论的错误结论**。
+    #
+    #   ★ 全部从 per_question 现算，题号来自 saw_no_hit + answer_refused，
+    #     与硬答数的定义同源（都在同一段判据里算），不会两套口径。
+    #   ★ 不手写题号：题集一改，手写的清单就是错的。
+    hard_ids_by_run: dict[str, list[str]] = {}
+    for idx, r in enumerate(runs, 1):
+        rid = str(r.get("run", idx))
+        rows = (per_q.get(rid) or {}).get("agent") or []
+        hard_ids_by_run[rid] = sorted(
+            x["id"] for x in rows
+            if x.get("saw_no_hit") and x.get("answer_refused") is False
+        )
+    _runs_with_ids = [k for k in hard_ids_by_run if hard_ids_by_run[k]]
+    if _runs_with_ids:
+        _union: set[str] = set()
+        for k in _runs_with_ids:
+            _union |= set(hard_ids_by_run[k])
+        _always = sorted(_union)  # 占位，下面用交集覆盖
+        _inter: set[str] = set(hard_ids_by_run[_runs_with_ids[0]])
+        for k in _runs_with_ids[1:]:
+            _inter &= set(hard_ids_by_run[k])
+        _always = sorted(_inter)
+        _only_once = sorted(q for q in _union
+                            if sum(q in hard_ids_by_run[k]
+                                   for k in _runs_with_ids) == 1)
+        _flip = {}
+        _ks = _runs_with_ids
+        for i in range(len(_ks)):
+            for j in range(i + 1, len(_ks)):
+                a, b = set(hard_ids_by_run[_ks[i]]), set(hard_ids_by_run[_ks[j]])
+                _flip[f"{_ks[i]}↔{_ks[j]}"] = len(a ^ b)
+    else:
+        _union, _always, _only_once, _flip = set(), [], [], {}
+    n_runs_with_ids = len(_runs_with_ids)
+
     # ★ 判据用例条数从判据模块真读，不手写。
     #   上一版这里手写着"8 条"，判据早就扩到 11 条而报告没跟上——
     #   手写的数字一定会掉队，这是本项目反复交的学费。
@@ -195,6 +237,27 @@ def main():
         verdict = (f"**发现硬答 {hard_txt} 题**：工具已经明确说了「库里没有」，"
                    f"模型仍然编了答案出来。这才是本次验收要找的回归。")
 
+    # ★★★ 关键：单遍之间不可比的那件事，必须写进 verdict，而不是只放在正文。
+    #   原来这里只报每遍的硬答**数**，读起来像"在收敛"——
+    #   而逐题号一比就知道三遍硬答的题几乎完全不同。
+    #   ⇒ 如果逐遍题号的交集很小，必须明说"这不是收敛，是每遍换一批题"，
+    #     否则读者一定会把6→5→4 读成改善。
+    stability_note = ""
+    if n_runs_with_ids >= 2 and len(_union) >= 1:
+        if _always:
+            stability_note = (
+                f"\n- ⚠️ **别把这几个数字读成「在收敛」**：三遍硬答的题**几乎完全不同** ——"
+                f"并集 {len(_union)} 题，而**每遍都硬答的只有 {len(_always)} 题**"
+                f"（{'、'.join(_always)}），只在一遍里出现的有 {len(_only_once)} 题。"
+                f"⇒ 硬答率从 {_runs_with_ids and a_hard[0] or 0:.1%} 到 "
+                f"{a_hard[-1]:.1%} 的变化，**主要是每遍换了一批题**，"
+                f"不是同一批题在减少。")
+        else:
+            stability_note = (
+                f"\n- ⚠️ **没有任何一道题是每遍都硬答的**（三遍并集 {len(_union)} 题，"
+                f"交集为空）⇒ 硬答率 {hard_rate} 反映的是**当次抽样的波动**，"
+                f"不是某个稳定存在的问题。")
+
     lines = [
         "# Agent 拒答回归验收报告",
         "",
@@ -209,8 +272,15 @@ def main():
         + (f"　（{hard_txt} 题 / 每遍）" if a_hard else "　（无信号，未观测）"),
         f"- 跑了 **{len(runs)}** 遍；全部请求错误数 **{errs}**"
         "（错误不计入分子分母，另计——把服务异常算成拒答能力差是口径错误）",
-        "",
     ]
+    # ★ 这段【必须真的进 lines】。
+    #   第一版我把 stability_note 算好放在上面，却忘了插进这里 ——
+    #   于是渲染出来的报告里什么都没有，而代码里"看起来已经处理了"。
+    #   这正是本项目记录过的死代码病（`_EVIDENCE` 两个出口都是 False）。
+    #   ⇒ 判据必须盯"这段文字真的出现在报告里"，而不只是"这段代码存在"。
+    if stability_note:
+        lines += [stability_note]
+    lines += [""]
     # ★ 单遍时必须把"为什么不下结论"摆在结论旁边，而不是只藏在 verdict 里。
     #   第六版重写判定时把这段警告弄丢了，变异测试 M2 抓出来的。
     if single_run:
@@ -262,6 +332,79 @@ def main():
         + f"，其中 {sum(a_undec)} 题判不出（空答案/工具错误提示等，"
           "已排除出分母而不是硬猜）。",
         "",
+        "### 逐遍硬答题号明细（为什么说它不是「在收敛」）",
+        "",
+    ]
+    # ★★ 条件渲染：只有真的算出逐遍题号才出这一节。
+    #   没有数据时硬打一张空表，会让人以为"跑了但没题"。
+    if n_runs_with_ids >= 1 and _union:
+        lines += [
+            "| 遍 | 硬答题数 | 题号 |",
+            "|---|---|---|",
+        ]
+        for k in _runs_with_ids:
+            ids = hard_ids_by_run[k]
+            lines.append(
+                f"| {k} | {len(ids)} | "
+                + ("、".join(f"`{i}`" for i in ids) if ids else "—") + " |"
+            )
+        lines += [
+            "",
+            f"- 三遍硬答的**并集** {len(_union)} 题，"
+            f"**每遍都硬答的只有 {len(_always)} 题**"
+            + ("（" + "、".join(f"`{i}`" for i in _always) + "）" if _always else "（空）")
+            + "。",
+            f"- 只在一遍里出现过的：{len(_only_once)} 题"
+            + ("（" + "、".join(f"`{i}`" for i in _only_once) + "）" if _only_once else "")
+            + " ⇒ 这部分**完全由当次抽样决定**，换个模型状态就是另一批。",
+        ]
+        if _flip:
+            lines.append(
+                "- 两遍之间翻转的题数（对称差）："
+                + "、".join(f"{kk} = **{vv}** 题" for kk, vv in _flip.items())
+                + "。"
+            )
+        lines.append("")
+
+        # ★★ 措辞必须按【交集大小】分岔，不能一律写"这是波动"。
+        #   反向验证抓出来的：如果三遍题号完全一致（真稳定存在），
+        #   却仍然说"不能读成改善"，那条警告就变成了噪音 ——
+        #   而噪音迟早被当摆设忽略掉，那比没有警告更坏。
+        #   ★ 判据：只有当"并集明显大于交集"（即每次换一批题）才说"别读成收敛"。
+        _flip_max = max(_flip.values()) if _flip else 0
+        _looks_unstable = (len(_union) >= 2 * max(len(_always), 1)
+                           or _flip_max > len(_always))
+        if n_runs_with_ids < 2:
+            lines += [
+                "★ 只跑了 1 遍，**无从判断稳定性** —— "
+                "上面那张表是当次抽样，不是可复现的结论。",
+                "",
+            ]
+        elif _looks_unstable:
+            lines += [
+                "★ **所以「" + " → ".join(f"{v:.1%}" for v in a_hard)
+                + "」不能读成改善。** 真正稳定的信号是**跨遍都硬答的那 "
+                + f"{len(_always)} 题**（"
+                + ("、".join(f"`{i}`" for i in _always) if _always else "无")
+                + "）—— 逐遍的硬答数落在抽样波动里，"
+                "而跨遍稳定的那部分才是可归因、可修复的对象。",
+                "",
+            ]
+        else:
+            lines += [
+                f"★ 与常见情形相反：这些题**跨遍稳定**"
+                f"（{len(_always)}/{len(_union)} 在每一遍都硬答，"
+                "题号也基本不换）⇒ "
+                "**不是抽样波动，是可复现的稳定失效**。",
+                "",
+            ]
+    else:
+        lines += [
+            "_（本次未算出逐遍硬答题号：数据里没有足够的 `saw_no_hit` 题，"
+            "或只跑了 1 遍而无从对比。）_",
+            "",
+        ]
+    lines += [
         "### ⚠️ 直打侧的文本拒答率必须拆开看",
         "",
         f"直打侧合并文本拒答率 {fmt_range(d_text)} 看着漂亮，"
