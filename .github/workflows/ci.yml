@@ -55,8 +55,15 @@ jobs:
         with:
           python-version: "3.14"      # ★ 引号不能省：不加引号 3.14 会被 YAML 当浮点数，成了 3.1
 
-      - name: 只装测试框架（kb/loader.py 只用标准库）
-        run: python -m pip install --upgrade pip pytest
+      - name: 只装测试框架 + redis 客户端（kb/loader.py 只用标准库；限流用例要 redis 客户端）
+        # ★ 为什么要装 redis（2026-10-13 栽过一次，CI run #48 快 job 红）：
+        #   这个 job 刻意不装 requirements.txt（那会拖进模型依赖），
+        #   但 `tests/test_limits.py` 需要 **redis 客户端**（不是服务）——
+        #   `_redis_ok()` 撞到 `ImportError` 就判成"Redis 不可用"，
+        #   而下面那步是 `REQUIRE_REDIS=1` ⇒ 直接失败。
+        #   ★ 这是**开关按设计工作**的样子：缺 Redis 不再静默跳过一半用例，
+        #     而是当场红。只是"客户端没装"这个原因看起来会像"服务没起来"。
+        run: python -m pip install --upgrade pip pytest "redis==8.1.0"
 
       - name: 验证 install_hooks.py 在 Linux 上也能用（不只是在 Windows 上）
         # ★ 为什么放在这个 job：它的环境**最接近「别人 clone 下来的样子」** ——
