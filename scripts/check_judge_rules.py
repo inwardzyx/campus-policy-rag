@@ -229,28 +229,106 @@ def check_mutate_two_sides() -> tuple[list[str], list[str]]:
     return bad, hint
 
 
+def _problem_collections(src: str) -> tuple[set[str], list[tuple[int, list[str]]]]:
+    """找出"本文件里被填充的问题集合"与"带非零退出的条件分支"。
+
+    返回 (被填充的变量名集合, [(行号, 该条件引用到的变量名)])。
+
+    ★ 为什么这么绕：判据要问的是【行为】——
+      "某个'这条变异没跑成 / 没检出'的集合，一旦非空就会让脚本非零退出"。
+      而名字叫 `skipped` 还是 `not_applied` 与行为无关（见下面第二版的教训）。
+      ⇒ 认两件事：
+        ① 名字在本文件里被**填充**过（`x = []` / `x.append()` / `x += [...]`）
+        ② 某个 `if` 的条件引用了这些名字，且分支体里有非零退出
+    """
+    populated: set[str] = set()
+    guards: list[tuple[int, list[str]]] = []
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return populated, guards
+
+    for node in ast.walk(tree):
+        # ① 被填充的集合：x = [...] / x += [...] / x.append(...)
+        if isinstance(node, ast.Assign):
+            if isinstance(node.value, (ast.List, ast.ListComp, ast.Set, ast.Dict)):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        populated.add(t.id)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
+            if isinstance(node.target, ast.Name):
+                populated.add(node.target.id)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in ("append", "add", "extend", "update") \
+                    and isinstance(node.func.value, ast.Name):
+                populated.add(node.func.value.id)
+
+        # ② 带非零退出的条件分支
+        if not isinstance(node, ast.If):
+            continue
+        if not _has_nonzero_exit(node.body):
+            continue
+        names = [n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)]
+        guards.append((node.lineno, names))
+    return populated, guards
+
+
+def _has_nonzero_exit(body: list[ast.stmt]) -> bool:
+    """这段语句体里有没有"非零退出"（return 非零 / sys.exit(非零) / raise SystemExit(非零)）。"""
+    for stmt in body:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant) \
+                    and isinstance(node.value.value, int) and node.value.value != 0:
+                return True
+            if isinstance(node, ast.Call):
+                fn = node.func
+                name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+                if name in ("exit", "quit") and node.args:
+                    a = node.args[0]
+                    if isinstance(a, ast.Constant) and a.value != 0:
+                        return True
+            if isinstance(node, ast.Raise) and node.exc is not None \
+                    and isinstance(node.exc, ast.Call):
+                fn = node.exc.func
+                if getattr(fn, "id", "") == "SystemExit" and node.exc.args:
+                    a = node.exc.args[0]
+                    if isinstance(a, ast.Constant) and a.value != 0:
+                        return True
+    return False
+
+
 def check_missing_case_is_failure() -> list[str]:
     """③ 变异脚本必须能对"【用例/变异自己消失了】"报错。
 
-    ★★ 第一版查 `for x in EXPECTED` 这个写法，报红了 `mutate_check_token.py`。
-      但读代码发现它用的是另一条等价路径：收尾打印 `len(MUTATIONS)`，
-      而**注入失败（skipped）已经 return 1** ——
-      也就是说"这条变异没跑到"它本来就当失败。
-      ⇒ 查变量名同样是查风格。
+    ★★ 这条改到第二版了，而第一版的错正好是它**自己写下的那句**：
+      「查变量名同样是查风格。」—— 第一版把 `for x in EXPECTED` 换成
+      "找 `skipped`/`missed` 这两个词所在的分支里有没有 return 1"，
+      可**那还是在查名字**。它原来报红过 `mutate_check_token.py`（用的是等价路径），
+      修完只解决了那一个文件。
 
-    ★ 改成查【行为】：脚本必须存在"把 skipped / 漏检 变成非零退出"的路径。
-      这才是今天真正修掉的那个洞的机制。
+      2026-10-13 实测栽在同一个坑里，而且很难看：
+      `mutate_check_numbers.py` 用的是 `not_applied` / `undetected`
+      （同样是"没注入上 / 没检出"，两个分支都 `return 1`），
+      于是我**只在那个文件里加了一句提到 `skipped` 这个词的注释**，
+      这条判据立刻从绿变红、**拦下了 push**，
+      而它给出的理由是"收集了 skipped/missed 但分支里没有非零退出" —— 纯属假话。
+      ⇒ 又一次证明：**读措辞的判据会报假错，而报假错的判据会被当成噪音关掉。**
 
-    ★★ 反向验证又逮到一个真洞（第一版写成这样）：
+    ★ 现在改成认结构（ast）：文件里必须存在"条件分支 + 分支内非零退出"，
+      且那个条件引用了本文件里**被填充过的集合**（`x = []` / `x.append()` / `x += [...]`）。
+      名字叫什么都不管 —— `skipped`、`not_applied`、`undetected` 一律平等。
+
+    ★ 已知边界（写清楚，免得下一个人以为它管得比实际宽）：
+      它保证的是**存在性**——"文件里有这条路"；**不保证**"每个集合都被这条路管着"。
+      实测：把 `mutate_check_numbers.py` 里 `not_applied` 那处的 `return 1` 拿掉、
+      另一处留着，本判据照样报绿。那不是漏检：哪个集合算"问题集合"只有语义知道，
+      要判全称就得认名字，而认名字正是这条判据栽过的那个坑。
+
+    ★ 第一版还有一个更早的洞（也留着当教训）：
         has_fail = re.search(r"\\b(skipped|missed)\\b[\\s\\S]{0,2000}?return 1", src)
-      —— 把 `mutate_check_token.py` 里那条 `print(✗ {len(skipped)} 条注入失败)`
-        整行删掉之后，本判据**照样报绿**。
-      原因：那 2000 字符的窗口跨得太远，扫到了文件**收尾处另一个 return 1**。
-      ⇒ 「后面有 return 1」不等于「这个列表会导致失败」。
-
-    ★ 改法：先在**同一个 if 块**里找。
-      判据 = 存在 `if skipped:` / `if missed:` 之类分支，
-      且该分支内（到下一个同级 `if` 为止）出现 `return 1`。
+      把 `mutate_check_token.py` 里那条 `print(✗ {len(skipped)} 条注入失败)` 整行删掉后，
+      本判据**照样报绿** —— 那个 2000 字符的窗口跨到了文件收尾处另一个 `return 1`。
+      ⇒ 「后面有 return 1」不等于「这个集合会导致失败」。
     """
     bad: list[str] = []
     scanned = 0
@@ -262,29 +340,13 @@ def check_missing_case_is_failure() -> list[str]:
             continue
         src = _read(f)
         scanned += 1
-        lines = src.splitlines()
-        has_list = re.search(r"\b(skipped|missed)\b", src) is not None
-        has_fail = False
-        for i, line in enumerate(lines):
-            if not re.match(r"\s*if\s+\w*(skipped|missed)\w*\s*:", line):
-                continue
-            # ★ 只看这个 if 块【内部】：缩进更深，直到遇到同级或更浅的语句
-            indent = len(line) - len(line.lstrip())
-            for j in range(i + 1, min(i + 40, len(lines))):
-                nxt = lines[j]
-                if not nxt.strip():
-                    continue
-                cur = len(nxt) - len(nxt.lstrip())
-                if cur <= indent:
-                    break          # 出块了
-                if "return 1" in nxt or "return 2" in nxt:
-                    has_fail = True
-                    break
-        if has_list and not has_fail:
+        populated, guards = _problem_collections(src)
+        if not any(set(names) & populated for _, names in guards):
             bad.append(
-                f"  {rel}：收集了 skipped/missed，但**那个 if 分支里没有非零退出**。\n"
-                f"    ⇒ 用例/变异自己消失了也会报'全部通过'。\n"
-                f"      在该分支内加 return 1。")
+                f"  {rel}：找不到『某个问题集合一旦非空 ⇒ 非零退出』的路径。\n"
+                f"    ⇒ 用例/变异自己消失了（没注入上、没检出）也会报'全部通过'。\n"
+                f"      改法：`if <那个集合>:` 的分支里加 return 1。\n"
+                f"      （本判据只看结构，不看变量叫什么名字）")
     if scanned == 0:
         bad.append(
             "  ③ 这一条扫了 **0 个变异脚本**（下限应为 1）——\n"
