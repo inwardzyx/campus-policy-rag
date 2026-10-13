@@ -317,8 +317,14 @@ jobs:
           [ -n "$keys" ] || { echo "::error::Redis 里没有配额 key"; exit 1; }
 
           echo "── ⑤ 把 Redis 里的日用量顶到上限 ⇒ 必须按 daily_req 拒（且 Retry-After 到 UTC 零点）──"
+          # ★ 为什么先要把令牌桶补满（踩过的坑）：闸门是**先查桶、再查日额度**，
+          #   而 RATE_PER_MIN=1 时桶在测试这段时间里几乎不补充（60 秒才 1 个）——
+          #   不补满的话这次请求会先撞在【速率】上，于是断言"reason 必须是 daily_req"必红，
+          #   而且红得像是"日额度没生效"（诊断把方向指偏了）。
+          #   直接把桶写满（ts=1 ⇒ refill 时 delta 巨大 ⇒ 补到容量上限）比 sleep 60 秒稳。
           read -r WHO DAY <<<"$(curl -sf "$API/limits" | python3 -c "import json,sys;u=json.load(sys.stdin)['usage'];print(u['who'],u['day_utc'])")"
           echo "who=$WHO day=$DAY"
+          docker compose exec -T redis redis-cli HSET "bucket:$WHO" tokens 3 ts 1 >/dev/null
           docker compose exec -T redis redis-cli set "q:$DAY:$WHO:req" 999 >/dev/null
           code=$(curl -s -D /tmp/hdr2.txt -o /tmp/r2.json -w '%{http_code}' -X POST "$API/chat" -H 'Content-Type: application/json' -d "$Q")
           echo "改写额度后：$code  $(cat /tmp/r2.json)"
