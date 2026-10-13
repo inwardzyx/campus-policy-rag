@@ -67,6 +67,9 @@ from mcp.probe_loop import MAX_ROUNDS, SYSTEM_PROMPT, run_one   # noqa: E402
 from mcp.tool_schemas import MODEL_SCHEMAS                      # noqa: E402
 from mcp.tools_impl import _get_json, health                     # noqa: E402
 from mcp.client import StdioMCPClient                            # noqa: E402
+# ★ print 里的 ⇒/✅/✗ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 # ★★★ 价格表必须带日期。DeepSeek 调过价，写一个没日期的数字就是在写猜测。
 #   换成你实际用的那天的价格；面试时说"按 X 月价格表"比说个数字可信。

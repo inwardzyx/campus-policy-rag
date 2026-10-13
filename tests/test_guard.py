@@ -616,7 +616,7 @@ def test_all_gates_fire_on_dirty_corpus(rag):
 
     为什么不能靠真实语料证明：
         防御性代码在干净输入上天然不触发，就像 WAF 不能用正常流量证明有效。
-        所以覆盖度只能用【注入的脏样本】证明 —— 见 tests/fixtures/dirty_inbox/README.md。
+        所以覆盖度只能用【注入的脏样本】证明 —— 见 tests/fixtures/dirty_inbox说明.md。
 
     这里走的是完整链路（load_documents → _guard），不是直接喂 dict，
     所以连 .md 解析、frontmatter、分块也一并被覆盖了。
@@ -804,6 +804,11 @@ _TOOLING_SCRIPTS = [
     ("scripts/check_artifact_sanity.py", []),
     ("scripts/check_token_report.py", []),
     ("scripts/check_push_paths.py", ["--paths", "README.md"]),   # 自检模式，不必喂 stdin
+    # ★ 2026-10-13 补两个：它们是钩子会调的脚本，而**上一版漏登记了**
+    #   （`check_judge_rules.py` 是 wb 当天新挂进 pre-push 的；
+    #     `check_file_refs.py` 是当天新加的）。漏登记 = 这道动态防线对它俩是空的。
+    ("scripts/check_judge_rules.py", []),
+    ("scripts/check_file_refs.py", []),
 ]
 
 
@@ -821,8 +826,81 @@ def test_tooling_script_does_not_crash_on_printing(rel, args):
     assert "UnicodeEncodeError" not in blob and "codec can't encode" not in blob, (
         f"{rel} 在非 UTF-8 的 stdout 下崩了 —— 这正是那 4 次事故的病根"
         f"（钩子会把崩溃读成'检查失败'，还打出一句假话）。\n"
-        f'修法：脚本开头加 sys.stdout.reconfigure(encoding="utf-8", errors="replace")\n'
+        f'修法：加自保 stdout —— 直接写 sys.stdout.reconfigure(encoding="utf-8", errors="replace")；\n'
+        f'      本模块会被 tests/ 导入的，改用 getattr(sys.stdout, "reconfigure", None) 那种写法。\n'
         f"退出码 {r.returncode}\n--- 输出尾部 ---\n{blob[-800:]}")
+
+
+# ★★ 静态的那一条（2026-10-13 补）：动态用例只能覆盖"不依赖模型/服务就能跑完"的脚本，
+#   而这一族病的载体远不止那几个 —— 实测 agent/render_regression_report.py 就在
+#   stdout 是管道时崩过（它崩在**写完文件之后**的收尾打印上，所以文件是对的、
+#   退出码却是 1 ⇒ 调用方读成"生成失败"）。
+#   所以再配一条机械可判的静态判据：
+#     **print 里出现 cp936 编不出来的字符，就必须在文件里自保 stdout。**
+#   为什么用 ast 只看 print 的实参：中文注释/docstring 满仓库都是，
+#   按"文件里有没有非 ASCII"来判会命中一切，那种判据第一件事就是被关掉。
+_UNENCODABLE_CARRIER_GLOBS = ("*.py", "scripts/**/*.py", "agent/**/*.py",
+                              "mcp/**/*.py", "kb/**/*.py")
+
+
+def test_scripts_that_print_unencodable_chars_guard_stdout():
+    """会 print cp936 编不出来的字符（⇒ ✅ ❌ ✗ ⚠ ✔ 🔒…）的脚本必须自保 stdout。"""
+    import ast
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parent.parent
+    skip = (".git", ".venv", "__pycache__", ".pytest_cache", "node_modules")
+    # 两种自保写法都算：直接调，或"本模块被 tests/ 导入"时的 getattr 形式
+    guards = ("sys.stdout.reconfigure", 'getattr(sys.stdout, "reconfigure"')
+
+    def bad_chars(text: str) -> set[str]:
+        out = set()
+        for ch in text:
+            if ord(ch) < 128:
+                continue
+            try:
+                ch.encode("gbk")           # stdout 被管道接住时用的就是这一族编码
+            except UnicodeEncodeError:
+                out.add(ch)
+        return out
+
+    carriers, offenders = 0, []
+    for pat in _UNENCODABLE_CARRIER_GLOBS:
+        for f in repo.glob(pat):
+            if not f.is_file() or any(p in f.parts for p in skip):
+                continue
+            src = f.read_text(encoding="utf-8", errors="replace")
+            try:
+                tree = ast.parse(src)
+            except SyntaxError:
+                continue
+            chars: set[str] = set()
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "print"):
+                    for a in ast.walk(node):
+                        if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                            chars |= bad_chars(a.value)
+            if not chars:
+                continue
+            carriers += 1
+            if not any(g in src for g in guards):
+                offenders.append(f"{f.relative_to(repo).as_posix()}"
+                                 f"（print 里有 {' '.join(sorted(chars))}）")
+
+    # ★ 下限断言（本项目已记过两次"扫不到东西的检查器一定在报绿"）。
+    assert carriers >= 8, (
+        f"只扫到 {carriers} 个『会 print cp936 编不出来的字符』的脚本 —— "
+        f"载体列表或 ast 解析坏了，这条判据正在假装自己检查过了。")
+    assert not offenders, (
+        "这些脚本会 print cp936 编不出来的字符，却没自保 stdout：\n  "
+        + "\n  ".join(offenders)
+        + "\n⇒ stdout 一旦是管道（钩子/CI/`| Select-Object`）就 UnicodeEncodeError，"
+          "退出码 1，而调用方会把它读成「检查失败」。修法二选一：\n"
+          "   ① 加 sys.stdout.reconfigure(encoding=\"utf-8\", errors=\"replace\")\n"
+          "   ② 本模块会被 tests/ 导入时，用 getattr(sys.stdout, \"reconfigure\", None)\n"
+          "      那种写法 —— pytest 早起的捕获层不一定有 reconfigure，\n"
+          "      直接调会让**所有测试**在收集阶段就崩（scripts/install_hooks.py 记过那次事故）")
 
 
 # ==================================================================

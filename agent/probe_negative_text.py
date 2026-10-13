@@ -44,6 +44,9 @@ from typing_extensions import TypedDict                # noqa: E402
 from agent.mcp_bridge import build_tools                # noqa: E402
 from mcp.client import StdioMCPClient                   # noqa: E402
 from mcp.tool_schemas import SOURCE_TOOLS               # noqa: E402
+# ★ print 里的 ⇒/✅/✗ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 NEGATIVE_TOOL = "get_my_grades"        # ★ 故意不在 SOURCE_TOOLS 里
 # 手写版 probe_loop.run_one 里那一行的原文（保持逐字一致，别改成"差不多"的意思）

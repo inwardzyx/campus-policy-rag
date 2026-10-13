@@ -37,6 +37,9 @@ os.environ["LANGSMITH_TRACING"] = "false"
 
 from langchain_core.messages import AIMessage, ToolCall  # noqa: E402
 from langgraph.prebuilt import ToolNode                # noqa: E402
+# ★ print 里的 ⇒/✅/✗ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 
 def make_ai_with(call: dict) -> AIMessage:

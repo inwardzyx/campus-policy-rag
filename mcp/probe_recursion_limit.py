@@ -25,6 +25,9 @@ if _ROOT not in sys.path:
 
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from typing_extensions import TypedDict  # noqa: E402
+# ★ print 里的 ⇒/✅/✗ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 
 # ==================================================================

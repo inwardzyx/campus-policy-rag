@@ -20,6 +20,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+# ★ print 里的 ⇒/✅/✗ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(_ROOT, "agent", "_refusal_regression.json")
@@ -311,7 +314,7 @@ def main():
         "",
         "### 为什么主指标不用「拒答率」",
         "",
-        "因为关键词判据做不到低假阳率。实测反例（`agent/probe_toolnode_errors.py` 同源探针）：",
+        "因为关键词判据做不到低假阳率。实测反例（`mcp/probe_toolnode_errors.py` 同源探针）：",
         "",
         "> 「我查不到具体的报销比例，但按往年惯例一般可以报销 80% 左右。」",
         "",

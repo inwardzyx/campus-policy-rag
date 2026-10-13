@@ -37,6 +37,14 @@ from kb.loader import (                                   # noqa: E402
     CLEAN_OP_FOOTER, CLEAN_OP_PREAMBLE, CLEAN_OP_TRUNCATE,
     _CHROME_RE, load_documents,
 )
+# ★ print 里的 ⇒/⚠/✔ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+#   ⚠️ 这里**必须**用 getattr 而不能直接调：本模块被 tests/test_guard.py 与
+#      tests/test_loader.py 导入，而 pytest 早起的捕获层不一定有 reconfigure
+#      ⇒ 直接调会让**所有测试**在收集阶段就崩（scripts/install_hooks.py 记过那次事故）。
+_reconf = getattr(sys.stdout, "reconfigure", None)
+if _reconf is not None:
+    _reconf(encoding="utf-8", errors="replace")
+
 
 DOCS_DIR = ROOT / "docs"
 

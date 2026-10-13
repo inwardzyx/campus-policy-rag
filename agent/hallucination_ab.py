@@ -71,6 +71,9 @@ from mcp.tools_impl import NO_HIT_TEXT, health       # noqa: E402
 from mcp.client import StdioMCPClient                # noqa: E402
 
 from agent.mcp_bridge import build_tools             # noqa: E402
+# ★ print 里的 ⇒/✅/✗ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 5 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 QS_FILE = os.path.join(_ROOT, "evalset", "agent_hallucination_questions.json")
 LEGAL_TOOLS = {t["name"] for t in SOURCE_TOOLS}
