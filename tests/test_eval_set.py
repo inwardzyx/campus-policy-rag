@@ -127,7 +127,10 @@ def test_no_answerable_missed(rag, monkeypatch):
     for q in _load():
         if q["type"] != "answer":
             continue
-        if not svc.chat(svc.ChatRequest(question=q["question"], use_rerank=False)).knowledge_hit:
+        # ★ 直连管道用 handle_chat()：它不含 HTTP 那道限流闸门。
+        #   本用例的语义是"离线层该命中的都命中"，与配额无关；
+        #   走 chat() 反而会被额度记账污染（105 道题会把日额度吃光）。
+        if not svc.handle_chat(svc.ChatRequest(question=q["question"], use_rerank=False)).knowledge_hit:
             missed.append(q["id"])
     assert not missed, f"应答题被拒答（漏答）：{missed}"
 
@@ -155,7 +158,7 @@ def test_clear_refusals_held(rag, monkeypatch):
     for q in _load():
         if q["type"] != "refuse" or q.get("boundary"):
             continue
-        if svc.chat(svc.ChatRequest(question=q["question"], use_rerank=False)).knowledge_hit:
+        if svc.handle_chat(svc.ChatRequest(question=q["question"], use_rerank=False)).knowledge_hit:
             bad.append(q["id"])
     # ★ 2026-10-10 判据变更：`assert not bad` → `bad == KNOWN_LEAK`。
     #   原来那句在 263 块语料上**永远不可能通过**（q16 必然越线），

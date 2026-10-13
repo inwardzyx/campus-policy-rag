@@ -36,6 +36,13 @@ fastapi==0.141.1
 uvicorn==0.53.0
 pydantic==2.13.5
 
+# 限流 + 日配额的存储（limits.py 用）
+# ★ 为什么是【直接依赖】而不是"要用再装"：配了 REDIS_URL 就走它，
+#   而"忘了装 redis 包"的症状是**限流直接失效**（import 失败 ⇒ 判成 store_down）：
+#   fail_mode=closed 下会变成"服务全拒"，open 下变成"完全没有限流" ——
+#   两种都不是想要的，所以让它在这一步就暴露，而不是上线之后才发现。
+redis==8.1.0
+
 # 测试（回归断言用，跑法见 README）
 pytest==9.1.1
 

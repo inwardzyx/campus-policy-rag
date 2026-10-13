@@ -63,7 +63,8 @@ import env_compat                                   # noqa: E402  ★ 必须放�
 env_compat.ensure_mmh3()                            # 本机 DLL 被策略拦截时的降级方案，见 env_compat.py
 env_compat.ensure_uuid_utils()                      # 同上，拦的是 uuid_utils（langchain 用它生成 trace id）
 from kb.loader import load_documents                # noqa: E402  知识库从 docs/ 加载，不再写死 RAW_DOCS
-from fastapi import FastAPI                         # noqa: E402
+import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
+from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import HTMLResponse          # noqa: E402
 from fastembed import TextEmbedding                 # noqa: E402
 from langchain_core.messages import HumanMessage    # noqa: E402
@@ -793,11 +794,37 @@ rag = RAG()
 # ==================================================================
 # ③ FastAPI：把函数变成 HTTP 接口
 # ==================================================================
+# ==================================================================
+# 限流 + 日配额：进口处的那道闸（实现在 limits.py）
+# ==================================================================
+# ★ 为什么服务层只留这三行：判定逻辑（令牌桶 / 日额度 / 故障模式）全部在 limits.py 里，
+#   它不 import service，可以脱离模型和 HTTP 单独测（tests/test_limits.py 跑了 38 个用例）。
+#   服务这边只负责一件事：**把 HTTP 请求翻译成"谁"**，然后在 /chat 前后各问一次。
+#
+# ★ 配置全走环境变量（.env / compose 都能给），默认值见 limits.Limits：
+#   REDIS_URL          给了就用 Redis（多进程共享），不给就用进程内内存（单进程）
+#   RATE_BURST / RATE_PER_MIN / DAILY_REQ_QUOTA / DAILY_TOKEN_QUOTA
+#   LIMIT_FAIL_MODE    closed（默认，存储挂了就拒绝服务=护钱包）| open（放行=保可用）
+#   TRUST_PROXY_HEADERS / ALLOW_CLIENT_ID_HEADER   身份怎么认，默认都不信（见 limits.client_id）
+LIMITER = limits_mod.build_limiter(os.environ, log=logger)
+
+
 # lifespan：服务启动时干一次（加载模型），关闭时收尾。
 # @ 开头的叫【装饰器】，它把下面那个函数"包装"一下交给框架 —— 你不用手动调用它。
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("服务启动中：加载模型 + 建库（只在启动时做一次）……")
+    # ★ 启动时把限流口径打出来。为什么值得单独一行日志：
+    #   限流配错（比如以为有 Redis 结果用了进程内存储）**不会报任何错**，
+    #   只会安静地"限额被放大 N 倍"。日志 + /health 是唯一能看见它的地方。
+    _st = LIMITER.stats()
+    logger.info("限流：存储=%s（可用=%s） 突发=%d/桶 速率=%g/分 日请求=%d 日token=%d 故障模式=%s",
+                _st["store"], _st["store_ok"], LIMITER.limits.burst, LIMITER.limits.per_min,
+                LIMITER.limits.daily_req, LIMITER.limits.daily_tokens, LIMITER.limits.fail_mode)
+    if _st["store"] == "memory":
+        logger.warning("★ 限流用的是【进程内存储】⇒ 只对单进程有效："
+                       "uvicorn 多 worker / 多副本下每个进程各算各的，配额会被放大。"
+                       "要真限流请设 REDIS_URL（docker compose 里已经配好）。")
     rag.startup()
     logger.info(f"就绪：{len(rag.chunks)} 块入库，拦下 {len(rag.rejected)} 块，"
                 f"耗时 {rag.boot_time:.1f} 秒")
@@ -866,7 +893,28 @@ def health():
             "chunks": len(rag.chunks),
             "rejected": len(rag.rejected),
             "load_errors": len(rag.load_errors),
-            "load_error_files": [Path(p).name for p in rag.load_errors]}
+            "load_error_files": [Path(p).name for p in rag.load_errors],
+            # ★ 2026-10-13 加：限流这一层现在是什么状态。
+            #   为什么非要放在 /health 里：限流配错（比如以为在用 Redis、
+            #   其实退回了进程内存储）**不会报错**，只会安静地把配额放大 N 倍。
+            #   部署完之后第一眼看的就是这个接口，所以口径必须出现在这里。
+            "limits": LIMITER.stats()}
+
+
+@app.get("/limits")
+def limits_status(request: Request):
+    """问一句"我这个客户端今天还能用多少"（运维与演示用）。
+
+    ★ 为什么这个接口本身**不设闸**：它只是读计数，没有成本；
+      而且被限流的人最需要知道的就是"我为什么被挡、什么时候恢复"。
+      挡住它等于把唯一的解释渠道也堵死。
+    ★ 它只返回**调用方自己**的用量 —— 不返回别人的，也不返回全局明细。
+    """
+    who = limits_mod.client_id(
+        request.client.host if request.client else None,
+        {k.lower(): v for k, v in request.headers.items()},
+        LIMITER.limits)
+    return {"usage": LIMITER.usage_today(who), "limits": LIMITER.stats()}
 
 
 @app.get("/guard-report")
@@ -880,8 +928,17 @@ def guard_report():
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, request: Request):
     """核心接口：问题进来 → 粗捞 → rerank → 生成 → 带出处返回
+
+    ★ 2026-10-13 加：**进口那道闸**（限流 + 日配额），顺序是"先问一次、干完再记账"。
+      为什么要拆成两层（`chat` 只做闸门与记账，活交给 `_answer`）：
+      `_answer` 里有 **5 个 return 点**（没就绪 / 精排拒答 / 粗捞拒答 / 生成失败 / 成功），
+      把记账写在每个 return 前面，就必然漏掉几个 —— 而漏掉的那个分支
+      （最可能是"拒答"）恰恰是刷子最爱走的。拆出来之后记账只有一处，漏不了。
+      ★ 拒答路径也计数：它照样花了改写 + 精排两次调用（见下面 _answer 里的注释）。
+      ★ 额度用尽返 429 且带 `Retry-After`；限流存储挂了返 503（见 limits.Decision.http_status）。
+      ★ `/health` 与 `/limits` **不设闸**：健康检查被限流挡住会变成"服务看起来死了"。
 
     ★ 2026-10-12 补：入口处先【丢掉】本线程上一次留下的 usage 残留。
       为什么必须有这一步：usage 是 `threading.local()` 累加的，而**清空只发生在
@@ -892,7 +949,32 @@ def chat(req: ChatRequest):
       在入口清一次，才是真正关掉这条路径的动作：残留只能害到"下一个请求"，而下一个请求
       在这里就把脏数据丢掉了。
     """
-    _take_usage()                      # ★ 丢弃残留（不是读取）—— 见 docstring
+    who = limits_mod.client_id(
+        request.client.host if request.client else None,
+        {k.lower(): v for k, v in request.headers.items()},
+        LIMITER.limits)
+    decision = LIMITER.check(who)
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=decision.http_status(),
+            detail={"reason": decision.reason, "detail": decision.detail},
+            headers={"Retry-After": str(decision.retry_after)})
+
+    resp = handle_chat(req)
+    usage = resp.get("usage") if isinstance(resp, dict) else getattr(resp, "usage", None)
+    LIMITER.record(who, usage)
+    return resp
+
+
+def handle_chat(req: ChatRequest):
+    """问答主体：**不含 HTTP 那道限流闸门**（HTTP 入口是上面的 `chat()`）。
+
+    ★ 为什么把它单独拎出来：闸门要 `Request` 对象（拿客户端身份），
+      而"直连管道"的调用方（评测集、回归测试、脚本）没有 HTTP 请求，
+      它们关心的是检索/拒答/生成的行为，不该被限额影响，也不该往额度里记账。
+      ⇒ 拆开之后：`chat()` = 闸门 + 记账，`handle_chat()` = 管道本身。
+    """
+    _take_usage()                      # ★ 丢弃残留（不是读取）—— 见 chat() 的 docstring
     t0 = time.time()
     if not rag.ready:
         return {"answer": "服务还在加载模型，请稍等几秒再试", "sources": [],

@@ -284,8 +284,8 @@ def test_usage_residue_from_a_failed_request_is_not_charged_to_the_next(monkeypa
             return "答"
 
     monkeypatch.setattr(svc, "rag", _StubRag())
-    resp = svc.chat(svc.ChatRequest(question="随便问一句",
-                                   use_rerank=False, use_rewrite=False))
+    resp = svc.handle_chat(svc.ChatRequest(question="随便问一句",
+                                           use_rerank=False, use_rewrite=False))
     got = (resp.usage or {}).get("total_tokens")
     assert got != 1998, (
         f"上一个请求的残留被算到这一个头上了：usage={resp.usage!r}"

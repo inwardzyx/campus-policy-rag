@@ -412,7 +412,8 @@ def test_refuse_when_rerank_scores_low(rag, monkeypatch):
     monkeypatch.setattr(rag, "_llm", _FakeLLM(
         '{"scores":[{"id":1,"score":1,"reason":"完全不相关"}]}'))
 
-    resp = svc.chat(svc.ChatRequest(question="图书馆几点关门？", use_rerank=True))
+    # ★ 直连管道用 handle_chat()：它不带 HTTP 那道限流闸门（见文件末尾的「限流与配额」组）。
+    resp = svc.handle_chat(svc.ChatRequest(question="图书馆几点关门？", use_rerank=True))
     assert resp.knowledge_hit is False, "精排分低于 5 却不拒答"
     assert resp.sources == [], "拒答时不该返回任何资料"
     assert "我不编" in resp.answer
@@ -424,7 +425,7 @@ def test_refuse_even_rerank_off(rag):
     以前的写法是"关掉 rerank 没分数可判断，只能照常生成" ——
     那等于网页上取消勾选一下，整个拒答机制就没了，而且 knowledge_hit 还是 true。
     这条断言守住：不管开关怎么拨，拒答都得在。"""
-    resp = svc.chat(svc.ChatRequest(question="图书馆几点关门？", use_rerank=False))
+    resp = svc.handle_chat(svc.ChatRequest(question="图书馆几点关门？", use_rerank=False))
     assert resp.knowledge_hit is False, "库里没有却没拒答，防线被绕过了"
     assert resp.sources == [], "拒答时不该返回任何资料"
     assert "我不编" in resp.answer
@@ -434,7 +435,7 @@ def test_hit_returns_sources(rag, monkeypatch):
     """库里有的 → 正常命中并返回出处（同样用人偶模型，不需要 API key）"""
     monkeypatch.setattr(rag, "_llm", _FakeLLM("（假模型返回，未真实调用）"))
 
-    resp = svc.chat(svc.ChatRequest(question="什么情况会被开除学籍？", use_rerank=False))
+    resp = svc.handle_chat(svc.ChatRequest(question="什么情况会被开除学籍？", use_rerank=False))
     assert resp.knowledge_hit is True, "库里明明有，却被当成没命中"
     assert len(resp.sources) > 0, "命中了却没给出处"
 
@@ -942,3 +943,158 @@ def test_signal_line_carries_tool_side_usage():
     old = "\n\n[检索信号] hit_status=no_hit tool=ask_policy n_sources=0"
     assert parse_signal(old) == "no_hit", "旧格式的命中判据被弄坏了"
     assert parse_signal_usage(old) is None, "旧格式不该被当成'花了 0 token'"
+
+
+# ==================================================================
+# ⑧ 限流 + 日配额：**接线**对不对（判定逻辑本身在 tests/test_limits.py）
+# ==================================================================
+# ★ 为什么两组分开：
+#   · tests/test_limits.py 测"判定对不对"（令牌桶/日额度/故障模式/身份），
+#     两种存储各跑一遍，38 个用例，不需要模型。
+#   · 本组只测"服务有没有真的把它接上"：HTTP 状态码、Retry-After、拒答也计数、
+#     被挡的请求不记账、存储挂了返 503 而 /health 不受影响。
+#   ⇒ 两组都要有：只测判定 ⇒ 接线断了没人知道；只测接线 ⇒ 判定细节测不到。
+#
+# ★ 为什么要 monkeypatch `svc.LIMITER`：
+#   模块级那个是**按环境变量建一次**的（本机 .env 里可能有 REDIS_URL），
+#   直接用会让用例之间互相污染。每个用例一份内存存储 + 小额度，才可复现。
+_REFUSE_Q = {"question": "图书馆几点关门？", "use_rerank": False}   # 库里没有 ⇒ 拒答，且不调模型
+
+
+class _BrokenStore:
+    """模拟"限流存储半死"（TCP 通但一调就炸）。"""
+
+    name = "broken"
+
+    def _boom(self, *_a, **_kw):
+        raise RuntimeError("connection refused (模拟)")
+
+    bucket_allow = get_daily = get_metric = _boom
+    incr_daily = bump = _boom
+
+    def ping(self):
+        return False
+
+
+@pytest.fixture
+def gate(monkeypatch, rag):
+    """返回一个工厂：`gate(burst=2, ...)` → (limiter, TestClient)。
+
+    ★ 必须依赖 `rag` fixture：本组打的是**真接口**，管道那段要能真跑
+      （拒答路径不调模型，所以不需要 key；这也是选 _REFUSE_Q 当素材的原因）。
+    """
+    from fastapi.testclient import TestClient
+    import limits as limits_mod
+
+    def make(**kw):
+        cfg = dict(burst=3, per_min=60.0, daily_req=5, daily_tokens=1000,
+                   fail_mode="closed", trust_proxy=False, allow_client_id=False)
+        cfg.update(kw)
+        lim = limits_mod.Limiter(store=limits_mod.InProcessStore(),
+                                 limits=limits_mod.Limits(**cfg))
+        monkeypatch.setattr(svc, "LIMITER", lim)
+        return lim, TestClient(svc.app)
+
+    return make
+
+
+def test_health_is_not_behind_the_gate(gate):
+    """/health 不设闸，且要把限流口径报出来。
+
+    ★ 为什么必须不设闸：健康检查被限流挡住 ⇒ 编排系统以为服务死了 ⇒
+      重启/摘流量，而实际上服务好好的。这是"防护把自己变成故障"的经典形态。
+    ★ 为什么必须报口径：限流配错（以为在用 Redis、其实退回进程内）**不报任何错**，
+      只会安静地把配额放大 N 倍 —— /health 是唯一看得见它的地方。
+    """
+    lim, client = gate(burst=1, per_min=0.0)
+    for _ in range(10):
+        assert client.get("/health").status_code == 200
+    assert lim.stats()["denied_rate"] == 0, "健康检查被算进了限流"
+    body = client.get("/health").json()
+    assert body["limits"]["store"] == "memory" and body["limits"]["fail_mode"] == "closed"
+    assert body["limits"]["store_ok"] is True
+
+
+def test_chat_429_carries_retry_after_and_reason(gate):
+    """突发打完 ⇒ 429 + Retry-After + 说清是哪一道闸。"""
+    lim, client = gate(burst=2, per_min=0.0)
+    codes = [client.post("/chat", json=_REFUSE_Q).status_code for _ in range(3)]
+    assert codes == [200, 200, 429], f"期望前两次 200、第三次 429，实际 {codes}"
+    r = client.post("/chat", json=_REFUSE_Q)
+    assert int(r.headers["Retry-After"]) >= 1, "429 必须带 Retry-After（否则调用方只能瞎重试）"
+    assert r.json()["detail"]["reason"] == "rate"
+
+
+def test_refusal_path_also_consumes_quota(gate):
+    """拒答也要记账 —— 它花了改写 + 精排两次调用，不是免费的。
+
+    ★ 这条盯的是一个很容易漏的接线：只在"答上来"的分支记账，
+      于是刷子只要专挑库里没有的问题，就能无限白嫖（而且看起来还挺礼貌）。
+    """
+    lim, client = gate(burst=10, per_min=0.0, daily_req=5)
+    r = client.post("/chat", json=_REFUSE_Q)
+    assert r.status_code == 200 and r.json()["knowledge_hit"] is False
+    got = client.get("/limits").json()["usage"]
+    assert got["requests_used"] == 1, f"拒答没进账：{got}"
+
+
+def test_daily_quota_429_and_retry_after_is_until_utc_midnight(gate):
+    lim, client = gate(burst=100, per_min=6000.0, daily_req=1)
+    assert client.post("/chat", json=_REFUSE_Q).status_code == 200
+    r = client.post("/chat", json=_REFUSE_Q)
+    assert r.status_code == 429 and r.json()["detail"]["reason"] == "daily_req"
+    assert 1 <= int(r.headers["Retry-After"]) <= 86_400, (
+        "日额度的 Retry-After 必须是『到恢复时刻』的秒数，不是随便一个常数")
+
+
+def test_blocked_requests_are_not_counted(gate):
+    """被挡掉的请求不再记账。
+
+    ★ 反了会很难看：每次被挡也 +1 ⇒ 额度越挡越少 ⇒ 这个客户端**永远回不来**，
+      而且 /limits 显示的数字会把自己的用量越推越高，看起来像被刷了。
+    """
+    lim, client = gate(burst=1, per_min=0.0)
+    assert client.post("/chat", json=_REFUSE_Q).status_code == 200
+    for _ in range(3):
+        assert client.post("/chat", json=_REFUSE_Q).status_code == 429
+    assert client.get("/limits").json()["usage"]["requests_used"] == 1
+
+
+def test_validation_error_does_not_consume_quota(gate):
+    """请求体不合法（422）不记账：pydantic 在进闸门之前就挡了，本来也没花钱。"""
+    lim, client = gate(burst=3, per_min=60.0)
+    assert client.post("/chat", json={"question": "啊" * 5000}).status_code == 422
+    assert client.get("/limits").json()["usage"]["requests_used"] == 0
+
+
+def test_store_down_is_503_and_health_survives(gate, monkeypatch):
+    """限流存储挂了 ⇒ /chat 返 503（护钱包），而 /health 照样 200。"""
+    lim, client = gate(burst=2)
+    monkeypatch.setattr(lim, "store", _BrokenStore())
+    r = client.post("/chat", json=_REFUSE_Q)
+    assert r.status_code == 503, f"存储挂了该返 503（我们自己坏了），实际 {r.status_code}"
+    assert int(r.headers["Retry-After"]) >= 1
+    assert client.get("/health").status_code == 200, "存储挂了不该把健康检查也拖下水"
+    assert client.get("/health").json()["limits"]["store_errors"] >= 1
+
+
+def test_two_clients_get_separate_budgets_when_identity_is_enabled(gate):
+    lim, client = gate(burst=1, per_min=0.0, allow_client_id=True)
+    a, b = {"X-Client-Id": "A"}, {"X-Client-Id": "B"}
+    assert client.post("/chat", json=_REFUSE_Q, headers=a).status_code == 200
+    assert client.post("/chat", json=_REFUSE_Q, headers=a).status_code == 429
+    assert client.post("/chat", json=_REFUSE_Q, headers=b).status_code == 200, \
+        "两个客户端共用一个桶"
+
+
+def test_client_id_header_is_ignored_by_default(gate):
+    """默认配置下**不认** `X-Client-Id`：它是调用方自己填的，认它等于没限流。
+
+    ★ 这条是安全语义的守门人：哪天有人为了"方便"把默认值改成认这个头，
+      这里会红，而红的原因写在断言里 —— 改个 header 就能换一个新桶。
+    """
+    lim, client = gate(burst=1, per_min=0.0)          # allow_client_id=False（默认）
+    assert client.post("/chat", json=_REFUSE_Q,
+                       headers={"X-Client-Id": "A"}).status_code == 200
+    r = client.post("/chat", json=_REFUSE_Q, headers={"X-Client-Id": "B"})
+    assert r.status_code == 429, "默认配置下自称头居然能换一个新桶 ⇒ 改个 header 就绕过限流"
