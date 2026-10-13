@@ -18,6 +18,10 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import CachePolicy, Command, RetryPolicy, Send
+import sys
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 
 def banner(n: int, title: str):

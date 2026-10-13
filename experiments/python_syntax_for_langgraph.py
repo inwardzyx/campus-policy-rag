@@ -24,6 +24,10 @@ def apply_update(channels: dict, updates: dict) -> dict:
     return channels
 
 
+import sys
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 print("调用：", apply_update({"a": 1}, {"b": 2}))
 print("把备注全删掉，完全等价 ↓")
 
@@ -1153,6 +1157,7 @@ print("第 24 组：pathlib —— 现代 Python 读写文件的方式（做 RAG
 print("=" * 62)
 
 from pathlib import Path
+import sys
 
 base = Path(__file__).parent / "step3_docs"      # 用 / 拼路径
 print("\n1) Path 对象用【斜杠 /】拼路径，不用字符串加法")

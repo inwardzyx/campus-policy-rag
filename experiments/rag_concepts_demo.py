@@ -89,6 +89,9 @@ CORPUS = {
 sep("① RAG 是什么：把「闭卷考试」改成「开卷考试」")
 
 all_text = "\n\n".join(CORPUS.values())
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 print(f"""
    没有 RAG 的时候（闭卷）：
        你把【全部 {len(all_text)} 字】的资料塞给模型，让它自己找答案。

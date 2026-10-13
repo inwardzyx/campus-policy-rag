@@ -36,6 +36,9 @@ os.environ.setdefault("LANGSMITH_TRACING", "false")
 
 import service as svc  # noqa: E402
 import scale_probe as sp  # noqa: E402
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 

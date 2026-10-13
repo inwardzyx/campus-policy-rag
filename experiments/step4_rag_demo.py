@@ -189,6 +189,9 @@ for name, text in CORPUS.items():
 # ==================================================================
 sep("① 为什么必须做 RAG：全文塞进去要多少钱")
 all_text = "\n\n".join(CORPUS.values())
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 print(f"   现在：{len(CORPUS)} 份文档，共 {len(all_text)} 字 ≈ {int(len(all_text) * 0.7)} tokens")
 print(f"   真实项目：300 份 → 约 30 倍 → 一次提问就吃掉几万 token")
 print(f"   而且多轮对话【每轮都要重发一遍历史】，成本是线性叠加的。")

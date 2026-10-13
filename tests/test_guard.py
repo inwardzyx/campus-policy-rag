@@ -28,6 +28,7 @@
     版本冲突永不换新          → 脏数据夹具 红
 """
 
+import ast
 import os
 import sys
 
@@ -841,7 +842,35 @@ def test_tooling_script_does_not_crash_on_printing(rel, args):
 #   为什么用 ast 只看 print 的实参：中文注释/docstring 满仓库都是，
 #   按"文件里有没有非 ASCII"来判会命中一切，那种判据第一件事就是被关掉。
 _UNENCODABLE_CARRIER_GLOBS = ("*.py", "scripts/**/*.py", "agent/**/*.py",
-                              "mcp/**/*.py", "kb/**/*.py")
+                              "mcp/**/*.py", "kb/**/*.py",
+                              # ★ 2026-10-13 扩：`experiments/` 与 `evalset/` 也是**人跑、会重定向**
+                              #   的脚本（这次就是在 `experiments/cache_feasibility.py` 上撞到的：
+                              #   它 print 的 `⇒` 在 GBK 管道里编不出来，实验跑到一半崩）。
+                              #   原来没扫这两个目录 ⇒ 13 + 1 个文件一个都没报。
+                              "experiments/**/*.py", "evalset/**/*.py")
+
+
+def _first_module_level_print_line(tree) -> int | None:
+    """第一条**模块级** print 的行号（含 `if __name__` / try / with 这些块的直接子语句）。
+
+    ★ 为什么要它：判"自保有没有用"，不能只看"文件里有没有那一行" ——
+      自保是 import 时执行的一行，插在文件后部就等于没加（见调用处的注释）。
+    """
+    best: int | None = None
+
+    def walk(body) -> None:
+        nonlocal best
+        for n in body:
+            if (isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+                    and isinstance(n.value.func, ast.Name) and n.value.func.id == "print"):
+                best = n.lineno if best is None else min(best, n.lineno)
+            elif isinstance(n, (ast.If, ast.Try, ast.With, ast.For, ast.While)):
+                walk(n.body)
+                walk(getattr(n, "orelse", []) or [])
+                walk(getattr(n, "finalbody", []) or [])
+
+    walk(tree.body)
+    return best
 
 
 def test_scripts_that_print_unencodable_chars_guard_stdout():
@@ -888,6 +917,21 @@ def test_scripts_that_print_unencodable_chars_guard_stdout():
             if not any(g in src for g in guards):
                 offenders.append(f"{f.relative_to(repo).as_posix()}"
                                  f"（print 里有 {' '.join(sorted(chars))}）")
+                continue
+            # ★★ 光有自保还不够，**位置**也得对（2026-10-13 补，现场抓到的）：
+            #   自保是 import 时执行的一行；如果它被插在文件后部（教学脚本的 import
+            #   散落各处，"插在最后一个顶层 import 之后"就会插到末尾附近），
+            #   那前面的模块级 print 早就打完了 ⇒ **自保等于没加**。
+            #   实测：`experiments/` 里就有 3 个文件是这种（`python_syntax_for_langgraph.py`
+            #   的自保被插到第 1158 行，而第一句 print 在第 27 行）。
+            guard_line = min((i for i, ln in enumerate(src.splitlines(), 1)
+                              if any(g in ln for g in guards)), default=None)
+            first_mlp = _first_module_level_print_line(tree)
+            if guard_line is not None and first_mlp is not None and guard_line > first_mlp:
+                offenders.append(
+                    f"{f.relative_to(repo).as_posix()}"
+                    f"（自保在第 {guard_line} 行，而第一句模块级 print 在第 {first_mlp} 行"
+                    f" —— 自保跑得太晚，等于没加）")
 
     # ★ 下限断言（本项目已记过两次"扫不到东西的检查器一定在报绿"）。
     assert carriers >= 8, (

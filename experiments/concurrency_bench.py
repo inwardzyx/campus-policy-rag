@@ -27,6 +27,10 @@ import json
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+import sys
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 Q = "考试作弊会被怎么处理？"
 

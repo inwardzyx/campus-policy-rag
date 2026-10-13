@@ -45,6 +45,9 @@ from dotenv import load_dotenv
 load_dotenv()
 from langchain_deepseek import ChatDeepSeek     # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 # ==================================================================
 model = TextEmbedding("BAAI/bge-small-zh-v1.5", cache_dir=CACHE_DIR)

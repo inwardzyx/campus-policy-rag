@@ -40,6 +40,10 @@ import json
 import math
 import re
 from pathlib import Path
+import sys
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 QUESTIONS = REPO_ROOT / "evalset" / "questions.json"

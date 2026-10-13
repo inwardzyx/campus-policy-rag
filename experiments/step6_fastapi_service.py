@@ -56,6 +56,9 @@ env_compat.ensure_uuid_utils()                      # noqa: E402  同上，拦�
 from langchain_core.messages import HumanMessage    # noqa: E402
 from langchain_deepseek import ChatDeepSeek         # noqa: E402
 from pydantic import BaseModel, Field               # noqa: E402
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 # ==================================================================
 # ① 知识库 + 入库把关（和 Step 5 完全一样的逻辑，这里精简成一份）

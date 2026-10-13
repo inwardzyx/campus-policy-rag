@@ -40,6 +40,9 @@ sys.path.insert(0, str(REPO_ROOT))
 os.environ.setdefault("LANGSMITH_TRACING", "false")
 
 import service as svc  # noqa: E402  —— 必须晚于上面那行 env 设置
+# ★ print 里的 ⇒/✓/⚠ 在 cp936 下编不出来（stdout 是管道时）⇒ 崩在打印上。本项目已犯 7 次。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("exp")
