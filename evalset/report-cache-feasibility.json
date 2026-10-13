@@ -2,6 +2,13 @@
   "n_questions": 20,
   "corpus_chunks": 263,
   "corpus_rejected": 23,
+  "observability": {
+    "has_real_traffic": false,
+    "why": "校园政策 QA，仅作者自用，服务未对外部署 ⇒ 结构上没有对外流量",
+    "question_text_logged": false,
+    "why_not_logged": "问题文本属个人信息，本项目有一整关在做 PII 脱敏 ⇒ 刻意不落盘",
+    "consequence": "精确重复率不可观测；step1 的 0/20 只在『本自造题集内』成立"
+  },
   "step1_unique_questions": 20,
   "step1_exact_duplicate_groups": 0,
   "step2_distinct_top5_sets": 20,
@@ -1165,6 +1172,6 @@
   "step4_separable": false,
   "verdict": "overlap_kills_semantic_cache",
   "verdict_zh": "判死：同 gold 与不同 gold 两组余弦【重叠】⇒ 任何阈值都会误命中，语义缓存不可行",
-  "generated_at": "2026-10-13 22:54:31",
+  "generated_at": "2026-10-13 23:30:54",
   "exit_code_semantics": "0=跑完并落盘（判定见 verdict）；2=前置不成立（样本不足）；1=脚本真异常"
 }

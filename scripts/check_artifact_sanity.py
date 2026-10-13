@@ -383,6 +383,18 @@ def _check_cache_report(rel: str, text: str) -> list[str]:
                     f"md 与 json 不同源（md 是生成的，出现这种情况说明有人手改了 md）")
     if dd.get("max") is not None and f"{dd['max']:.4f}" not in text:
         errs.append(f"✗ {rel}：md 里找不到不同 gold 最大值 {dd['max']:.4f} —— 同上")
+
+    # ⑤ 观测能力的边界必须落在产物里（2026-10-13 补，起因是"把题集当流量"那次纠正）：
+    #   这份实验有一项**在结构上测不了**（本项目无对外流量、且刻意不记录问题文本）。
+    #   产物是这份结论的**出处** —— 出处不写边界，`0/20` 就会被下一个人当成流量证据引用。
+    ob = d.get("observability") or {}
+    if ob.get("has_real_traffic") is not False:
+        errs.append(f"✗ {CACHE_REPORT_JSON}：observability.has_real_traffic="
+                    f"{ob.get('has_real_traffic')!r} —— 这个仓库没有对外流量；"
+                    f"若哪天真有了，这份实验的适用范围必须重写")
+    if not ob.get("consequence"):
+        errs.append(f"✗ {CACHE_REPORT_JSON}：缺 observability.consequence —— "
+                    f"出处必须自带边界（`0/20` 只在『本自造题集内』成立）")
     return errs
 
 

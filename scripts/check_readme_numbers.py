@@ -522,6 +522,17 @@ def _check_cache_feasibility() -> list[str]:
     # 判定方向也要一致：README 说"两组重叠/判死"，产物不能是"可分"
     if d.get("step4_separable") is not False and "重叠" in readme:
         errs.append("✗ 「判定」：README 写『两组重叠』，而产物说两组可分 —— 方向相反")
+    # ★★ 观测能力的边界必须写在 README 里（2026-10-13 补，起因是把题集当流量那次纠正）：
+    #   把 `0/20` 从"证据"降级成"限制"这件事，**只有写进文档才算数** ——
+    #   不写，下一个人（或三个月后的我）照样会读成"真实流量没有重复"。
+    #   ⇒ 缺这两句就报错：这是给"诚实标注"上的机械锚点，不是文案洁癖。
+    if "无对外流量" not in readme:
+        errs.append("✗ 「观测边界」：README 里没有写明『本项目无对外流量』—— "
+                    "那样 `0/20` 会被读成关于真实流量的结论，"
+                    "而它只是题集设计的必然结果")
+    if "无法观测" not in readme and "不可观测" not in readme:
+        errs.append("✗ 「观测边界」：README 里没有『无法观测 / 不可观测』这几个字 —— "
+                    "『测不了』与『测了没有』是两件事，必须被区分开")
     return errs
 
 
