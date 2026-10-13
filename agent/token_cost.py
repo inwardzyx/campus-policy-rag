@@ -276,11 +276,41 @@ def _safe_call(fn, kwargs) -> str:
 # ------------------------------------------------------------------
 
 
+def _summarize_run(run_i: int, d_rows: list, a_rows: list) -> dict:
+    """把一遍的测量压成几个数（供 --runs 报波动范围用）。
+
+    ★ 三个数并列，**不合并**：
+      · direct_mean   直打侧每题 token（一次 /chat）
+      · agent_own      agent 自己那几轮
+      · tool_mean     工具内部（/chat 那一侧）—— 2026-10-12 之前这笔账根本不存在
+      · ratio_all     (agent_own + tool) / direct —— 这才是"agent 贵几倍"的真分子
+    """
+    d_ok = [r for r in d_rows if not r.get("error")
+            and isinstance(r.get("usage_raw"), dict) and "n_calls" in r["usage_raw"]]
+    a_ok = [r for r in a_rows if not r.get("error") and isinstance(r.get("usage"), dict)]
+    d_mean = (sum(r["usage_raw"]["total_tokens"] for r in d_ok) / len(d_ok)) if d_ok else 0.0
+    a_mean = (sum(r["usage"]["total"] for r in a_ok) / len(a_ok)) if a_ok else 0.0
+    t_mean = (sum(r.get("tool_usage", {}).get("total", 0) for r in a_ok) / len(a_ok)) if a_ok else 0.0
+    t_missing = sum(r.get("tool_usage_missing", 0) for r in a_ok)
+    return {"run": run_i, "n_direct": len(d_ok), "n_agent": len(a_ok),
+            "direct_mean": d_mean, "agent_own_mean": a_mean, "tool_mean": t_mean,
+            "tool_usage_missing": t_missing,
+            "ratio_own": (a_mean / d_mean) if d_mean else 0.0,
+            "ratio_all": ((a_mean + t_mean) / d_mean) if d_mean else 0.0}
+
+
+# ------------------------------------------------------------------
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=10, help="量前 N 题（默认 10）")
     ap.add_argument("--only-refuse", action="store_true",
                     help="只量拒答题（拒答是短回答，token 成本天然更低）")
+    ap.add_argument("--runs", type=int, default=1,
+                    help="跑几遍（★ 默认 1；要报波动范围就 >=2。"
+                         "单次跑出来的倍率支持不了小数第二位的精度，"
+                         "见 evalset/report-token-cost.md 的更正块）")
     args = ap.parse_args()
 
     try:
@@ -299,11 +329,18 @@ def main():
 
     bound = ChatDeepSeek(model="deepseek-chat", temperature=0).bind_tools(MODEL_SCHEMAS)
 
-    print("=== 直打 /chat ===")
-    d_rows = measure_direct(qs)
-    print("\n=== 走 agent（MCP + 工具 + 循环）===")
-    with StdioMCPClient() as client:
-        a_rows = measure_agent(qs, bound, client)
+    runs_summary: list[dict] = []
+    for run_i in range(1, args.runs + 1):
+        if args.runs > 1:
+            print("\n" + "#" * 68)
+            print(f"##### 第 {run_i}/{args.runs} 遍 #####")
+            print("#" * 68)
+        print("=== 直打 /chat ===")
+        d_rows = measure_direct(qs)
+        print("\n=== 走 agent（MCP + 工具 + 循环）===")
+        with StdioMCPClient() as client:
+            a_rows = measure_agent(qs, bound, client)
+        runs_summary.append(_summarize_run(run_i, d_rows, a_rows))
 
     # ----汇总 ----
     print("\n" + "=" * 68)
@@ -368,12 +405,36 @@ def main():
         print("    ★ 服务端没返回可用的 usage 字段 ⇒ 直打侧只能报 agent 侧。")
         print("      ★ 别拿 0 冒充'直连不花钱'——那是不测就说没有。")
 
+    if len(runs_summary) > 1:
+        print("\n" + "=" * 68)
+        print(f"{len(runs_summary)} 遍的波动范围")
+        print("★ 单次点值支持不了小数第二位的精度 —— 这正是不默认多跑几遍就报数的风险")
+        print("=" * 68)
+        for r in runs_summary:
+            miss = (f"　★工具侧有 {r['tool_usage_missing']} 次没报上账"
+                    if r["tool_usage_missing"] else "")
+            print(f"  第 {r['run']} 遍：直打 {r['direct_mean']:.0f}　"
+                  f"agent 自身 {r['agent_own_mean']:.0f}　工具侧 {r['tool_mean']:.0f}　"
+                  f"⇒ 仅自身 {r['ratio_own']:.2f}× / 含工具 {r['ratio_all']:.2f}×{miss}")
+        for k, label in (("ratio_own", "仅 agent 自身"), ("ratio_all", "含工具侧")):
+            vs = [r[k] for r in runs_summary if r[k]]
+            if vs:
+                print(f"  {label}的倍率范围：{min(vs):.2f} ~ {max(vs):.2f}")
+
     out = os.path.join(_ROOT, "agent", "_token_cost.json")
     with open(out, "w", encoding="utf-8") as f:
         json.dump({"price_table": PRICE_TABLE, "n_questions": len(qs),
+                   # ★ 多遍的汇总（默认 1 遍时也写，长度 1）
+                   "runs_n": len(runs_summary), "runs": runs_summary,
+                   # direct/agent 保留【最后一遍】的逐题明细 —— 逐格对账器认这两个键
                    "direct": d_rows, "agent": a_rows},
                   f, ensure_ascii=False, indent=2)
     print(f"\n明细已写入 {os.path.relpath(out, _ROOT)}")
+    # ★ 2026-10-12 修：这里原来没有 return ⇒ main() 隐式返回 None
+    #   ⇒ 外层 `if main() is None: sys.exit(1)` 把【成功】也判成失败，
+    #     整个脚本跑完永远退出码 1。任何拿它做流水线的人都会看到"失败了"，
+    #     而它其实刚把明细写完 —— 又一处"退出码在说谎"。
+    return 0
 
 
 if __name__ == "__main__":

@@ -180,16 +180,16 @@ def main() -> int:
         # 就在这里用 (名称, 报告里写的数, 算出来的数) 三元组登记。
         claims = [
             ("直打均值", 957, round(d_tot)),
-            ("agent 均值", 1906, round(a_tot)),
-            ("拒答 input 均值", 634,
+            ("agent 均值", 1900, round(a_tot)),
+            ("拒答 input 均值", 633,
              round(sum(x["input_tokens"] for x in hits) / len(hits)) if hits else 0),
             ("应答 input 均值", 831,
              round(sum(x["input_tokens"] for x in miss) / len(miss)) if miss else 0),
             ("拒答题数", 7, len(hits)),
             ("应答题数", 13, len(miss)),
-            ("output 占比%×10", 127,
+            ("output 占比%×10", 120,
              round(a_out / a_tot * 1000) if a_tot else 0),
-            ("缓存命中率%×10", 665, round(a_cache / a_in * 1000) if a_in else 0),
+            ("缓存命中率%×10", 612, round(a_cache / a_in * 1000) if a_in else 0),
             ("直打侧调用总次数", 53, sum(x["n_calls"] for x in d_list)),
             ("agent 侧调用总次数", 40, sum(x["n_calls"] for x in a_list)),
         ]
