@@ -31,6 +31,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -808,6 +809,9 @@ rag = RAG()
 #   TRUST_PROXY_HEADERS / ALLOW_CLIENT_ID_HEADER   身份怎么认，默认都不信（见 limits.client_id）
 LIMITER = limits_mod.build_limiter(os.environ, log=logger)
 
+# ★ 本次进程的身份（2026-10-13 加，起因是盲审 F1）：见 /health 里那段说明。
+BOOT_ID = uuid.uuid4().hex[:12]
+
 
 # lifespan：服务启动时干一次（加载模型），关闭时收尾。
 # @ 开头的叫【装饰器】，它把下面那个函数"包装"一下交给框架 —— 你不用手动调用它。
@@ -890,6 +894,12 @@ def health():
     ★ 只返回**文件名**（`Path(...).name`），不返回完整路径 —— 后者会把本机目录结构漏出去。
     """
     return {"status": "ok" if rag.ready else "loading",
+            # ★ 2026-10-13 加 boot_id（盲审 F1）：端到端脚本里有两条断言是"重启之后 X 还在"
+            #   （③ 重启服务、⑦ 重启 Redis）。第一版只信"重启命令退出码为 0" ——
+            #   而 `--restart-cmd "true"`（什么都没重启）能让七条全绿：
+            #   计数当然没变，因为压根没重启。⇒ 得有样东西**只在重启后才变**。
+            #   boot_id 在进程启动时生成一次，重启后对不上才算真重启过。
+            "boot_id": BOOT_ID,
             "chunks": len(rag.chunks),
             "rejected": len(rag.rejected),
             "load_errors": len(rag.load_errors),
@@ -960,10 +970,21 @@ def chat(req: ChatRequest, request: Request):
             detail={"reason": decision.reason, "detail": decision.detail},
             headers={"Retry-After": str(decision.retry_after)})
 
-    resp = handle_chat(req)
-    usage = resp.get("usage") if isinstance(resp, dict) else getattr(resp, "usage", None)
-    LIMITER.record(who, usage)
-    return resp
+    usage = None
+    try:
+        resp = handle_chat(req)
+        usage = resp.get("usage") if isinstance(resp, dict) else getattr(resp, "usage", None)
+        return resp
+    finally:
+        # ★★ 记账必须**无条件**发生（盲审 R4）：第一版把 `LIMITER.record(...)` 写在
+        #   `return resp` 前面，于是任何从 `handle_chat` 冒出来的异常都会绕过记账 ——
+        #   那次请求**只在桶里扣了一枚令牌、日额度上完全不存在**。
+        #   而 `handle_chat` 只接 `LLMCallError`；别的异常一路冒到 FastAPI 变成 500。
+        #   有一条**当时就可达**的路径：没配 `DEEPSEEK_API_KEY` 时，默认路径每次 /chat
+        #   都抛 pydantic 校验错（"缺 key 就该炸出来"是刻意的）⇒ 日额度那道闸全废，
+        #   只剩桶。README 写着"拒答也计数"，但"异常也计数"漏了 —— 记账应当无条件。
+        #   ⚠️ 拿不到 usage 时传 None 进去，`record` 会把它记成 `usage_missing`（不补 0）。
+        LIMITER.record(who, usage)
 
 
 def handle_chat(req: ChatRequest):

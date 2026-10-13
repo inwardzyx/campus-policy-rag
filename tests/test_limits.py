@@ -45,6 +45,25 @@ def _redis_ok() -> tuple[bool, str]:
 
 _OK, _WHY = _redis_ok()
 
+# ★ 本次 pytest 进程的标签（2026-10-13 加，起因是盲审 F4）：
+#   所有测试用的 `who` 都带这个标签，收尾**只删含它的 key**。
+#   第一版收尾是 `flushdb()` —— 清的是**整库**：如果 TEST_REDIS_URL 指着共享的 Redis
+#   （默认 `redis://127.0.0.1:6379/0`，而本机服务用的就是 db 0），跑一次测试
+#   就把别人的日额度一起抹了。注释当时却写着"只清自己的 key" —— 注释在说谎。
+_RUN_TAG = uuid.uuid4().hex[:8]
+
+
+def _skip_or_fail(msg: str) -> None:
+    """Redis 不可用：默认**大声跳过**，`REQUIRE_REDIS=1` 时改成**失败**。
+
+    ★ 为什么要这个开关：没有 Redis 时"跳过"会让 CI 看起来是绿的，
+      而实际上一半判据没跑（默认那 23 passed / 15 skipped 就是这种假绿）。
+      CI 里要用 `REQUIRE_REDIS=1`，让"Redis 没起来"变成一眼能看见的红。
+    """
+    if REQUIRE_REDIS:
+        pytest.fail(msg)
+    pytest.skip(msg)
+
 
 @pytest.fixture(params=["memory", "redis"])
 def store(request):
@@ -53,18 +72,40 @@ def store(request):
         yield L.InProcessStore()
         return
     if not _OK:
-        msg = (f"Redis 不可用（{REDIS_URL}）：{_WHY}\n"
-               f"  ⇒ 本用例只跑了内存那半边。要跑全部：\n"
-               f"     1) 起一个 Redis（本机用 Memurai / 容器都行）\n"
-               f"     2) 或设 REQUIRE_REDIS=1 让缺失变成失败（CI 里就是这么用的）")
-        if REQUIRE_REDIS:
-            pytest.fail(msg)
-        pytest.skip(msg)
+        _skip_or_fail(f"Redis 不可用（{REDIS_URL}）：{_WHY}\n"
+                      f"  ⇒ 本用例只跑了内存那半边。要跑全部：\n"
+                      f"     1) 起一个 Redis（本机用 Memurai / 容器都行）\n"
+                      f"     2) 或设 REQUIRE_REDIS=1 让缺失变成失败（CI 里就是这么用的）")
     s = L.RedisStore(REDIS_URL)
     yield s
-    # 收尾：把本用例的 key 清掉（who 带 uuid ⇒ 前缀唯一）
+    _cleanup_run_keys(s)
+
+
+@pytest.fixture
+def redis_store():
+    """只要真 Redis 的用例（TTL 那几条）。Redis 不在时同样走 `_skip_or_fail`。
+
+    ★ 为什么单独留一个：那两条原来写的是 `@pytest.mark.skipif(not _OK, ...)` ——
+      那个装饰器**不看 REQUIRE_REDIS**，于是"要求必须有 Redis"的 CI 里它们照样静默跳过。
+      盲审 F5 就是指这个：开关声称"让缺失变成失败"，而这两条不认它。
+    """
+    if not _OK:
+        _skip_or_fail(f"Redis 不可用（{REDIS_URL}）：{_WHY}")
+    s = L.RedisStore(REDIS_URL)
+    yield s
+    _cleanup_run_keys(s)
+
+
+def _cleanup_run_keys(s: L.RedisStore) -> None:
+    """只删本次运行自己造的 key（含 `_RUN_TAG`）。
+
+    ★ 别改回 `flushdb()`：它是"一键重置**所有人**的额度"，
+      而默认 TEST_REDIS_URL 就是本机服务在用的那个库。
+    """
     try:
-        s._c().flushdb()
+        keys = list(s._c().scan_iter(f"*{_RUN_TAG}*"))
+        if keys:
+            s._c().delete(*keys)
     except Exception:                               # noqa: BLE001
         pass
 
@@ -77,7 +118,8 @@ def make_limiter(store, **kw) -> L.Limiter:
 
 
 def who() -> str:
-    return f"t-{uuid.uuid4().hex[:12]}"
+    # ★ 带上 `_RUN_TAG`：收尾靠它认出"哪些 key 是本次运行造的"（见 _cleanup_run_keys）。
+    return f"t-{_RUN_TAG}-{uuid.uuid4().hex[:8]}"
 
 
 # ==================================================================
@@ -249,12 +291,17 @@ def test_missing_usage_is_counted_not_treated_as_zero(store):
 
     ★ 本项目在 token 计量上已经栽过一次同类：把"没拿到"记成 0，
       于是缺口看起来像"真的没花钱"。这里同样不许静默。
+    ★★ 同样用**增量**（原因见 `test_metrics_are_not_double_counted`）：
+      第一版写 `>= 2` 读的是累计值 —— 在共享 Redis 上只要有历史残留，
+      把行为改坏它照样绿（盲审 F3 打的就是这个形状）。
     """
     lim, w, now = make_limiter(store), who(), 1_000_000.0
-    lim.record(w, usage=None, now=now)
-    lim.record(w, usage={"total": 0}, now=now)
-    assert lim.usage_today(w, now=now)["tokens_used"] == 0
-    assert lim.stats()["usage_missing"] >= 2, f"usage_missing 没记上：{lim.stats()}"
+    base = lim.stats()["usage_missing"]
+    lim.record(w, usage=None, now=now)               # 完全没拿到
+    lim.record(w, usage={"total": 0}, now=now)       # 拿到了但 total 是 0
+    assert lim.usage_today(w, now=now)["tokens_used"] == 0      # 不补 0 进 token 账
+    delta = lim.stats()["usage_missing"] - base
+    assert delta == 2, f"两次都拿不到 usage，usage_missing 只涨了 {delta}"
 
 
 # ==================================================================
@@ -360,15 +407,14 @@ def test_from_env_rejects_garbage_loudly():
         L.Limits.from_env({"RATE_BURST": "十次"})
 
 
-@pytest.mark.skipif(not _OK, reason=f"Redis 不可用（{REDIS_URL}）：{_WHY}")
-def test_redis_keys_have_ttl_and_namespace():
+def test_redis_keys_have_ttl_and_namespace(redis_store):
     """Redis 里的 key 必须有 TTL 与可读前缀。
 
     ★ TTL 那条盯的是一个真实的坑：如果只在"第一次"设 `EXPIRE`，
       而恰巧那次请求失败/进程死掉，这个计数 key 就**永远留在 Redis 里**，
       慢慢堆成内存泄漏。所以每次 incr 都要设。
     """
-    s = L.RedisStore(REDIS_URL)
+    s = redis_store
     lim = make_limiter(s, burst=3, per_min=60.0, daily_req=5)
     w, now = who(), 1_000_000.0
     lim.check(w, now=now)
@@ -382,10 +428,9 @@ def test_redis_keys_have_ttl_and_namespace():
     assert c.ttl(f"bucket:{w}") > 0, "令牌桶的 key 没有 TTL ⇒ 会永久堆积"
 
 
-@pytest.mark.skipif(not _OK, reason=f"Redis 不可用（{REDIS_URL}）：{_WHY}")
-def test_redis_day_ttl_covers_the_boundary():
+def test_redis_day_ttl_covers_the_boundary(redis_store):
     """日 key 的 TTL 要跨得过 UTC 日界（不然 23:59 记的账 00:00 就查不到了）。"""
-    s = L.RedisStore(REDIS_URL)
+    s = redis_store
     assert s.day_ttl >= 86_400 * 2 - 1
 
 
@@ -402,3 +447,55 @@ def test_real_time_default_path_still_works(store):
     lim.record(w, usage=None)
     assert lim.usage_today(w)["requests_used"] == 1
     assert lim.usage_today(w)["day_utc"] == L.utc_day(time.time())
+
+
+# ==================================================================
+# 盲审（2026-10-13）打出来的三条：各配一个回归用例
+# ==================================================================
+def test_env_bool_reads_false_like_values_as_false():
+    """R3：`False` / `FALSE` / `no` / `off` 必须都是**假**。
+
+    ★ 这两开关决定"调用方能不能自称身份"，把它们读反是**安全反向**：
+      运维写 `TRUST_PROXY_HEADERS=False`（意思是"不要信"）却把它打开了。
+      第一版判据只覆盖了 `"true"` 这一个真值、`""`/`"0"` 这两个假值，
+      恰好漏掉的就是实际会被写出来的那几种（大小写混淆、`no`、`off`）。
+    """
+    for v in ("0", "", "false", "False", "FALSE", "no", "NO", "off", "OFF", "  off  "):
+        got = L.Limits.from_env({"TRUST_PROXY_HEADERS": v, "ALLOW_CLIENT_ID_HEADER": v})
+        assert got.trust_proxy is False and got.allow_client_id is False, f"{v!r} 被判成「开」"
+    for v in ("1", "true", "TRUE", "True", "yes", "on"):
+        got = L.Limits.from_env({"TRUST_PROXY_HEADERS": v, "ALLOW_CLIENT_ID_HEADER": v})
+        assert got.trust_proxy is True and got.allow_client_id is True, f"{v!r} 没被认成「开」"
+    # 拼错的、没见过的值 ⇒ 一律当假（失败要朝向安全那一边）
+    assert L.Limits.from_env({"TRUST_PROXY_HEADERS": "ture"}).trust_proxy is False
+
+
+def test_stats_reports_identity_switches(store):
+    """R3 的另一半：这两个开关必须能从 /health 看见。
+
+    ★ 配错看不见 = 配错永远不会被发现。`/health` 是部署后第一眼看的接口。
+    """
+    lim = make_limiter(store, trust_proxy=True, allow_client_id=True)
+    st = lim.stats()
+    assert st["trust_proxy_headers"] is True
+    assert st["allow_client_id_header"] is True
+
+
+def test_metrics_are_not_double_counted(store):
+    """R6：指标只算一遍。
+
+    ★ 第一版 `_bump_local` 先加本地、再写远端，而 `stats()` 读的是
+      `远端 + 本地` ⇒ **一切正常时每个指标都被算两遍**（实测 2 次被拒报成 4）。
+      恶心之处在于它只在健康时错：Redis 挂掉时远端写不进，`0 + n` 反而是对的。
+    ★★ 判据用**增量**，不读累计值：`metric:*` 是全局无限期的计数，
+      Redis 那份会跨用例累加（我自己就写错过一版，读到 20 还以为是重复计数）。
+      增量口径才问得对问题：「这几步**带来了**几次」。
+    """
+    lim = make_limiter(store, burst=1, per_min=0.0, daily_req=0, daily_tokens=0)
+    w, now = who(), 1_000_000.0
+    base = lim.stats()["denied_rate"]
+    assert lim.check(w, now=now).allowed                 # 第一次放行（burst=1）
+    assert not lim.check(w, now=now).allowed             # 之后两次都被拒
+    assert not lim.check(w, now=now).allowed
+    delta = lim.stats()["denied_rate"] - base
+    assert delta == 2, f"真实被拒 2 次，指标涨了 {delta} ⇒ 被重复计数了"

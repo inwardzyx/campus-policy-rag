@@ -1043,8 +1043,13 @@ def test_daily_quota_429_and_retry_after_is_until_utc_midnight(gate):
     assert client.post("/chat", json=_REFUSE_Q).status_code == 200
     r = client.post("/chat", json=_REFUSE_Q)
     assert r.status_code == 429 and r.json()["detail"]["reason"] == "daily_req"
-    assert 1 <= int(r.headers["Retry-After"]) <= 86_400, (
-        "日额度的 Retry-After 必须是『到恢复时刻』的秒数，不是随便一个常数")
+    # ★ 要把"到 UTC 零点"真的算一遍（盲审 F6）：原来只断言 `1 <= ra <= 86400`，
+    #   把实现改成返回常数 3600 也照样通过 —— 而"什么时候恢复"就变成假的了。
+    import time as _t
+    expect = 86_400 - (_t.time() % 86_400)
+    got = int(r.headers["Retry-After"])
+    assert abs(got - expect) <= 10, (
+        f"日额度的 Retry-After 应当是『到 UTC 零点』的秒数（此刻约 {expect:.0f}），实际 {got}")
 
 
 def test_blocked_requests_are_not_counted(gate):

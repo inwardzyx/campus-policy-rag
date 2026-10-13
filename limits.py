@@ -56,6 +56,24 @@ METRIC_NAMES = (M_DENIED_RATE, M_DENIED_QUOTA, M_STORE_ERRORS, M_USAGE_MISSING)
 # ==================================================================
 # 配置
 # ==================================================================
+def _env_bool(env: dict[str, str], key: str, default: bool = False) -> bool:
+    """环境变量里的布尔：**只认一组白名单为真，其余一律为假**。
+
+    ★★ 盲审 R3 打的就是这里，而且是个安全反向：
+      第一版写的是 `raw not in ("", "0", "false")` ⇒ `False` / `FALSE` / `no` / `off`
+      **全被判成「开」**。这两个开关决定"调用方的身份能不能被伪造"（见 `client_id`），
+      运维写 `TRUST_PROXY_HEADERS=False`（看上去是"不要信"）实际把它打开了，
+      而且当时 `stats()` 也不报这两个 —— **配错了没有任何地方能看见**。
+      ⇒ 白名单：只有明确写"是"的那些才算真；拼错/没见过的值一律当假（失败朝向安全那一边）。
+    """
+    raw = (env.get(key) or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("", "0", "false", "no", "off"):
+        return False
+    return default
+
+
 @dataclass(frozen=True)
 class Limits:
     """从环境变量读出来的那份配置（默认值都是"开发时够用、公网要按钱包调"）。"""
@@ -81,8 +99,8 @@ class Limits:
             daily_req=num("DAILY_REQ_QUOTA", 300, int),
             daily_tokens=num("DAILY_TOKEN_QUOTA", 300_000, int),
             fail_mode=(env.get("LIMIT_FAIL_MODE") or "closed").strip().lower(),
-            trust_proxy=(env.get("TRUST_PROXY_HEADERS") or "0").strip() not in ("", "0", "false"),
-            allow_client_id=(env.get("ALLOW_CLIENT_ID_HEADER") or "0").strip() not in ("", "0", "false"),
+            trust_proxy=_env_bool(env, "TRUST_PROXY_HEADERS"),
+            allow_client_id=_env_bool(env, "ALLOW_CLIENT_ID_HEADER"),
             redis_url=(env.get("REDIS_URL") or "").strip() or None,
         )
 
@@ -353,12 +371,22 @@ class Limiter:
             return default
 
     def _bump_local(self, metric: str, n: int = 1) -> None:
-        self._local_metrics[metric] = self._local_metrics.get(metric, 0) + n
+        """记一个指标：**只在远端写失败时**才落到本地。
+
+        ★★ 盲审 R6 抓到的就是这个函数的第一版：它**先加本地、再写远端**，
+          而 `_merge_metric` 读的是 `remote + local` ⇒ 一切正常时**每个指标都被算两遍**。
+          实测：真实被拒 2 次，`/health` 报 `denied_rate = 4`。
+          ⚠️ 这类 bug 的恶心之处在于**只在健康时错**：Redis 挂掉时远端写不进，
+             `remote(0) + local(n)` 反而是对的 —— 于是"平时报两倍、坏了才准"，
+             谁看监控都会先怀疑是流量变了。
+          ⇒ 现在本地那份**只装"还没进远端"的部分**，两边加起来才是真值。
+        """
         try:
             self.store.bump(metric, n)
+            return                                   # 远端收下了 —— 本地不再重复记
         except Exception:                            # noqa: BLE001
             # 存储都挂了还往上抛，会把"记指标"变成新的故障点 ⇒ 只留本地计数。
-            pass
+            self._local_metrics[metric] = self._local_metrics.get(metric, 0) + n
 
     # ---- 对外 ----
     def check(self, who: str, now: float | None = None) -> Decision:
@@ -452,6 +480,11 @@ class Limiter:
         out["store"] = self.store.name
         out["store_ok"] = self._call(lambda: self.store.ping(), default=False)
         out["fail_mode"] = self.limits.fail_mode
+        # ★ 把两个"身份可信度"开关也报出来（盲审 R3）：它们决定"调用方能不能自称身份"，
+        #   而第一版 /health 看不到它们 ⇒ 开关配反了（`False` 被判成开）也没有任何地方能看见。
+        #   `/health` 本来就是"部署完第一眼看的那个接口"，口径必须在这里。
+        out["trust_proxy_headers"] = self.limits.trust_proxy
+        out["allow_client_id_header"] = self.limits.allow_client_id
         return out
 
     def _merge_metric(self, metric: str) -> int:
