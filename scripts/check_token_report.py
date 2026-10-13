@@ -34,8 +34,12 @@ from pathlib import Path
 #     ⇒ 钩子打出「★ token 报告里的数字与实测数据对不上（上面列出的那些）」。
 #     而**数字其实全对**，它只是崩在打印成功消息上。
 #   ★ 教训：修法不会自动传播。前三个脚本各补了一行，第四个（新加的）就没有 ——
-#     所以现在配了一条系统性防线：tests/test_tooling_encoding.py
-#     （用非 UTF-8 的 stdout 跑一遍钩子会调的所有脚本，谁崩谁红）。
+#     所以现在配了两道系统性防线：
+#       ① 动态：tests/test_guard.py 里的 test_tooling_script_does_not_crash_on_printing
+#          （用 PYTHONIOENCODING=gbk 跑一遍下面列出的那几个脚本，谁崩谁红）
+#       ② 静态：同文件的 test_scripts_that_print_unencodable_chars_guard_stdout
+#          （ast 找"print 里有 cp936 编不出来的字符"却没自保的脚本 ——
+#            动态那道只能覆盖"能独立跑完"的几个，剩下全靠这道）
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent

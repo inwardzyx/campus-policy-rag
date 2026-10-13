@@ -64,7 +64,14 @@ Git Bash 报 bad interpreter，而且报错指不到原因。
 | `pre-commit` | `scripts/check_readme_numbers.py` | README 里写的数字 vs 脚本落盘的真实产物 |
 | `pre-push` ① | `scripts/check_push_paths.py` | **即将推上去的文件**里有没有"本不该进仓库"的 |
 | `pre-push` ② | `scripts/check_artifact_sanity.py` | 产物**本身是不是像跑出来的**（坏环境下跑的结果会覆盖好产物） |
-| `pre-push` ③ | `scripts/check_token_report.py` | token 报告里的每个数 vs 实测 JSON（**逐格**） |
+| `pre-push` ③ | `scripts/check_judge_rules.py` | CLAUDE.md 里〈假绿的三种形态〉那三条规矩，判据脚本里有没有对应实现 |
+| `pre-push` ④ | `scripts/check_file_refs.py` | 文档/脚本里写的**仓库内路径**是不是真的存在 |
+| `pre-push` ⑤ | `scripts/check_token_report.py` | token 报告里的每个数 vs 实测 JSON（**逐格**） |
+
+★ ③④ 都**不读产物**，所以在别人机器上不会变成空壳：③ 只读 `scripts/*.py` + `CLAUDE.md`
+（★ `CLAUDE.md` 按 .gitignore 不进仓库 ⇒ 新 clone 上它会**正确地报红**，不是误报；
+要单独用这套纪律，先把那一节抄进你自己的笔记）。
+④ 只读仓库里的文本 + 问 `git`（用 `.gitignore` 区分"运行时产物本来就没有"与"路径指错了"）。
 
 ## ★ pre-push ③：token 报告对账（2026-10-12）
 

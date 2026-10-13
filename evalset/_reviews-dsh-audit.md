@@ -280,4 +280,4 @@ is_refused(answer) == (not answer) or _REFUSE_STRONG.search(answer) or _REFUSE_L
 - `D:\dsh-work\judge_probe.py` —— 从 `refusal_regression.py` 原文 exec 出 `_EVIDENCE/_REFUSE_STRONG/_REFUSE_LEAD/_refused_at_start/is_refused`，跑 14 条内置用例 + 13 条对抗样例，实测结果：内置 14/14 通过，对抗 13 条中 9 条判错。
 - `D:\dsh-work\judge_probe2.py` —— 120 字位置断崖、service 两条 canned 文本、`service.py:840` 失败文本、`:762` 加载中文本的判定结果。
 
-如果你允许，我可以再读 `mcp/tools_impl.py`（`NO_HIT_TEXT` 的原文）与 `evalset/heldout/questions.json`（refuse 题是否仍为 61 条、`type` 取值是否只有 `refuse`），以及 `evalset/_refusal_regression.json` 的 `answer_head` —— 这三样能把 S6/S7 从"待验证假设"变成实锤。
+如果你允许，我可以再读 `mcp/tools_impl.py`（`NO_HIT_TEXT` 的原文）与 `evalset/heldout/questions.json`（refuse 题是否仍为 61 条、`type` 取值是否只有 `refuse`），以及 `agent/_refusal_regression.json` 的 `answer_head` —— 这三样能把 S6/S7 从"待验证假设"变成实锤。

@@ -957,17 +957,23 @@ rag-customer-service/
 │   ├── measure_dup_threshold.py      # 真重复/同义改写/不同条款 三类配对各是多少
 │   ├── check_readme_numbers.py       # 数字对账：README 与落盘产物必须一致（pre-commit 调它）
 │   ├── mutate_check_numbers.py       # 对"对账器"本身做变异测试（不然它会变成假通过）
+│   ├── check_judge_rules.py          # 核 CLAUDE.md〈假绿的三种形态〉那三条规矩有没有落到代码里
+│   ├── check_file_refs.py            # 核文档/脚本里写的**仓库内路径**是不是真的存在（pre-push 调它）
+│   ├── mutate_check_refs.py          # 对上一条做变异测试（含"被引用的文件消失"这一方向）
 │   ├── check_token_report.py         # token 报告 ↔ 实测数据【逐格】对账（pre-push 调它）
-│   ├── mutate_check_token.py         # 对上一条做变异测试（5 条，含"注入失败必须算失败"）
+│   ├── mutate_check_token.py         # 对上一条做变异测试（含"注入失败必须算失败"）
 │   ├── record_demo.mjs               # 录制顶部那段动图：CDP 驱动浏览器逐帧截屏
 │   ├── make_gif.py                   # 把帧合成 GIF（裁空白 + 去重 + 量化）
-│   └── mutate_check.py               # 变异测试：故意改坏代码，看测试红不红（7 条）
-└── tests/                       # 共 65 条，全是 pytest 断言（旧版是 print 自检，退出码永远 0）
-    ├── test_guard.py            # 把关 + 拒答 + PII 脱敏 + XSS 回归（28 条）
-    ├── test_loader.py           # kb/loader 解析单测（22 条，不碰模型→ CI 快 job 跑它）
+│   └── mutate_check.py               # 变异测试：故意改坏代码，看测试红不红
+└── tests/                       # 全是 pytest 断言（旧版是 print 自检，退出码永远 0）
+                                #   ★ 条数故意不写在这里：手写的数一定会漂
+                                #     （2026-10-13 发现这行原来写"共 65 条"，实际已是 70）。
+                                #     要数就 `python -m pytest --collect-only -q`。
+    ├── test_guard.py            # 把关 + 拒答 + PII 脱敏 + XSS 回归 + 打印编码防线
+    ├── test_loader.py           # kb/loader 解析单测（不碰模型 → CI 快 job 跑它）
     ├── test_llm_resilience.py   # 模型故障守门：超时 / 返回垃圾 / 幻觉 id / 超长输入，
-    ││                         #   + token 计量必须【累加】不能只留最后一次（10 条）
-    ├── test_eval_set.py         # 评测集自洽 + 离线质量门禁（5 条）
+    ││                         #   + token 计量必须【累加】不能只留最后一次
+    ├── test_eval_set.py         # 评测集自洽 + 离线质量门禁
     └── fixtures/dirty_inbox/    # 构造的脏数据，一个文件对应一道关（覆盖度用，见「入库把关」）
 ├── mcp/                         # ★ MCP 协议层（2026-10-12：把服务接成 agent 可用的工具）
 │   ├── server.py                #   MCP server：注册 2 个工具
@@ -1573,7 +1579,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 > 换成 83 块的真实语料后，间隔**消失了** —— 应答题最低分 0.5968、拒答题最高分 0.6049，
 > 两边已经**交叉**。也就是说离线层（纯向量）已经做不到"一刀切开"。
 >
-> **★ 2026-10-08 补：把这件事量清楚之后，比"失效"这个说法好看得多（数据见 `evalset/report.md`）**
+> **★ 2026-10-08 补：把这件事量清楚之后，比"失效"这个说法好看得多（数据见 `evalset/report-vector.md`）**
 >
 > | 判据 | 应答题最低 | 拒答题最高（含边界） | 能否分开 |
 > |---|---|---|---|

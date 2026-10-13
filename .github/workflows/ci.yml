@@ -60,6 +60,17 @@ jobs:
           python scripts/install_hooks.py --quiet
           python scripts/install_hooks.py --check
 
+      - name: 核"仓库内路径引用"是不是真的存在（只读文本 + git）
+        # ★ 起因：2026-10-13 一次扫出 5 处指错的路径（README 指一份不存在的报告、
+        #   两个文件把 mcp/ 的探针写成 agent/、注释指一个不存在的 tests 文件…）。
+        #   这类错只有"读的人照着去找、找不到"才发现，所以必须机械查。
+        # ⚠️ 它靠 `.gitignore` 区分"运行时产物本来就没有"与"路径指错了"，
+        #   所以在**干净 checkout**（= 最接近别人 clone 的样子）里跑最有意义。
+        # ★ 为什么这道能进快 job：只用标准库 + git，不装模型。
+        #   （★ `check_judge_rules.py` 不能进这里：它要读 CLAUDE.md，
+        #     而 CLAUDE.md 按 .gitignore 不进仓库 ⇒ 在 CI 里它会**正确地报红**。）
+        run: python scripts/check_file_refs.py
+
       - name: 跑加载器测试
         run: python -m pytest tests/test_loader.py -v
 
