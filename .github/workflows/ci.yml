@@ -240,7 +240,111 @@ jobs:
           echo "$resp" | grep -q '"knowledge_hit":false' \
             || { echo "::error::库里没有的问题没有拒答（knowledge_hit 不是 false）"; exit 1; }
 
+      - name: 用 compose 起【服务 + Redis】，验"配额真的挡住了"（一条命令能起）
+        # ★ 为什么必须单独验一次 compose，而不是"已经有 docker run 了就够了"：
+        #   compose 多了三样独立会坏的东西 —— ① Redis 服务本身
+        #   ② 启动顺序（服务要等 Redis 健康）③ 环境变量/卷的接线。
+        #   而这三样**只在 compose 里存在**，docker run 那条路一个字都没覆盖。
+        #
+        # ★ 为什么这些断言必须打真接口，而不是在容器里跑 pytest：
+        #   限流要验的是"跨进程"的行为（计数在 Redis 里、服务重启不丢），
+        #   pytest 进程内测不到它 —— 那正是 test_limits.py 里两种存储各跑一遍的意义，
+        #   而这里是端到端那一层。
+        #
+        # ★ 配额调成"一测就满"：RATE_BURST=3 / 每分钟补 1 / 日请求 5。
+        #   默认值（10/20/200）在 CI 里跑不出 429，硬等一两分钟又会变成偶发失败。
+        env:
+          HOST_PORT: "8080"
+          RATE_BURST: "3"
+          RATE_PER_MIN: "1"
+          DAILY_REQ_QUOTA: "5"
+          DAILY_TOKEN_QUOTA: "0"          # 关掉：没有 key 的路径本来就不花 token
+        run: |
+          set -euo pipefail
+          API=http://127.0.0.1:8080
+          Q='{"question":"图书馆几点关门？","use_rerank":false,"use_rewrite":false}'
+
+          echo "── 起栈（--build 复用上面建好的镜像层缓存）──"
+          docker compose up -d --build
+
+          echo "── 等服务就绪（首次要在卷里下 91MB 模型；healthcheck 只要求 HTTP 200）──"
+          for i in $(seq 1 120); do
+            if curl -sf "$API/health" -o /tmp/h.json 2>/dev/null && grep -q '"status":"ok"' /tmp/h.json; then
+              echo "第 ${i} 次轮询就绪：$(cat /tmp/h.json)"
+              break
+            fi
+            sleep 5
+            [ "$i" -eq 120 ] && { echo "::error::compose 栈 600 秒内没就绪"; docker compose logs --tail 60; exit 1; }
+          done
+
+          echo "── ① 限流口径必须是 redis（不是内存）──"
+          python3 - <<'PY'
+          import json, sys, urllib.request
+          h = json.load(urllib.request.urlopen("http://127.0.0.1:8080/health"))
+          lim = h["limits"]
+          print("limits =", lim)
+          assert lim["store"] == "redis", f"限流存储不是 redis 而是 {lim['store']} ⇒ 多副本下配额会被放大"
+          assert lim["store_ok"] is True, "Redis 不通"
+          assert lim["fail_mode"] == "closed", lim["fail_mode"]
+          PY
+
+          echo "── ② 突发 3 次放行、第 4 次 429（桶）──"
+          for i in 1 2 3; do
+            code=$(curl -s -o /tmp/r.json -w '%{http_code}' -X POST "$API/chat" -H 'Content-Type: application/json' -d "$Q")
+            [ "$code" = "200" ] || { echo "::error::第 $i 次请求应当 200，实际 $code：$(cat /tmp/r.json)"; exit 1; }
+          done
+          code=$(curl -s -D /tmp/hdr.txt -o /tmp/r.json -w '%{http_code}' -X POST "$API/chat" -H 'Content-Type: application/json' -d "$Q")
+          echo "第 4 次：$code  $(cat /tmp/r.json)"
+          [ "$code" = "429" ] || { echo "::error::突发用完却没被限流（$code）"; exit 1; }
+          grep -qi '^retry-after:' /tmp/hdr.txt || { echo "::error::429 没带 Retry-After"; exit 1; }
+          python3 -c "import json;d=json.load(open('/tmp/r.json'));assert d['detail']['reason']=='rate',d"
+
+          echo "── ③ 重启服务容器：日计数必须还在（这是『用 Redis』的全部意义）──"
+          before=$(curl -sf "$API/limits" | python3 -c "import json,sys;print(json.load(sys.stdin)['usage']['requests_used'])")
+          docker compose restart rag
+          for i in $(seq 1 60); do
+            curl -sf "$API/health" -o /tmp/h.json 2>/dev/null && grep -q '"status":"ok"' /tmp/h.json && break
+            sleep 3
+          done
+          after=$(curl -sf "$API/limits" | python3 -c "import json,sys;print(json.load(sys.stdin)['usage']['requests_used'])")
+          echo "重启前 requests_used=$before，重启后=$after"
+          [ "$before" = "$after" ] && [ "$after" -ge 3 ] \
+            || { echo "::error::重启后计数变了（$before → $after）⇒ 配额其实存在进程里"; exit 1; }
+
+          echo "── ④ 计数确实落在 Redis 里（不是服务内存里的幻觉）──"
+          keys=$(docker compose exec -T redis redis-cli --scan --pattern 'q:*' | head -5)
+          echo "Redis 里的配额 key：$keys"
+          [ -n "$keys" ] || { echo "::error::Redis 里没有配额 key"; exit 1; }
+
+          echo "── ⑤ 把 Redis 里的日用量顶到上限 ⇒ 必须按 daily_req 拒（且 Retry-After 到 UTC 零点）──"
+          read -r WHO DAY <<<"$(curl -sf "$API/limits" | python3 -c "import json,sys;u=json.load(sys.stdin)['usage'];print(u['who'],u['day_utc'])")"
+          echo "who=$WHO day=$DAY"
+          docker compose exec -T redis redis-cli set "q:$DAY:$WHO:req" 999 >/dev/null
+          code=$(curl -s -D /tmp/hdr2.txt -o /tmp/r2.json -w '%{http_code}' -X POST "$API/chat" -H 'Content-Type: application/json' -d "$Q")
+          echo "改写额度后：$code  $(cat /tmp/r2.json)"
+          [ "$code" = "429" ] || { echo "::error::Redis 里的额度满了，服务却没拦（$code）⇒ 它读的不是 Redis"; exit 1; }
+          python3 -c "import json;d=json.load(open('/tmp/r2.json'));assert d['detail']['reason']=='daily_req',d"
+          python3 -c "
+          import re
+          ra=int(re.search(r'(?im)^retry-after:\s*(\d+)', open('/tmp/hdr2.txt').read()).group(1))
+          assert 1 <= ra <= 86400, f'Retry-After={ra} 不是到 UTC 零点的秒数'"
+
+          echo "── ⑥ 拿不到 usage 时必须留痕（不许补 0 当成'没花钱'）──"
+          curl -sf "$API/health" | python3 -c "
+          import json,sys
+          lim=json.load(sys.stdin)['limits']
+          print('usage_missing =', lim['usage_missing'])
+          assert lim['usage_missing'] >= 1, '拒绝路径没拿到 usage，但 usage_missing 是 0 ⇒ 缺口被静默抹平'"
+
+      - name: 收尾：把 compose 栈拆掉
+        if: always()
+        run: docker compose down -v || true
+
       - name: 挂了就把容器日志倒出来
         # 否则失败信息只有一句"exit 1"，查起来只能靠猜。
         if: failure()
-        run: docker logs --tail 80 rag || true
+        run: |
+          docker logs --tail 80 rag || true
+          echo "---- compose 栈 ----"
+          docker compose ps || true
+          docker compose logs --tail 80 || true

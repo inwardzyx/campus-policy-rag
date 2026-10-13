@@ -1,0 +1,95 @@
+# ==================================================================
+# docker-compose.yml —— 一条命令把【服务 + Redis】拉起来
+# ==================================================================
+# 用法（在仓库根目录）：
+#     docker compose up -d --build          # 起
+#     docker compose logs -f rag            # 看日志
+#     docker compose down                   # 停（加 -v 连 Redis 数据一起删）
+#
+# 为什么要有这个文件 —— 不是为了"看起来像会部署"，而是因为**光有 Dockerfile 不够**：
+#   ① 服务要 Redis 才能真限流（进程内存储在多副本/多 worker 下等于没限流）；
+#   ② 两个容器有启动顺序依赖（服务要等 Redis 健康）；
+#   ③ "一条命令"要求把环境变量、卷、健康检查全写在一处，而不是散在三条 docker run 里。
+#
+# ★ 已知边界（如实写在这里，不写就等于假装没有）：
+#   · 这是**单机**编排：没有副本、没有负载均衡、没有 TLS。
+#     要放到公网前面还得有个反代（Caddy/Nginx）来终止 TLS 并清洗 X-Forwarded-For。
+#   · Redis 只挂了数据卷 + AOF，没有密码、没有 ACL：**只在 compose 内网里可达**
+#     （没把 6379 映射到宿主机）。如果哪天要跨机访问它，先加密码和网络隔离。
+#   · 镜像里不含 .env（见 .dockerignore）—— 密钥由运行时环境变量传进去。
+# ==================================================================
+
+services:
+  redis:
+    image: redis:7-alpine
+    # ★ 开 AOF（appendonly）：日配额计数是"防烧钱"的状态，
+    #   不持久化的话 Redis 一重启，当天用掉的额度就归零 —— 那是个真实的绕过口子。
+    #   代价是每写一次多一次落盘（本项目的量级完全无感）。
+    #   `--save ""` 关掉 RDB 快照：有 AOF 就不需要两套持久化方式。
+    command: ["redis-server", "--appendonly", "yes", "--save", ""]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # ★ 服务要等它健康才启动（见下面 depends_on 的 condition）：
+      #   否则服务先起来、Redis 后起来，那段时间的 /chat 会因为连不上存储
+      #   按 fail_mode 直接 503（closed 模式下就是"服务看着起来了但全拒"）。
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    # ★ 故意【不】映射端口：只有 compose 网络里的服务能连它。
+
+  rag:
+    build: .
+    image: rag-cs:local
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      # ★ 宿主机端口可换：本机 8000 常常已经被别的东西占着（比如上一次没停干净的服务），
+      #   而"改端口"不该需要改代码。CI 里就用 HOST_PORT=8080 避开前面那个容器。
+      - "${HOST_PORT:-8000}:8000"
+    environment:
+      # ---- 密钥：从宿主机环境/`.env` 传进来（compose 会自动读 ./.env 做变量替换）----
+      # ★ 不写 `env_file: .env` 是有意的：那个文件不存在时 compose 会直接报错，
+      #   而"没配 key"应当是**能起来的**（只有不需要生成模型的那两条路可用，
+      #   见 Dockerfile 底部那段说明）。这里用 `${VAR:-}` 给空默认值。
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      HF_ENDPOINT: "${HF_ENDPOINT:-https://hf-mirror.com}"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      # ---- 限流 + 日配额（默认值按"演示/自部署"取，公网请按钱包调小）----
+      REDIS_URL: "redis://redis:6379/0"
+      RATE_BURST: "${RATE_BURST:-10}"
+      RATE_PER_MIN: "${RATE_PER_MIN:-20}"
+      DAILY_REQ_QUOTA: "${DAILY_REQ_QUOTA:-200}"
+      DAILY_TOKEN_QUOTA: "${DAILY_TOKEN_QUOTA:-200000}"
+      # closed = 限流存储挂了就拒绝服务（宁可不服务，也不烧钱）；open = 放行保可用
+      LIMIT_FAIL_MODE: "${LIMIT_FAIL_MODE:-closed}"
+      # ★ 下面两个默认都是 0，而且**直连部署时必须保持 0**：
+      #   没有反代清洗 X-Forwarded-For 时开它 = 把身份交给调用方伪造；
+      #   X-Client-Id 更是调用方自己填的。放在这里是为了"要开的时候知道在哪儿开"。
+      TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-0}"
+      ALLOW_CLIENT_ID_HEADER: "${ALLOW_CLIENT_ID_HEADER:-0}"
+    volumes:
+      # ★ 模型缓存挂出来（约 91MB）：不然每次重建容器都要重下一遍。
+      #   第一次 `up` 会看到 /health 返回 loading，属于正常。
+      - model-cache:/root/.cache/fastembed
+    healthcheck:
+      # ★ 为什么用 python 而不是 curl：python:3.14-slim 里**没有 curl**
+      #   （要装就得再加一层 apt），而 python 一定在。
+      #   ★ 这里只要求 HTTP 200，**不要求 status=ok**：模型没下完时 /health 也是 200
+      #     （返回 "loading"）—— 而"进程活着、接口能应答"才是编排关心的；
+      #     把它写成"必须 ok"会让首次启动被判成不健康、反复重启。
+      test: ["CMD", "python", "-c",
+             "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  model-cache:
+  redis-data:
