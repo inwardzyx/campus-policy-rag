@@ -1052,6 +1052,28 @@ def test_daily_quota_429_and_retry_after_is_until_utc_midnight(gate):
         f"日额度的 Retry-After 应当是『到 UTC 零点』的秒数（此刻约 {expect:.0f}），实际 {got}")
 
 
+def test_global_quota_blocks_every_identity_when_the_wallet_is_empty(gate):
+    """R1：全站额度用满 ⇒ **503**（不是 429），而且换个身份也拦得住。
+
+    ★ 这条是这层立项理由（"防止公网刷爆额度"）的守门人：
+      只有 per-identity 额度时，换身份就等于换一份新额度，账单照烧而闸门全绿。
+    ★ 为什么断言 503：它不是"你太快了"，而是"**服务今天不干活了**" ——
+      与调用方无关，混成 429 会让运维分不清"被刷"和"没钱了"。
+    """
+    import limits as lm
+
+    lim, client = gate(burst=100, per_min=6000.0, daily_req=100, global_daily_req=1)
+    day = client.get("/limits").json()["usage"]["day_utc"]
+    for k in (f"q:{day}:{lm.GLOBAL_KEY}:req", f"q:{day}:{lm.GLOBAL_KEY}:tok"):
+        lim.store._daily.pop(k, None)                # 白盒：全站计数跨用例共享，先清干净
+    assert client.post("/chat", json=_REFUSE_Q).status_code == 200
+    r = client.post("/chat", json=_REFUSE_Q)
+    assert r.status_code == 503, f"全站额度用满了却返回 {r.status_code}"
+    assert r.json()["detail"]["reason"] == "global_req"
+    assert 1 <= int(r.headers["Retry-After"]) <= 86_400
+    assert client.get("/limits").json()["usage"]["global"]["requests_limit"] == 1
+
+
 def test_blocked_requests_are_not_counted(gate):
     """被挡掉的请求不再记账。
 

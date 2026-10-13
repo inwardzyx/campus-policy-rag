@@ -26,7 +26,16 @@ services:
     #   不持久化的话 Redis 一重启，当天用掉的额度就归零 —— 那是个真实的绕过口子。
     #   代价是每写一次多一次落盘（本项目的量级完全无感）。
     #   `--save ""` 关掉 RDB 快照：有 AOF 就不需要两套持久化方式。
-    command: ["redis-server", "--appendonly", "yes", "--save", ""]
+    # ★★ maxmemory（2026-10-13 加，起因是盲审 R2）：**没有上限的 Redis 本身就是攻击面** ——
+    #   配额键的条数跟着"身份数"走（换 IP/换头就多 3 个键、日键活两天），
+    #   把它撑爆的下场不是"限流失效"，而是**这台机器上的 Redis 被 OOM kill**
+    #   ⇒ fail_mode=closed ⇒ **全站 503**：攻击者用一个循环把服务按停。
+    #   策略用 volatile-lru：只淘汰**带 TTL 的**键（配额键都有 TTL，指标键没有）。
+    #   ⚠️ 诚实的代价：内存压力下**被淘汰的那个身份的额度会被重置**。
+    #      这是"宁可丢一部分人的额度、也不能让整台机器倒下"的取舍；
+    #      真正治本的是"身份定长化 + 全站额度键"，两者都已落地（见 limits.py）。
+    command: ["redis-server", "--appendonly", "yes", "--save", "",
+              "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -65,6 +74,12 @@ services:
       RATE_PER_MIN: "${RATE_PER_MIN:-20}"
       DAILY_REQ_QUOTA: "${DAILY_REQ_QUOTA:-200}"
       DAILY_TOKEN_QUOTA: "${DAILY_TOKEN_QUOTA:-200000}"
+      # ★ 全站总额度（盲审 R1 之后加的"钱包"那一层）：上面两个是**每身份**一份，
+      #   换 IP/换头就能换一份新的；这两个是所有人的总和，兜住"钱包被刷爆"。
+      #   0 = 关掉这一层。⚠️ 用满意味着**所有人都被拒**（503 到 UTC 零点）——
+      #   这是护钱包优先的取舍，值请按钱包定。
+      GLOBAL_DAILY_REQ_QUOTA: "${GLOBAL_DAILY_REQ_QUOTA:-2000}"
+      GLOBAL_DAILY_TOKEN_QUOTA: "${GLOBAL_DAILY_TOKEN_QUOTA:-2000000}"
       # closed = 限流存储挂了就拒绝服务（宁可不服务，也不烧钱）；open = 放行保可用
       LIMIT_FAIL_MODE: "${LIMIT_FAIL_MODE:-closed}"
       # ★ 下面两个默认都是 0，而且**直连部署时必须保持 0**：

@@ -362,11 +362,30 @@ def test_identity_defaults_to_socket_peer_and_ignores_spoofable_headers():
 def test_identity_honors_headers_only_when_explicitly_enabled():
     lim = L.Limits(trust_proxy=True, allow_client_id=True)
     # 反代头：取第一跳
-    assert L.client_id("10.0.0.1", {"x-forwarded-for": "9.9.9.9, 10.0.0.1"}, lim) == "9.9.9.9"
+    assert L.client_id("10.0.0.1", {"x-forwarded-for": "9.9.9.9, 10.0.0.1"}, lim) == "ip:9.9.9.9"
     # 没有反代头时退回自称头
     assert L.client_id("10.0.0.1", {"x-client-id": "内部-1"}, lim) == "cid:内部-1"
     # 两个都没有 ⇒ 退回对端地址
     assert L.client_id("10.0.0.1", {}, lim) == "ip:10.0.0.1"
+    # ★ 同一个客户端不能因为"这次带不带 XFF"被算成两个人（2026-10-13 修）：
+    #   原实现的 XFF 分支返回的是**裸 IP**（没有 `ip:` 前缀），而兜底分支带前缀
+    #   ⇒ 同一个 IP 会落进两个不同的桶（`9.9.9.9` 与 `ip:9.9.9.9`）—— 这就是
+    #   "身份可以被拆开"的一种，而且不需要攻击者做任何事、只要请求头时有时无。
+    assert (L.client_id("9.9.9.9", {"x-forwarded-for": "9.9.9.9"}, lim)
+            == L.client_id("9.9.9.9", {}, lim) == "ip:9.9.9.9")
+
+
+def test_identity_is_bounded_even_with_a_huge_header():
+    """R2：身份串直接进 Redis 的 key ⇒ 必须有长度上限。
+
+    ★ 原来 XFF 那段没有任何截断（同一个函数里 `X-Client-Id` 倒是截到 64）：
+      实测 4000 字符的 XFF 会造出约 4KB 的 `who`、两个 key 就是 8KB，还能活两天。
+    """
+    lim = L.Limits(trust_proxy=True)
+    got = L.client_id("1.1.1.1", {"x-forwarded-for": "a" * 5000}, lim)
+    assert got.startswith("h:") and len(got) == 18, f"没被收敛成定长：{got[:40]!r}…({len(got)})"
+    # 正常长度仍然保持可读（不然 `redis-cli --scan` 里全是哈希，排障会变难）
+    assert L.client_id("127.0.0.1", {}, lim) == "ip:127.0.0.1"
 
 
 def test_identity_header_is_truncated():
@@ -499,3 +518,116 @@ def test_metrics_are_not_double_counted(store):
     assert not lim.check(w, now=now).allowed
     delta = lim.stats()["denied_rate"] - base
     assert delta == 2, f"真实被拒 2 次，指标涨了 {delta} ⇒ 被重复计数了"
+
+
+# ==================================================================
+# 盲审 R1：全站总额度（"钱包"那一层）
+# ==================================================================
+def _reset_global(store, now: float) -> None:
+    """把"全站"那两个键清掉。
+
+    ★★ 为什么必须清：全站计数**按设计就是跨身份共享的**（那正是它的意义），
+      于是它也会**跨用例共享** —— 前一个用例记下的次数会把这一条的断言顶绿。
+      这也是为什么这一层的判据不能像 per-identity 那样靠 uuid 隔离。
+      （e2e 脚本里的 reset 出于同一个理由也要清它。）
+    """
+    day = L.utc_day(now)
+    keys = [f"q:{day}:{L.GLOBAL_KEY}:req", f"q:{day}:{L.GLOBAL_KEY}:tok"]
+    if isinstance(store, L.RedisStore):
+        store._c().delete(*keys)
+    else:
+        for k in keys:
+            store._daily.pop(k, None)                # 白盒：内存版没有 delete
+
+
+def test_global_daily_quota_caps_all_identities_together(store):
+    """R1：全站额度是所有人的总和 —— **换身份换不掉它**。
+
+    ★ 这条盯的是这层的立项理由："防止公网上被人刷爆 API 额度"。
+      第一版只有 `q:{day}:{who}:*` 这种带身份的键 ⇒ 钱包是全站一个、配额却是每身份一份，
+      换 IP / 换一个头就等于换一份新额度，**所有闸门都是绿的，而账单照烧**。
+    """
+    lim = make_limiter(store, burst=100, per_min=6000.0, daily_req=0, daily_tokens=0,
+                       global_daily_req=2, global_daily_tokens=0)
+    a, b, now = who(), who(), 1_000_000.0
+    _reset_global(store, now)
+    assert lim.check(a, now=now).allowed
+    lim.record(a, usage=None, now=now)
+    assert lim.check(b, now=now).allowed, "第二个身份应当还能过（全站才用了 1/2）"
+    lim.record(b, usage=None, now=now)
+    d = lim.check(who(), now=now)                    # 第三个身份
+    assert d.reason == "global_req", f"全站额度用满了却没拦住：{d}"
+    assert d.http_status() == 503, "全站额度用满意味着『服务今天不干活了』⇒ 503（不是 429）"
+    assert 1 <= d.retry_after <= 86_400
+
+
+def test_global_quota_can_be_disabled(store):
+    """0 = 关掉这一层（自部署/演示时用）。"""
+    lim = make_limiter(store, burst=100, per_min=6000.0, daily_req=0, daily_tokens=0,
+                       global_daily_req=0, global_daily_tokens=0)
+    w, now = who(), 1_000_000.0
+    _reset_global(store, now)
+    for _ in range(5):
+        assert lim.check(w, now=now).allowed
+        lim.record(w, usage=None, now=now)
+
+
+def test_global_token_quota(store):
+    """token 那本账也必须有全站一层（先花后记 ⇒ 下一次请求才被拦）。"""
+    lim = make_limiter(store, burst=100, per_min=6000.0, daily_req=0, daily_tokens=0,
+                       global_daily_req=0, global_daily_tokens=100)
+    now = 1_000_000.0
+    _reset_global(store, now)
+    lim.record(who(), usage={"total": 60}, now=now)      # 两个不同身份各花 60
+    lim.record(who(), usage={"total": 60}, now=now)
+    d = lim.check(who(), now=now)
+    assert d.reason == "global_tokens" and d.http_status() == 503, d
+
+
+def test_usage_today_reports_the_global_layer(store):
+    """`/limits` 要能看出"我没超自己额度、但全站满了" —— 否则被拒的原因只能去翻 Redis。"""
+    lim = make_limiter(store, burst=100, per_min=6000.0, daily_req=0, daily_tokens=0,
+                       global_daily_req=7, global_daily_tokens=99)
+    w, now = who(), 1_000_000.0
+    _reset_global(store, now)
+    lim.record(w, usage={"total": 5}, now=now)
+    got = lim.usage_today(w, now=now)
+    assert got["global"]["requests_used"] == 1 and got["global"]["requests_limit"] == 7
+    assert got["global"]["tokens_used"] == 5 and got["global"]["tokens_limit"] == 99
+    st = lim.stats()
+    assert st["global_daily_req"] == 7 and st["global_daily_tokens"] == 99
+
+
+# ==================================================================
+# 盲审 R2：内存版的清理（Redis 靠 TTL，内存版只能自己剪）
+# ==================================================================
+def test_memory_store_prunes_stale_entries():
+    """内存版必须剪掉"不是今天的"日计数与闲置太久的桶。
+
+    ★ 原来 `_buckets` / `_daily` 只增不减：单进程挂一天、被换着身份刷，
+      进程内存一路涨（Redis 那边有 TTL 兜底，这边没有）。
+    """
+    s = L.InProcessStore()
+    now = 1_000_000.0
+    today, yesterday = L.utc_day(now), L.utc_day(now - 86_400)
+    s._daily[f"q:{today}:someone:req"] = 3
+    s._daily[f"q:{yesterday}:someone:req"] = 9
+    s._buckets["bucket:live"] = (1.0, now - 10)
+    s._buckets["bucket:stale"] = (1.0, now - 7200)
+    s._prune(now)
+    assert f"q:{today}:someone:req" in s._daily, "把今天的计数剪掉了"
+    assert f"q:{yesterday}:someone:req" not in s._daily, "昨天的计数没剪掉"
+    assert "bucket:live" in s._buckets and "bucket:stale" not in s._buckets
+
+
+def test_memory_store_prunes_automatically_when_it_grows(monkeypatch):
+    """长到阈值就顺手剪一次（不需要定时线程）。"""
+    monkeypatch.setattr(L, "_PRUNE_AT", 3)
+    s = L.InProcessStore()
+    now = 1_000_000.0
+    yesterday = L.utc_day(now - 86_400)
+    for i in range(4):
+        s._daily[f"q:{yesterday}:x{i}:req"] = 1
+    lim = make_limiter(s, burst=5, per_min=60.0, daily_req=0, daily_tokens=0)
+    lim.check("someone", now=now)                     # 触发一次 bucket_allow ⇒ 顺手剪
+    assert not any(yesterday in k for k in s._daily), f"没剪：{list(s._daily)[:3]}"

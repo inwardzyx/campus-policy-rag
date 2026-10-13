@@ -66,6 +66,11 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 
 REFUSE_BODY = {"question": "图书馆几点关门？", "use_rerank": False, "use_rewrite": False}
 
+# 全站额度键里的那个"身份"（与 limits.GLOBAL_KEY 同值）。这里写死是为了让本脚本
+# **不 import limits**（它跑在宿主机上、面对的是远端服务，不该依赖那份代码）。
+# ⚠️ 两处要一起改：改 limits.GLOBAL_KEY 时这里也得改，否则 reset 清不到全站计数。
+L_GLOBAL_KEY = "__all__"
+
 
 class Failed(Exception):
     """断言失败（带上"怎么修"的提示，别让下一个人只知道红、不知道往哪看）。"""
@@ -114,8 +119,12 @@ def reset_client_state(r, who: str, day: str) -> None:
         直到有人在同一个栈上跑第二次（比如本机复现、或重跑 CI job 时复用了卷）。
     ★ 只删自己这个 `who` 的三个键：不动别人的额度，也不 flushdb
       （flushdb 会把"别人的账"一起抹掉，那是另一个性质的问题）。
+    ★ 全站那两个键（`q:{day}:__all__:*`）也要清：它**跨身份共享**，
+      同样会跨"这一次运行"累积 —— 不清的话跑得多了会撞上全站额度，
+      而报出来的是"服务没钱了"，与本脚本想验的东西无关。
     """
-    keys = [f"bucket:{who}", f"q:{day}:{who}:req", f"q:{day}:{who}:tok"]
+    keys = [f"bucket:{who}", f"q:{day}:{who}:req", f"q:{day}:{who}:tok",
+            f"q:{day}:{L_GLOBAL_KEY}:req", f"q:{day}:{L_GLOBAL_KEY}:tok"]
     n = r.delete(*keys)
     print(f"    已清掉本次客户端的 {n} 个 key（who={who} day={day}）")
 

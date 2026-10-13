@@ -39,6 +39,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import threading
 import time
@@ -51,6 +52,16 @@ M_DENIED_QUOTA = "denied_quota"
 M_STORE_ERRORS = "store_errors"
 M_USAGE_MISSING = "usage_missing"      # 这次调用没拿到 usage ⇒ token 账少记一截
 METRIC_NAMES = (M_DENIED_RATE, M_DENIED_QUOTA, M_STORE_ERRORS, M_USAGE_MISSING)
+
+# ★ 全站额度键里的那个"身份"（盲审 R1）：它不是任何一个真实客户端，
+#   而是"所有人加起来"。用固定串而不是哈希，是为了 `redis-cli --scan 'q:*'` 一眼能认出来。
+GLOBAL_KEY = "__all__"
+
+# ★ 内存版的清理参数（盲审 R2）。为什么是"顺手剪"而不是定时线程：
+#   这个模块是纯逻辑、可以被任何进程 import；起线程会把生命周期问题引进来
+#   （谁负责停？测试里漏一个线程就一直挂着）。阈值到了再剪，上界可控。
+_PRUNE_AT = 5_000          # 条目数（日计数 + 桶）超过它就剪一次
+_BUCKET_IDLE_TTL = 3_600   # 桶闲置超过一小时就丢（Redis 那边的 TTL 是 60s~分钟级，这里宽松些）
 
 
 # ==================================================================
@@ -82,6 +93,14 @@ class Limits:
     per_min: float = 20.0           # 每分钟补充多少个令牌
     daily_req: int = 300            # 每个客户端每天最多几次请求（0 = 不限）
     daily_tokens: int = 300_000     # 每个客户端每天最多多少 token（0 = 不限）
+    # ★★ 全站总额度（2026-10-13 加，起因是盲审 R1）：
+    #   上面那两个是**每个身份**一份，而"钱包"是全站一个 —— 换 IP / 换一个头就换一份新额度。
+    #   所以必须另有一组**不带身份**的键兜底，否则"防公网刷爆额度"这句话是假的。
+    #   ★ 取舍要写清：全局额度用满 ⇒ **所有人都被拒**（503 到 UTC 零点）。
+    #     这正是它该有的行为（护钱包优先），但值必须按钱包定，不能拍脑袋。
+    #     默认给的是"演示/自部署"量级（2000 次 / 200 万 token 一天），0 = 关掉这一层。
+    global_daily_req: int = 2_000
+    global_daily_tokens: int = 2_000_000
     fail_mode: str = "closed"       # Redis 挂了怎么办：closed=拒绝服务（护钱包）/ open=放行
     trust_proxy: bool = False       # 是否信 X-Forwarded-For（反代自己清洗时才开）
     allow_client_id: bool = False   # 是否认 X-Client-Id 这个"自称的身份"
@@ -98,6 +117,8 @@ class Limits:
             per_min=num("RATE_PER_MIN", 20.0, float),
             daily_req=num("DAILY_REQ_QUOTA", 300, int),
             daily_tokens=num("DAILY_TOKEN_QUOTA", 300_000, int),
+            global_daily_req=num("GLOBAL_DAILY_REQ_QUOTA", 2_000, int),
+            global_daily_tokens=num("GLOBAL_DAILY_TOKEN_QUOTA", 2_000_000, int),
             fail_mode=(env.get("LIMIT_FAIL_MODE") or "closed").strip().lower(),
             trust_proxy=_env_bool(env, "TRUST_PROXY_HEADERS"),
             allow_client_id=_env_bool(env, "ALLOW_CLIENT_ID_HEADER"),
@@ -110,14 +131,15 @@ class Decision:
     """一次配额判定的结果。`reason` 为空串表示放行。"""
 
     allowed: bool
-    reason: str = ""                # "" | rate | daily_req | daily_tokens | store_down
+    reason: str = ""                # "" | rate | daily_req | daily_tokens | global_req | global_tokens | store_down
     retry_after: int = 0            # 秒；429/503 的 Retry-After 用
     detail: str = ""
 
     def http_status(self) -> int:
-        # ★ 存储挂了是 **503** 不是 429：429 的意思是"你太快了"，而这时该被怪的是我们。
-        #   把两者混成一个码，运维看报表时分不清"被刷"和"自己坏了"。
-        return 503 if self.reason == "store_down" else 429
+        # ★ 这些用 **503** 而不是 429：429 的意思是"你太快了"，而这时该被怪的是我们。
+        #   把两者混成一个码，运维看报表时分不清"被刷"和"自己坏了/没钱了"。
+        #   全局额度用满也归这里：那意味着**服务今天不能干活了**，与调用方无关。
+        return 503 if self.reason in ("store_down", "global_req", "global_tokens") else 429
 
 
 class Store(Protocol):
@@ -162,6 +184,7 @@ class InProcessStore:
     def bucket_allow(self, key: str, burst: int, per_min: float, now: float) -> tuple[bool, float]:
         rate = per_min / 60.0
         with self._lock:
+            self._maybe_prune(now)
             tokens, ts = self._buckets.get(key, (float(burst), now))
             delta = now - ts
             if delta < 0:
@@ -182,8 +205,30 @@ class InProcessStore:
 
     def incr_daily(self, key: str, n: int) -> int:
         with self._lock:
+            self._maybe_prune(time.time())
             self._daily[key] = self._daily.get(key, 0) + n
             return self._daily[key]
+
+    # ---- 清理（内存版没有 TTL 机制，只能自己剪）----
+    def _maybe_prune(self, now: float) -> None:
+        """条目数超过阈值就顺手剪一次（**必须在持锁时调用**）。
+
+        ★ 盲审 R2：内存版的 `_buckets` / `_daily` 原来是**只增不减**的字典 ——
+          单进程挂一天、被人换着身份刷，进程内存就一路涨上去。
+          Redis 那半边靠 TTL 兜底（每个 key 都 `EXPIRE`），这边没有 TTL 机制，
+          所以只能"顺手剪"：**不做定时线程**（那会给这个纯逻辑模块引入生命周期问题）。
+          代价写清楚：**在达到阈值之前不会剪**，也就是最坏情况下会多留
+          `_PRUNE_AT` 条过期项 —— 这个上界是刻意的、也是可以算出来的。
+        """
+        if len(self._daily) + len(self._buckets) >= _PRUNE_AT:
+            self._prune(now)
+
+    def _prune(self, now: float) -> None:
+        """丢掉"不是今天的"日计数与"闲置超过一小时"的桶。持锁调用。"""
+        today = time.strftime("%Y-%m-%d", time.gmtime(now))
+        self._daily = {k: v for k, v in self._daily.items() if today in k}
+        self._buckets = {k: (t, ts) for k, (t, ts) in self._buckets.items()
+                         if now - ts < _BUCKET_IDLE_TTL}
 
     def get_daily(self, key: str) -> int:
         with self._lock:
@@ -338,17 +383,34 @@ def client_id(remote: str | None, headers: dict[str, str], limits: Limits) -> st
 
     ★ 顺序是**从最不可伪造到最可伪造**：反代头的可信度取决于反代有没有清洗，
       自称头永远不可信。默认只认 TCP 对端地址（`remote`）。
+
+    ★★ 定长兜底（2026-10-13 加，起因是盲审 R2）：
+      身份串会直接进 Redis 的 key（`bucket:{who}` / `q:{day}:{who}:req`）。
+      第一版对 XFF 那段**没有长度上限** —— 实测 4000 字符的 `X-Forwarded-For`
+      会造出约 4KB 的 who、两个 key 就是 8KB，还能活两天 ⇒ 换着身份刷就能把 Redis 撑爆。
+      （同一个函数里 `X-Client-Id` 倒是老老实实截到 64 —— 一处做了、另一处漏了。）
+      ⇒ 现在：各分支先各自截断，最后再兜一道"超过 64 字符就哈希成定长"。
+        注意**保留可读形式**是刻意的：正常情况 `ip:1.2.3.4` 一眼能认，
+        只有异常长的才变成 `h:<16 位>`（那时可读性本来也没意义了）。
     """
+    who = None
     if limits.trust_proxy:
         xff = (headers.get("x-forwarded-for") or "").strip()
         if xff:
             # 取第一跳 = 最靠近客户端的那一跳（约定：反代把自己追加在后面）
-            return xff.split(",")[0].strip() or (remote or "unknown")
-    if limits.allow_client_id:
+            who = f"ip:{xff.split(',')[0].strip()[:64] or (remote or 'unknown')}"
+    # ⚠️ 这里**不是 elif**：原实现的语义是"信了反代但这一跳没有 XFF ⇒ 继续看自称头"。
+    #    改成 elif 会让 (trust_proxy=True, allow_client_id=True, 无 XFF) 直接落到对端 IP，
+    #    那是一条**悄悄改变身份口径**的改动 —— 语义要原样保住。
+    if who is None and limits.allow_client_id:
         cid = (headers.get("x-client-id") or "").strip()
         if cid:
-            return f"cid:{cid[:64]}"
-    return f"ip:{remote or 'unknown'}"
+            who = f"cid:{cid[:64]}"
+    if who is None:
+        who = f"ip:{remote or 'unknown'}"
+    if len(who) > 64:
+        return "h:" + hashlib.sha1(who.encode("utf-8")).hexdigest()[:16]
+    return who
 
 
 @dataclass
@@ -433,6 +495,29 @@ class Limiter:
                 return Decision(False, reason="daily_tokens", retry_after=_secs_to_utc_midnight(now),
                                 detail=f"今日 token 额度已用完（{used_tok}/{lim.daily_tokens}）")
 
+        # ★★ 全站总额度（盲审 R1）：**不带身份**的键，最后一道，也是护钱包的那一道。
+        #   为什么放在最后查：前面那几条能给出更具体的拒绝原因（"你的额度用完了"），
+        #   而这条的含义是"**服务**今天没钱了" —— 给谁都一样，所以放最后。
+        #   ⚠️ 顺序不改判"是否被拦"，只改"报哪条原因"：全局用满时，前面几条也可能同时不满足，
+        #      但那时更该看到的是 daily_req 这种"你能自己解决"的信息。
+        if lim.global_daily_req > 0:
+            g = self._call(lambda: self.store.get_daily(f"q:{day}:{GLOBAL_KEY}:req"), default=None)
+            if g is None:
+                return self._store_down_decision()
+            if g >= lim.global_daily_req:
+                self._bump_local(M_DENIED_QUOTA)
+                return Decision(False, reason="global_req", retry_after=_secs_to_utc_midnight(now),
+                                detail=f"全站今日请求额度已用完（{g}/{lim.global_daily_req}）"
+                                       f"—— 这一层防的是『钱包被刷爆』，不是『你太频繁』")
+        if lim.global_daily_tokens > 0:
+            gt = self._call(lambda: self.store.get_daily(f"q:{day}:{GLOBAL_KEY}:tok"), default=None)
+            if gt is None:
+                return self._store_down_decision()
+            if gt >= lim.global_daily_tokens:
+                self._bump_local(M_DENIED_QUOTA)
+                return Decision(False, reason="global_tokens", retry_after=_secs_to_utc_midnight(now),
+                                detail=f"全站今日 token 额度已用完（{gt}/{lim.global_daily_tokens}）")
+
         return Decision(True)
 
     def record(self, who: str, usage: dict | None, now: float | None = None) -> None:
@@ -446,6 +531,9 @@ class Limiter:
         now = time.time() if now is None else now
         day = utc_day(now)
         self._call(lambda: self.store.incr_daily(f"q:{day}:{who}:req", 1), default=None)
+        # ★ 全站计数与身份计数**一起记**（盲审 R1）：只记身份那一份的话，
+        #   全局那道闸永远读到 0，等于没接。两处必须同进同出。
+        self._call(lambda: self.store.incr_daily(f"q:{day}:{GLOBAL_KEY}:req", 1), default=None)
         if usage:
             total = usage.get("total") or usage.get("total_tokens") or 0
             try:
@@ -454,13 +542,15 @@ class Limiter:
                 total = 0
             if total > 0:
                 self._call(lambda: self.store.incr_daily(f"q:{day}:{who}:tok", total), default=None)
+                self._call(lambda: self.store.incr_daily(f"q:{day}:{GLOBAL_KEY}:tok", total),
+                           default=None)
             else:
                 self._bump_local(M_USAGE_MISSING)
         else:
             self._bump_local(M_USAGE_MISSING)
 
     def usage_today(self, who: str, now: float | None = None) -> dict:
-        """给 /limits 用：这个客户端今天用了多少、上限多少。"""
+        """给 /limits 用：这个客户端今天用了多少、上限多少（外加全站那一层的口径）。"""
         now = time.time() if now is None else now
         day = utc_day(now)
         return {
@@ -472,6 +562,16 @@ class Limiter:
             "tokens_limit": self.limits.daily_tokens,
             "rate_burst": self.limits.burst,
             "rate_per_min": self.limits.per_min,
+            # ★ 全站那一层也报出来（盲审 R1）：不然"我明明没超自己额度却被拒"这件事
+            #   在 /limits 里看不出来，只能去翻 Redis。
+            "global": {
+                "requests_used": self._call(
+                    lambda: self.store.get_daily(f"q:{day}:{GLOBAL_KEY}:req"), default=-1),
+                "tokens_used": self._call(
+                    lambda: self.store.get_daily(f"q:{day}:{GLOBAL_KEY}:tok"), default=-1),
+                "requests_limit": self.limits.global_daily_req,
+                "tokens_limit": self.limits.global_daily_tokens,
+            },
         }
 
     def stats(self) -> dict:
@@ -485,6 +585,9 @@ class Limiter:
         #   `/health` 本来就是"部署完第一眼看的那个接口"，口径必须在这里。
         out["trust_proxy_headers"] = self.limits.trust_proxy
         out["allow_client_id_header"] = self.limits.allow_client_id
+        # ★ 全站额度（盲审 R1）：这是"钱包还剩多少"的那道闸，口径同样必须在一眼能看到的地方。
+        out["global_daily_req"] = self.limits.global_daily_req
+        out["global_daily_tokens"] = self.limits.global_daily_tokens
         return out
 
     def _merge_metric(self, metric: str) -> int:
