@@ -74,7 +74,11 @@ ALLOW: dict[str, str] = {
 CARRIER_GLOBS = ("*.md", "*.py", "scripts/**/*.py", "scripts/**/*.md",
                  "scripts/hooks/*", "tests/**/*.py", "agent/**/*.py",
                  "mcp/**/*.py", "kb/**/*.py", "evalset/**/*.md",
-                 "experiments/**/*.md", "docs/**/*.md")
+                 "experiments/**/*.md", "docs/**/*.md",
+                 # ★ 2026-10-13 补：CI 文件也引用大量仓库内路径（脚本、Dockerfile、compose、
+                 #   测试文件…），而它是最不能指错的地方 —— 指错了整条流水线直接红。
+                 #   恰恰因为它"跑在远端"、本机跑不到，本判据之前一直漏着它。
+                 ".github/**/*.yml")
 SKIP_PARTS = (".git", ".venv", "node_modules", "__pycache__", ".pytest_cache")
 
 
