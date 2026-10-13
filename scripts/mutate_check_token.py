@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -39,29 +40,37 @@ REPORT = REPO_ROOT / "evalset" / "report-token-cost.md"
 PY = sys.executable
 
 # (说明, 报告里要替换的原文, 替换成什么, 期望报出来的第一行包含什么)
+#
+# ★★ 2026-10-13：下面 5 条的原文串全部按**当批数据**更新过一遍。
+#   DSH 重跑 --runs 3 之后逐题数字全变了（h3 的直打 total 1248→1268 等），
+#   而这些串是上一批的 —— 于是 5 条**同时注入失败**。
+#   好在"注入失败必须算失败"这条规矩还在（skipped 直接 return 1），
+#   所以它是当场报红而不是静悄悄放过。
+#   ⇒ 教训：把原文串硬写死，就等于把"数据换了"变成"判据失效"。
+#   下面每条都尽量用**只含要改那一格**的锚点，减少下次换批要改的地方。
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "逐题数字：h3 的直打 total 改成 999",
-        "| h3 | 应答 | 3 | 1248 |",
+        "| h3 | 应答 | 3 | 1268 |",
         "| h3 | 应答 | 3 | 999 |",
         "h3 直打 total",
     ),
     (
         "★ 题型标签与 n_calls 不自洽：把拒答 h15 写成「应答」",
-        "| h15 | 拒答 | **2** |",
-        "| h15 | 应答 | **2** |",
+        "| h15 | 拒答 | 2 |",
+        "| h15 | 应答 | 2 |",
         "题型",
     ),
     (
-        "agent 侧 output 均值与逐题表对不上（h7 的 263→88）",
-        "| h7 | 应答 | 3 | 859 | 2 | 1714 | 263 |",
-        "| h7 | 应答 | 3 | 859 | 2 | 1714 | 88 |",
+        "agent 侧 output 均值与逐题表对不上（h7 的 252→88）",
+        "| h7 | 应答 | 3 | 857 | 2 | 1715 | 252 |",
+        "| h7 | 应答 | 3 | 857 | 2 | 1715 | 88 |",
         "h7 agent output",
     ),
     (
         "缓存命中那一列改一格（h4 的 1024→512）",
-        "| h4 | 应答 | 3 | 1128 | 2 | 1794 | 267 | 2061 | 1024 |",
-        "| h4 | 应答 | 3 | 1128 | 2 | 1794 | 267 | 2061 | 512 |",
+        "| h4 | 应答 | 3 | 1126 | 2 | 1847 | 268 | 2115 | 1024 |",
+        "| h4 | 应答 | 3 | 1126 | 2 | 1847 | 268 | 2115 | 512 |",
         "h4 缓存命中",
     ),
     (
@@ -70,17 +79,108 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         #   （命中率只出现在正文），于是注入失败、被"跳过"，
         #   而跳过时退出码仍是 0 ⇒ 【看起来测过了，其实这条方向根本没测】。
         #   这与"没被变异测试盯着的判据等于没有判据"同源。
-        "成本列改一格（h1 的 0.003425→0.009999）",
-        "| 2069 | 1406 | 0.003425 |",
-        "| 2069 | 1406 | 0.009999 |",
+        "成本列改一格（h1 的 0.003944→0.009999）",
+        "| h1 | 应答 | 3 | 888 | 2 | 1799 | 302 | 2101 | 1150 | 0.003944 |",
+        "| h1 | 应答 | 3 | 888 | 2 | 1799 | 302 | 2101 | 1150 | 0.009999 |",
         "h1 成本",
+    ),
+    # ------------------------------------------------------------------
+    # ★★ 2026-10-13 补：下面两组是【报告侧】与【数据侧】两个方向。
+    #
+    # 为什么分成两个方向、且数据侧要单独造坏 JSON：
+    #   判据里有两类断言 —— 「报告写的数 vs JSON」与
+    #   「纯结构不变式」（如 含工具倍率 必须 > 仅自身倍率、
+    #   ratio_all 必须 == 账本重算值）。后者**不看报告**，
+    #   所以只改报告永远测不到它，必须直接改 JSON 才测得到。
+    #   实测教训：只测报告侧 ⇒ 数据侧那几条"看起来在、其实从没被触发过"。
+    # ------------------------------------------------------------------
+    ("★ 表格第 4 格被换回 total（表头与内容不符）",
+     "| 硬短路拒答（没调生成） | 7 | 633 | 155 | 789 |",
+     "| 硬短路拒答（没调生成） | 7 | 633 | 789 | 789 |",
+     "拒答 output 均值"),
+    ("★ 表格新增的 total 那一格算错（789→790）",
+     "| 硬短路拒答（没调生成） | 7 | 633 | 155 | 789 |",
+     "| 硬短路拒答（没调生成） | 7 | 633 | 155 | 790 |",
+     "拒答 total 均值"),
+    ("★ 〈①〉那段 output 均值错（228/33 → 242/47，上一批残留）",
+     "output 均值 228 对 195，**只多 33 token**",
+     "output 均值 242 对 195，**只多 47 token**",
+     "①里 agent output 均值"),
+    ("★ 〈③〉那段 output 占比错（12.0% → 12.7%）",
+     "output 只占 12.0%（228/1900）",
+     "output 只占 12.7%（242/1906）",
+     "③里 output 占比"),
+    ("★ input 倍率错（2.20 → 2.18）",
+     "input 多 120%（2.20 倍）",
+     "input 多 118%（2.18 倍）",
+     "①里 input"),
+    ("★ 整张三遍表被删",
+     "> | 1 | 961 | 1935 | 1314 | 2.01× | **3.38×** |",
+     "> （三遍表已删除）",
+     "runs"),
+    ("★ 三遍表少写一遍（末尾那遍最容易丢）",
+     "> | 3 | 957 | 1900 | 1314 | 1.99× | **3.36×** |",
+     "> |（第 3 遍未记录）",
+     "runs"),
+    ("★ 三遍表某一遍的直打值错",
+     "> | 2 | 953 | 1944 | 1294 | 2.04× | **3.40×** |",
+     "> | 2 | 999 | 1944 | 1294 | 2.04× | **3.40×** |",
+     "第 2 遍"),
+    ("★ 「没报上账」那句被删（那遍的倍率是低估的）",
+     "> - 第 2 遍出现过「工具侧有 2 次没报上账」，由",
+     "> - 第 2 遍口径一致，由",
+     "tool_usage_missing"),
+]
+
+
+# ★★ 数据侧变异：直接改 _token_cost.json 的 runs 块。
+#   这些断言**不看报告**，只测报告永远测不到。
+#   (说明, 改动函数, 期望诊断包含什么)
+DATA_MUTATIONS: list[tuple[str, object, str]] = [
+    (
+        "★★ 口径缺失：含工具倍率被降到 = 仅自身倍率（工具侧那本账没并进来）",
+        lambda d: d["runs"][1].update(ratio_all=d["runs"][1]["ratio_own"]),
+        "口径缺失",
+    ),
+    (
+        "★★ 派生量与账本不一致：tool_mean 归零，而 ratio_all 没跟着改",
+        lambda d: d["runs"][1].update(tool_mean=0),
+        "派生量与账本不一致",
+    ),
+    (
+        "★★★ 派生量自己算错：ratio_all 被写成 = ratio_own（两本账合并了）",
+        lambda d: d["runs"][0].update(ratio_all=d["runs"][0]["ratio_own"]),
+        "派生量与账本不一致",
+    ),
+    (
+        "★★ ratio_own 单独写错",
+        lambda d: d["runs"][2].update(ratio_own=1.5),
+        "派生量与账本不一致",
+    ),
+    (
+        "★ tool_usage_missing 被吞成 0（那遍的低估被抹掉）",
+        lambda d: d["runs"][1].update(tool_usage_missing=0),
+        "tool_usage_missing",
+    ),
+    (
+        "★ tool_usage_missing 多报（三遍都改成 5）",
+        lambda d: [r.update(tool_usage_missing=5) for r in d["runs"]],
+        "tool_usage_missing",
+    ),
+    (
+        "runs 整块从 JSON 里删掉（单遍数据却画了三遍表）",
+        lambda d: d.pop("runs"),
+        "JSON 里没有 runs",
     ),
 ]
 
 
+DATA_FILE = REPO_ROOT / "agent" / "_token_cost.json"
+
+
 def run_check() -> tuple[int, str]:
     r = subprocess.run(
-        [PY, "-m", "scripts.check_token_report"],
+        [PY, "-W", "ignore", "-m", "scripts.check_token_report"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -89,11 +189,24 @@ def run_check() -> tuple[int, str]:
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
+def first_detail(out: str) -> str:
+    """取第一行以两个空格开头的明细（不是以 ✗ 开头的总数行）。"""
+    return next(
+        (ln.strip() for ln in out.splitlines()
+         if ln.startswith("  ") and ln.strip()),
+        "",
+    )
+
+
 def main() -> int:
     if not REPORT.exists():
         print(f"✗ 找不到 {REPORT.relative_to(REPO_ROOT)}")
         return 2
+    if not DATA_FILE.exists():
+        print(f"✗ 找不到 {DATA_FILE.relative_to(REPO_ROOT)}")
+        return 2
     original = REPORT.read_text(encoding="utf-8")
+    data_original = DATA_FILE.read_text(encoding="utf-8")
 
     # ---- 0. 基线必须绿 ----
     code, out = run_check()
@@ -139,6 +252,38 @@ def main() -> int:
         finally:
             REPORT.write_text(original, encoding="utf-8", newline="")
 
+    # ---- 1b. 数据侧注入（只改 _token_cost.json，不碰报告）----
+    # ★ 为什么必须单独一轮：判据里有一批断言【不看报告】——
+    #   「含工具倍率 > 仅自身倍率」「ratio_all == 账本重算值」
+    #   「runs 整块没了但报告还画着表」。
+    #   只改报告永远触发不到它们 ⇒ 只测报告侧 = 这批断言从没被验证过。
+    data_missed: list[str] = []
+    data_misdiagnosed: list[str] = []
+    for desc, mutate, expect in DATA_MUTATIONS:
+        try:
+            d = json.loads(data_original)
+            mutate(d)
+            DATA_FILE.write_text(
+                json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
+            code, out = run_check()
+            if code == 0:
+                data_missed.append(desc)
+                print(f"✗ 漏检：{desc}")
+                continue
+            body = "\n".join(ln.strip() for ln in out.splitlines())
+            if expect not in body:
+                data_misdiagnosed.append(f"{desc}（报的是 {first_detail(out)!r}，不是 {expect!r}）")
+                print(f"✗ 检出但诊断不对：{desc}")
+                print(f"    期望提到：{expect}")
+                print(f"    实际报的是：{first_detail(out)}")
+            else:
+                rel = next(ln.strip() for ln in out.splitlines()
+                           if ln.startswith("  ") and expect in ln)
+                print(f"✓ 检出：{desc}")
+                print(f"    {rel}")
+        finally:
+            DATA_FILE.write_text(data_original, encoding="utf-8", newline="")
+
     # ---- 2. 还原后必须还绿 ----
     code, out = run_check()
     if code != 0:
@@ -147,11 +292,12 @@ def main() -> int:
         return 2
 
     print()
-    if missed or misdiagnosed:
-        print(f"✗ {len(missed)} 条漏检、{len(misdiagnosed)} 条诊断不对：")
-        for m in missed:
+    if missed or misdiagnosed or data_missed or data_misdiagnosed:
+        print(f"✗ 漏检 {len(missed) + len(data_missed)} 条、"
+              f"诊断不对 {len(misdiagnosed) + len(data_misdiagnosed)} 条：")
+        for m in missed + data_missed:
             print(f"  漏检：{m}")
-        for m in misdiagnosed:
+        for m in misdiagnosed + data_misdiagnosed:
             print(f"  诊断：{m}")
         return 1
     if skipped:
@@ -165,7 +311,8 @@ def main() -> int:
             print(f"  - {s}")
         print("  ⇒ 修掉原文串（多半是报告表格结构变了），重跑。")
         return 1
-    print(f"✓ {len(MUTATIONS)} 条变异全部检出，且诊断都指对了原因")
+    print(f"✓ 报告侧 {len(MUTATIONS)} 条 + 数据侧 {len(DATA_MUTATIONS)} 条变异"
+          f"全部检出，且诊断都指对了原因")
     return 0
 
 
