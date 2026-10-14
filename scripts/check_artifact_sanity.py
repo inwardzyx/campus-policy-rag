@@ -413,7 +413,8 @@ def _check_cache_report(rel: str, text: str) -> list[str]:
         errs.append(f"✗ {rel}：md 里找不到不同 gold 最大值 {dd['max']:.4f} —— 同上")
 
     # ⑤ 观测能力的边界必须落在产物里（2026-10-13 补，起因是"把题集当流量"那次纠正）：
-    #   这份实验有一项**在结构上测不了**（本项目无对外流量、且刻意不记录问题文本）。
+    #   这份实验有一项**在结构上测不了**（本项目无对外流量、且不留存问题文本 ——
+    #   会话层只临时持有最近 5 轮，见 session.py 顶部）。
     #   产物是这份结论的**出处** —— 出处不写边界，`0/20` 就会被下一个人当成流量证据引用。
     ob = d.get("observability") or {}
     if ob.get("has_real_traffic") is not False:
