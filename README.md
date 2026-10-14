@@ -43,6 +43,13 @@ python evalset/run_eval.py --report
 
 **没做什么、为什么**（完整版在〈还没做的〉一节）：
 
+> ★ **所有关键判断（含"明确不做的"）收在一页里：[`tradeoffs.md`](tradeoffs.md)。**
+> 那一页是**给面试/评审当天用的**：每条一行「问题 → 选了什么 → 为什么 → 代价 → 证据在哪」，
+> 数字都指回产物。它比下面这张表长，因为里面还记了**负结果**（比如答案缓存为什么被结构性判死）
+> 和**三条"我测不了"**。
+> ⚠️ 它放**仓库根**而不是 `docs/`：`kb/loader.py` 用 `docs/**/*.md` **递归**收语料，
+> 放进 `docs/` 会被当成第 287 篇制度去解析（`tests/test_loader.py` 当场红 —— 实测踩过）。
+
 | 没做 | 为什么 |
 |---|---|
 | 不上向量库（Chroma / faiss / Milvus） | 263 块做全量点乘不到 1 ms，换向量库是装饰 |
@@ -168,7 +175,12 @@ copy .env.example .env          # Mac/Linux 用: cp .env.example .env
 #   而且设完要重开终端；.env 跟着项目走，clone 下来复制一份就能跑。）
 
 # 3. 跑自检（不起服务，验证入库把关 + 拒答短路对不对）
-python -m pytest tests/ -v          # 期望：60 passed（0 失败）
+python -m pytest tests/ -v          # 期望：145 passed（0 失败）
+# ★ 这个 145 是【现算】的，不是写死的：`python -m pytest tests --collect-only -q`
+#   会打印 `145 tests collected`，`scripts/check_test_counts.py` 逐格对账。
+# ⚠️ 本机**没起 Redis** 时会是 `123 passed / 22 skipped`（那 22 条要 Redis，见下一行）；
+#    CI 的 fast job 起了 `redis:7-alpine` service 并设 `REQUIRE_REDIS=1`，
+#    所以 CI 里是**红的**而不是跳过的 —— 那 22 条必须真跑。
 # ★ 这一步【不需要 DEEPSEEK_API_KEY】：三个会碰模型的测试文件都注入了假模型
 #   （tests/conftest.py），一条都不真调。想顺便看"留了谁 / 拦了谁"：加 -s
 
@@ -1665,11 +1677,19 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
-| **fast** | 只装 `pytest` | `tests/test_loader.py`（22 条） | **1.3 秒** |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `test_guard.py` + `test_eval_set.py` + `test_llm_resilience.py`（35 条） | 15 秒起（首次还要下模型） |
-| **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
+| **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` | 15 秒起（首次还要下模型） |
+| **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
-> 前两个 job 加起来 **覆盖全部 57 条**（22 + 35），不存在「只在本地跑过」的测试。
+> ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，
+> 而实测已收集 **145** 条 —— 那个 57 是好几轮之前的值，且和本文件上面那句「60 passed」
+> 自相矛盾。**过期条数比没有条数更坏：它长得像实测。**
+> ⇒ 改成：README 只声明**每个 job 跑哪些文件**（这一段不会腐烂），
+> 条数由 `scripts/check_test_counts.py` 跑 `pytest --collect-only` **现算并逐格比对**，
+> 挂在 pre-commit 上。测试再涨，除非**跑的文件集合**变了，这份 README 不用动。
+>
+> 前两个 job 的**并集覆盖全部测试文件**（这条也是那个脚本在管）：
+> 22（loader）+ 56（limits）+ 50（guard）+ 5（eval_set）+ 12（llm_resilience）= **145 条**。
 > 第三个 job **不增加覆盖**，它跑的是同一套门禁在**容器里**再来一遍 —— 增加的是**证伪能力**。
 
 **为什么拆**：两类测试成本差约 500 倍（实测 0.03s vs 15s）。合成一个 job 的话，改一行加载器也要等模型下载完才知道对不对。

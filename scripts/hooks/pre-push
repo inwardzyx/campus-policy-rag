@@ -139,6 +139,27 @@ else
     echo "             python -u agent/token_cost.py --n 20"
 fi
 
+# ---- 6. README 声明的"CI 跑哪些测试文件" ↔ pytest 真实收集结果 ----
+# ★ 起因（2026-10-14）：README 那句「前两个 job 加起来覆盖全部 57 条（22 + 35）」
+#   是好几轮之前的值，实测已收集 **145** 条，而且和同一份 README 里
+#   「60 passed」那句自相矛盾。**过期条数比没有条数更坏：它长得像实测。**
+#   ⇒ 现在 README 只声明**每个 job 跑哪些文件**（不会腐烂），条数由本检查现算；
+#     它还管住那条真正要紧的承诺：**前两个 job 的并集覆盖全部测试文件**
+#     （"不存在只在本地跑过的测试"）。
+#
+# ⚠️ 为什么放在 pre-push 而不是 pre-commit：
+#   它要真跑一次 `pytest --collect-only`（实测约 **5 秒**），而 pre-commit 的定位是
+#   "几毫秒能查完"（见那个文件头的说明）。5 秒会让每次提交都卡一下 ——
+#   而这条判据只在**测试文件集合或 CI 划分变了**的时候才有意义。
+#   ⇒ 推到远端之前查一次，是它该待的地方。不需要 Redis / 模型 / key。
+if (cd "$REPO" && "$PY" scripts/check_test_counts.py); then
+    echo "[pre-push] 测试条数/文件声明 OK"
+else
+    echo "[pre-push] ★ README 声明的测试文件与真实收集结果不一致（上面列出的那些）"
+    fail=1
+fi
+echo
+
 echo
 if [ "$fail" -ne 0 ]; then
     echo "[pre-push] 有检查没通过，推送被拦下。"

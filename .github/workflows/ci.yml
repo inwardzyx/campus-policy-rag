@@ -94,12 +94,15 @@ jobs:
         #     而 CLAUDE.md 按 .gitignore 不进仓库 ⇒ 在 CI 里它会**正确地报红**。）
         run: python scripts/check_file_refs.py
 
-      - name: 跑"判据的判据"：变异测试（这三个不需要模型，也不需要 gitignored 的数据）
+      - name: 跑"判据的判据"：变异测试（这四个不需要模型，也不需要 gitignored 的数据）
         # ★ 起因（2026-10-13）：发现 `mutate_check_numbers.py` **红了一整天没人知道** ——
         #   README 的 token 表从 1906 改成 1900 之后，它三条变异的原文串失效、当场报红，
         #   可是**没有任何闸门在跑它**：pre-push 按设计只做"几毫秒能查完"的检查，
         #   CI 里也没有它。⇒ 判据红了没人看见，等于没有判据。
-        # ★ 为什么这三个能进快 job：它们只是反复跑那几个对账器，而对账器只用标准库。
+        # ★ 为什么这四个能进快 job：它们只是反复跑那几个对账器，而对账器只用标准库。
+        #   ★ 2026-10-14 新增 `mutate_check_test_counts.py`：它盯的是**第五类对象**
+        #     （README 声明的"CI 跑哪些测试文件" ↔ pytest 真实收集结果）。
+        #     这一条特别适合放在快 job：它本来就要跑 pytest，而快 job 就是干这个的。
         # ⚠️ `mutate_check_token.py` 进不来：它要读 agent/_token_cost.json，
         #    那份数据按 .gitignore 不进仓库（在干净 checkout 里它会正确地报"缺数据"）。
         #    它是唯一一个"必须在本机跑"的变异套件，所以它由 hooks 前的自查负责。
@@ -108,6 +111,7 @@ jobs:
           python scripts/mutate_check_numbers.py
           python scripts/mutate_check_artifact.py
           python scripts/mutate_check_refs.py
+          python scripts/mutate_check_test_counts.py
 
       - name: 跑加载器测试
         run: python -m pytest tests/test_loader.py -v
