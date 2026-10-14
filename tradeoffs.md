@@ -45,18 +45,18 @@
 
 | 决策 | 为什么 | 代价 / 边界 | 证据 |
 |---|---|---|---|
-| **每条判据都要配变异用例，且"扫到 0 条/空转必须报红"** | 这个仓库吃过"**探头只照一面**，把没报错读成没问题"的亏；空转的绿比没有检查更坏 | 4 套变异共 60+ 条要维护，改数据就要改锚点 | `scripts/mutate_check*.py` |
+| **每条判据都要配变异用例，且"扫到 0 条/空转必须报红"** | 这个仓库吃过"**探头只照一面**，把没报错读成没问题"的亏；空转的绿比没有检查更坏 | **变异套件的条数会随手写死而过期**（实测踩过：锚点串是按当批数据硬写的，换了数据 5 条同时注入失败）；且"不适用"必须显式列出来，否则覆盖率会**静默下降**。★ 真实测试条数已改成**现算打印、不冻进文档** | `scripts/mutate_check*.py`；`scripts/check_test_counts.py` |
 | **判据的对象要【结构】，不要【名字/措辞】** | 实测：`check_judge_rules.py` 靠"这行有没有 `round(`"判风格 ⇒ 插一行假声称值**照样报绿**；靠变量名判 ⇒ 换个名字就失效 | 写 `ast` 比写正则慢，且更难读 | `CLAUDE.md`〈假红是假绿的入口〉；`scripts/check_judge_rules.py` |
 | **声称值一律从被检查对象里解析，不许硬编码常量** | 硬编码 = 把被检查对象**抄一份到自己家里**，检查的是那份副本。实测 `check_token_report.py` 抄了正文的数 ⇒ **正文漂了它不知道** | 抽取失败必须报错，不能静默默认 | `scripts/check_token_report.py` 的 `grab()` |
 | **能重算的量，就不要信存下来的那个** | 实测：把 `tool_mean` 归零而 `ratio_all` 不动，**只比两个派生量不会响**（派生量一起错）。⇒ 回到账本重算 `ratio_all == (agent_own+tool)/direct` | 结构不变式要单独写、单独造坏数据打 | `scripts/check_token_report.py` 的纯结构不变式 |
-| **README 里"CI 跑哪些测试文件"由脚本现算，不写条数** | 原来写「57 条（22+35）」，实测已 **145** 条，且与同文件「60 passed」**自相矛盾**。过期条数长得像实测 | 多一个检查（挂在 pre-push 与 CI 快 job） | `scripts/check_test_counts.py` |
+| **README 里"CI 跑哪些测试文件"由脚本现算，不写条数** | 原来写「57 条（22+35）」，实测已 145 条，且与同文件「60 passed」**自相矛盾**。过期条数长得像实测 | 多一个检查（挂 pre-push 与 CI 快 job）。★ 它只做**静态声明比对**（`ci.yml` ↔ README ↔ 磁盘），**不跑 pytest** —— 第一版跑了，结果在 CI 快 job 的最小环境里必然 ImportError（`test_guard` 顶层 `import service`），**会让 CI 红**；这是跨模型盲审抓出来的，本地全量 venv 复现不了 | `scripts/check_test_counts.py` |
 
 ## 六、明确不做的（负结果也是结论）
 
 | 不做 | 为什么（有依据，不是"没空"） | 证据 |
 |---|---|---|
 | **答案缓存** | 结构性理由只有一条：`rerank()` 的 prompt **逐字包含 query** ⇒ 精排分是 (query, candidates) 的函数 ⇒ **复用候选集会静默给出错误排序**。旁证：190 对题里同 gold 最低余弦 **0.3136** < 不同 gold 最高 **0.7606**（两组**重叠**）⇒ 靠阈值也救不了 | `evalset/report-cache-feasibility.json`（190 对余弦都在里面，极值可重算） |
-| **多轮自选查询词** | 实测救回 **0 道**、误放行 0 道、**成本翻 3 倍** | `evalset/probe_*rewrite*` |
+| **多轮自选查询词** | 实测救回 **0 道**、误放行 0 道、**成本翻 3 倍** | `experiments/_agent_multi_search_result.json`（★ 别指向 `evalset/probe_query_rewrite.py` —— 那是**单次改写**实验，结论相反且为正收益） |
 | **`status: 现行/已废止` 元信息字段** | 那个标签**只能由人打**，而判断制度是否废止本来就是人该做的（就是 `docs/inbox/` 的人工审核环节）。⇒ 加了这层，**防线看起来多一层，实际防的东西没变多**，还多一个失效点 | README〈下一步的顺序〉第 11 条 |
 | **父子块 / 表格结构化解析** | 切分器**三试三败**（碎片化、表格被拍平成文本） | `experiments/clean_corpus.py` 顶部 |
 | **不部署到线上** | 作品集要的是"能起 + CI 验证"，不是运维负担。免费平台要么 sleep 要么得塞 key | README〈还没做的〉 |
@@ -79,8 +79,11 @@
 | `scripts/check_token_report.py` | token 报告 ↔ `agent/_token_cost.json` | pre-push（本机专属） |
 | `scripts/check_artifact_sanity.py` | 产物合理性 + 清单反查 | pre-push |
 | `scripts/check_file_refs.py` | 文档/脚本里写的仓库内路径是否真的存在 | 快 job |
-| `scripts/check_test_counts.py` | README 声明的测试文件 ↔ pytest 真实收集 | pre-push + 快 job |
+| `scripts/check_test_counts.py` | **每个 CI job 跑哪些测试文件**（`ci.yml` ↔ README ↔ 磁盘三者比对，并保证并集覆盖全部测试文件） | pre-push + 快 job |
 | `scripts/check_push_paths.py` | 出口安全（有没有不该推的文件） | pre-push |
 
-★ 每个检查器都配了变异用例（`scripts/mutate_check*.py`），**红了就是真的红了** ——
+★ **不吹牛**：不是每个检查器都有变异套件 —— `check_push_paths.py` 有（`mutate_check_numbers.py` 里打它），
+但 **`check_judge_rules.py` 至今没有**（它要读 `CLAUDE.md`，而那份文件按 `.gitignore` 不进仓库 ⇒
+CI 兜不住它，只能在长成这样的机器上跑）。这是**已知缺口**，不是已解决。
+其余检查器的变异套件在 `scripts/mutate_check*.py`，**红了就是真的红了** ——
 判据本身也要能被证伪，这是我们这个项目唯一的"方法论洁癖"。

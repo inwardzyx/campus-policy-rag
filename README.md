@@ -175,12 +175,14 @@ copy .env.example .env          # Mac/Linux 用: cp .env.example .env
 #   而且设完要重开终端；.env 跟着项目走，clone 下来复制一份就能跑。）
 
 # 3. 跑自检（不起服务，验证入库把关 + 拒答短路对不对）
-python -m pytest tests/ -v          # 期望：145 passed（0 失败）
-# ★ 这个 145 是【现算】的，不是写死的：`python -m pytest tests --collect-only -q`
-#   会打印 `145 tests collected`，`scripts/check_test_counts.py` 逐格对账。
-# ⚠️ 本机**没起 Redis** 时会是 `123 passed / 22 skipped`（那 22 条要 Redis，见下一行）；
+python -m pytest tests/ -v          # 期望：全部通过（0 失败）
+# ★ 本机**没起 Redis** 时会是 `123 passed / 22 skipped`（那 22 条要 Redis，见下一行）；
 #    CI 的 fast job 起了 `redis:7-alpine` service 并设 `REQUIRE_REDIS=1`，
-#    所以 CI 里是**红的**而不是跳过的 —— 那 22 条必须真跑。
+#    所以 CI 里**没有 skip**、缺 Redis 就是红的。
+# ⚠️ **这里刻意不写"共多少条"**：条数会随加用例自然增长，写死必然过期
+#    （真吃过一次：README 写 57 条时实测已经 145 条，且与同文件另一处自相矛盾）。
+#    要看条数就现算：`python -m pytest tests --collect-only -q`
+#    ⇒ 输出末行就是 `N tests collected`。
 # ★ 这一步【不需要 DEEPSEEK_API_KEY】：三个会碰模型的测试文件都注入了假模型
 #   （tests/conftest.py），一条都不真调。想顺便看"留了谁 / 拦了谁"：加 -s
 
@@ -1682,15 +1684,24 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，
-> 而实测已收集 **145** 条 —— 那个 57 是好几轮之前的值，且和本文件上面那句「60 passed」
-> 自相矛盾。**过期条数比没有条数更坏：它长得像实测。**
-> ⇒ 改成：README 只声明**每个 job 跑哪些文件**（这一段不会腐烂），
-> 条数由 `scripts/check_test_counts.py` 跑 `pytest --collect-only` **现算并逐格比对**，
-> 挂在 pre-commit 上。测试再涨，除非**跑的文件集合**变了，这份 README 不用动。
+> 而实测已收集 145 条 —— 那个 57 是好几轮之前的值，且和本文件上面那句「60 passed」自相矛盾。
+> **过期条数比没有条数更坏：它长得像实测。**
+> ⇒ 改成：README 只声明**每个 job 跑哪些文件**（文件集合不会因为加用例而腐烂），
+> 由 `scripts/check_test_counts.py` **从 `ci.yml` 现解析**并逐 job 比对，挂在 **pre-push**
+> 与 CI 快 job 上（★ 是**声明比对**，不跑 pytest —— 见下）。
+> 测试再涨，除非**跑的文件集合**变了，这份 README 不用动。
 >
 > 前两个 job 的**并集覆盖全部测试文件**（这条也是那个脚本在管）：
-> 22（loader）+ 56（limits）+ 50（guard）+ 5（eval_set）+ 12（llm_resilience）= **145 条**。
+> 它是本仓那条承诺「不存在只在本地跑过的测试」的机械实现。
 > 第三个 job **不增加覆盖**，它跑的是同一套门禁在**容器里**再来一遍 —— 增加的是**证伪能力**。
+>
+> ⚠️ **这个检查器为什么不去跑 `pytest --collect-only`**（第一版就是那么写的，被跨模型盲审打回）：
+> `test_guard / test_eval_set / test_llm_resilience` **顶层 `import service`**，
+> 而 `service.py` 顶层要 numpy / jieba / fastapi / fastembed / langchain-deepseek；
+> CI 的**快 job 只装 `pytest + redis`** ⇒ 收集阶段必然 ImportError ⇒ **快 job 红**。
+> 本地全量 venv 里永远复现不出来，所以那一版会一直红到有人点开 Actions。
+> ⇒ 现在只做**静态声明比对**（`ci.yml` 的 `run:` 行 ↔ README 的表格行 ↔ 磁盘上的文件），
+> 秒级、零依赖；真实条数作为副产品打印，**不冻进文档**。
 
 **为什么拆**：两类测试成本差约 500 倍（实测 0.03s vs 15s）。合成一个 job 的话，改一行加载器也要等模型下载完才知道对不对。
 

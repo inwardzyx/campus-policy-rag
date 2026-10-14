@@ -37,7 +37,10 @@ jobs:
     #   而 README 把它列成"这些闸门不是摆设"的**第 1 条证据**，文件里还写着
     #   "CI 里就是这么用 REQUIRE_REDIS 的"。两句话都是假的：线从来没接。
     #   ⇒ 这里真起一个 Redis，并按下面那步用 REQUIRE_REDIS=1 跑，
-    #     这样"Redis 不可用"会变成红，而不是静默跳过一半用例（默认 23 passed / 15 skipped）。
+    #     这样"Redis 不可用"会变成红，而不是静默跳过一半用例。
+    #     ★ 这里刻意不写"默认 N passed / M skipped"：那个数会随加用例过期
+    #       （实测写「23 passed / 15 skipped」时，真实值早已是 123 passed / 22 skipped）。
+    #       要看现值就现算：`python -m pytest tests --collect-only -q`。
     services:
       redis:
         image: redis:7-alpine
@@ -100,9 +103,14 @@ jobs:
         #   可是**没有任何闸门在跑它**：pre-push 按设计只做"几毫秒能查完"的检查，
         #   CI 里也没有它。⇒ 判据红了没人看见，等于没有判据。
         # ★ 为什么这四个能进快 job：它们只是反复跑那几个对账器，而对账器只用标准库。
-        #   ★ 2026-10-14 新增 `mutate_check_test_counts.py`：它盯的是**第五类对象**
-        #     （README 声明的"CI 跑哪些测试文件" ↔ pytest 真实收集结果）。
-        #     这一条特别适合放在快 job：它本来就要跑 pytest，而快 job 就是干这个的。
+        #   ★ 2026-10-14 新增 `mutate_check_test_counts.py`：它盯的是**第六类对象**
+        #     （README 声明的"每个 job 跑哪些测试文件" ↔ `ci.yml` 的真实执行行）。
+        #     ⚠️ 它的被检对象 `check_test_counts.py` **刻意不跑 pytest** ——
+        #       只做静态声明比对（PyYAML 解析 + 正则 + 列目录），秒级、零依赖。
+        #       第一版曾去跑 `pytest tests --collect-only`，而那几个测试文件顶层
+        #       `import service`（要 numpy/jieba/fastapi/fastembed），本 job 只装
+        #       `pytest + redis` ⇒ 收集阶段必然 ImportError ⇒ **本 job 红**。
+        #       是跨模型盲审（GLM-5.3-Flash）抓出来的：**本地全量 venv 里复现不了**。
         # ⚠️ `mutate_check_token.py` 进不来：它要读 agent/_token_cost.json，
         #    那份数据按 .gitignore 不进仓库（在干净 checkout 里它会正确地报"缺数据"）。
         #    它是唯一一个"必须在本机跑"的变异套件，所以它由 hooks 前的自查负责。
