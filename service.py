@@ -1176,8 +1176,9 @@ def _zero_usage() -> dict:
 
     `_take_usage()` 的 None 把两种可能混在一起（真的没调 / 调了但没拿到账）。
     `/search` 这条路上**没有任何一次 LLM 调用**，是【可证明的 0】⇒ 这里返回显式的 0：
-      · 工具侧于是记成 `tokens_total=0`（真的没花），而不是 `?`（账没拿到）——
-        见 `mcp/tools_impl.py::_usage_fields`；
+      · 工具侧于是记成 `llm_calls=0`（真的没调），而不是 `?`（账没拿到）——
+        见 `mcp/tools_impl.py::_usage_fields`（★ 2026-10-14 起标记行**只报调用次数**，
+        不再报 token 数：那五个账目字段每一轮都会重新进模型上下文，是纯噪声）；
       · `limits.py::Limiter.record()` 也据此**不往 `usage_missing` 上记账**：
         否则每一次 /search 都会往"token 账有缺口"上抹一笔假痕，把指标稀释成噪音。
     ★ 每次返回**新 dict**：pydantic 响应里塞一个共享可变对象，一旦有人原地改它，
