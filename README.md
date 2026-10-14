@@ -1451,10 +1451,13 @@ sources 条数 ±1 容差），1 遍就够，**实测全绿**。
 ★ **而模型看到的文本一个字都没变**：`/search` 与 `/chat?use_rerank=False` 在 20 道题上
 `sources` 逐字段一致、**渲染后逐字节一致**（`scripts/ab_search_vs_chat.py`，产物
 [`evalset/report-search-ab.md`](evalset/report-search-ab.md)：20/20 一致，`/search` 合计 0 token，
-旧路径同题合计 5,912 token ⇒ **每次调用省 369.5 token**）。
+旧路径同题合计 5,857 token ⇒ **每次调用省 366.1 token**）。
 ⚠️ 上表两行来自**两次单遍运行**（`agent/token_cost.py --out agent/_tool_split_{before,after}.json`），
 不是配对实验 —— `ask_policy` 那两格（19,940 / 19,460）的差是抖动，别当精度用；
-**配对的那个数是 A/B 给的 369.5 token/次调用**，它才是"这次改动省了多少"的正解。
+**配对的那个数是 A/B 给的 366.1 token/次调用**，它才是"这次改动省了多少"的正解。
+★ 这个数**每重跑一次 A/B 都会动**（`/chat` 侧每次生成的答案长短不同）：上一版产物是
+369.5，这一版是 366.1（−0.9%）—— **代码没动，动的是抖动**。别把它当精度读，
+它的量级（~370 token/次）才是结论。
 
 报告：[`evalset/report-token-cost.md`](evalset/report-token-cost.md)
 

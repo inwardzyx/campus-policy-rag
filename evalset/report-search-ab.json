@@ -1,6 +1,6 @@
 {
   "generated_by": "scripts/ab_search_vs_chat.py",
-  "generated_at": "2026-10-14T09:23:10+08:00",
+  "generated_at": "2026-10-14T11:18:32+08:00",
   "api": "http://127.0.0.1:8000",
   "n_pairs": 20,
   "all_fields_identical": true,
@@ -8,12 +8,12 @@
   "all_hits_agree": true,
   "search_total_tokens": 0,
   "search_max_calls_per_response": 0,
-  "chat_total_tokens": 5912,
+  "chat_total_tokens": 5857,
   "chat_calls_total": 16,
-  "tokens_saved_total": 5912,
-  "tokens_saved_per_question": 295.6,
-  "tokens_saved_per_call": 369.5,
-  "yuan_saved_per_question": 0.0002956,
+  "tokens_saved_total": 5857,
+  "tokens_saved_per_question": 292.9,
+  "tokens_saved_per_call": 366.1,
+  "yuan_saved_per_question": 0.00029285,
   "price_per_mtoken": 1.0,
   "n_mismatch": 0,
   "per_question": [
@@ -27,7 +27,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 316,
+      "chat_tokens": 318,
       "chat_calls": 1,
       "ok": true
     },
@@ -41,7 +41,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 135,
+      "chat_tokens": 101,
       "chat_calls": 1,
       "ok": true
     },
@@ -69,7 +69,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 613,
+      "chat_tokens": 607,
       "chat_calls": 1,
       "ok": true
     },
@@ -125,7 +125,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 257,
+      "chat_tokens": 256,
       "chat_calls": 1,
       "ok": true
     },
@@ -139,7 +139,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 321,
+      "chat_tokens": 320,
       "chat_calls": 1,
       "ok": true
     },
@@ -181,7 +181,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 478,
+      "chat_tokens": 492,
       "chat_calls": 1,
       "ok": true
     },
@@ -209,7 +209,7 @@
       "text_identical": true,
       "search_tokens": 0,
       "search_calls": 0,
-      "chat_tokens": 751,
+      "chat_tokens": 722,
       "chat_calls": 1,
       "ok": true
     },

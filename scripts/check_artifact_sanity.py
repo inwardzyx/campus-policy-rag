@@ -181,7 +181,22 @@ CACHE_REPORT_JSON = "evalset/report-cache-feasibility.json"
 SEARCH_AB_MD = "evalset/report-search-ab.md"
 SEARCH_AB_JSON = "evalset/report-search-ab.json"
 
-EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT, CACHE_REPORT, SEARCH_AB_MD]
+# ---- 类型六：工具返回体积的裁剪取证（2026-10-14）----
+#   起因：标记行里的五个账目字段（tokens_total 等）**每一轮都会重新进模型上下文**，
+#   而模型不需要知道自己花了多少钱 ⇒ 删掉。承诺是"模型可见的其余文本逐字节不变"。
+#   ⇒ 这个承诺必须是机器可校的，而且要**独立于生成脚本**地校：
+#      生成脚本自己的转换规则符合预期，与"产物记录的事实符合预期"是两件事
+#      （前者的判据会随规则一起搬家，等于用副本验副本）。
+#      所以下面这段判据**不 import 生成脚本**，直接对产物里存的 before/after 文本做结构比较。
+PAYLOAD_TRIM_MD = "evalset/report-payload-trim.md"
+PAYLOAD_TRIM_JSON = "evalset/report-payload-trim.json"
+# 改动前在线上跑过的那五个账目字段名（生成脚本里也有一份，**故意各写一份**：
+# 两边同时改错才不会互相掩护）
+PAYLOAD_TRIM_FIELDS = ("tokens_total", "tokens_calls", "tokens_input",
+                       "tokens_output", "tokens_cache_hit")
+
+EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT, CACHE_REPORT, SEARCH_AB_MD,
+                   PAYLOAD_TRIM_MD]
 ARTIFACTS = ARTIFACTS + EXTRA_ARTIFACTS
 
 
@@ -519,6 +534,115 @@ def _check_search_ab(rel: str, text: str) -> list[str]:
     return errs
 
 
+def _check_payload_trim(rel: str, text: str) -> list[str]:
+    """工具返回体积裁剪：**独立地**校"只有账目字段消失，其余逐字节不变"。
+
+    ★ 为什么不 import 生成脚本的 `trim()`：
+      那样验的是"生成脚本的规则符合生成脚本的预期"，规则一改判据跟着搬家 ⇒
+      用副本验副本（本文件里记过的假绿第二种形态）。
+      所以这里直接从产物里存的 **before / after 文本**做结构比较：
+        ① before 去掉那五个字段名对应的 kv 片段之后，**必须等于** after
+        ② after 里**不许**再出现任何一个账目字段名
+        ③ 正文（标记行以外的部分）必须非空 ——
+           否则"正文逐字节相同"是拿两个空串在比（假一致）
+        ④ 汇总字数必须能从逐次明细重算（能重算的量，就别信存下来的那个）
+    """
+    errs: list[str] = []
+    jp = REPO_ROOT / PAYLOAD_TRIM_JSON
+    if not jp.exists():
+        return [f"✗ {PAYLOAD_TRIM_JSON}：文件不存在（{PAYLOAD_TRIM_MD} 的机器可读那一半）"]
+    try:
+        d = json.loads(jp.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return [f"✗ {PAYLOAD_TRIM_JSON}：不是合法 JSON（{e}）—— 跑到一半崩过？"]
+
+    calls = d.get("calls") or []
+    if not calls:
+        return [f"✗ {PAYLOAD_TRIM_JSON}：一次调用都没记 —— 这是空转的绿，不是通过"]
+
+    def _strip(sig: str) -> str:
+        """按结构还原：账目字段删掉；`tokens_calls` **改名**成 `llm_calls`。
+
+        ★ 为什么这里必须带上"改名"这条规则：
+          它是**本次改动的定义**（`llm_calls` 就是从 `tokens_calls` 来的同一件事），
+          不是从生成脚本抄来的实现 —— 生成脚本那份在它自己的文件里，
+          这里这份是**独立写出来的**，两边不会一起跟着漂。
+          ⚠️ 只写"删"的版本跑出来 20/20 全红，报的正是 after 多了 `llm_calls` ——
+             说明这条判据真的在盯差异，不是走过场。
+        """
+        head, sep, rest = sig.partition("[检索信号]")
+        kept = []
+        for p in rest.split():
+            if any(p.startswith(f + "=") for f in PAYLOAD_TRIM_FIELDS
+                   if f != "tokens_calls"):
+                continue                      # 这一类是删
+            if p.startswith("tokens_calls="):
+                kept.append("llm_calls=" + p.split("=", 1)[1])
+                continue                      # 这一类是改名
+            kept.append(p)
+        return head + sep + (" " + " ".join(kept) if kept else "")
+
+    for i, c in enumerate(calls, 1):
+        before, after = c.get("sig_before") or "", c.get("sig_after") or ""
+        if not before or not after:
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条缺 before/after 文本")
+            continue
+        # ① 去掉账目字段后必须逐字节相等（★ 注意：这一条只判"删了字段"，
+        #    改名那种改动不在这里 —— 见 ②b）
+        if _strip(before) != after:
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条（{c.get('id')}）"
+                        f"去掉账目字段后与 after 不等\n     after={after!r}")
+        # ② after 里不许有账目字段的**名字**
+        leaked = [f for f in PAYLOAD_TRIM_FIELDS if f in after]
+        if leaked:
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条（{c.get('id')}）"
+                        f"after 里还有账目字段 {leaked} —— 那部分每轮都会重进模型上下文")
+        # ②b before 里必须真的有这些字段，否则这次比较是空转（没东西可删）
+        missing = [f for f in PAYLOAD_TRIM_FIELDS if f not in before]
+        if missing:
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条（{c.get('id')}）"
+                        f"before 里没有 {missing} ⇒ 这一条比不出任何东西（空转）")
+        # ③ 保留字段不许被顺手删掉（判据依赖它们）
+        for keep in ("hit_status=", "tool=", "n_sources=", "llm_calls="):
+            if keep not in after:
+                errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条 after 丢了 {keep}")
+        # ④ 正文必须非空（防"两个空串比出假一致"）
+        if not (c.get("body") or "").strip():
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条（{c.get('id')}）正文是空的 —— "
+                        f"「逐字节不变」变成了拿两个空串在比")
+        # ⑤ 产物声明的"与代码派生值相同"必须真的是同一个串
+        exp = c.get("sig_expected_after")
+        if exp is None:
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条没有 sig_expected_after —— "
+                        f"没有它，就无法证明产物里的 after 是**代码**吐出来的，"
+                        f"而不是人手抄的")
+        elif exp != after:
+            errs.append(f"✗ {PAYLOAD_TRIM_JSON}：第 {i} 条 after 与代码派生值不同")
+
+    # ⑥ 汇总能从明细重算
+    t = d.get("totals") or {}
+    rb = sum(len(c.get("sig_before") or "") for c in calls)
+    ra = sum(len(c.get("sig_after") or "") for c in calls)
+    if (t.get("signal_chars_before"), t.get("signal_chars_after")) != (rb, ra):
+        errs.append(f"✗ {PAYLOAD_TRIM_JSON}：汇总 {t.get('signal_chars_before')}/"
+                    f"{t.get('signal_chars_after')} 与明细重算的 {rb}/{ra} 对不上")
+    if t.get("signal_chars_saved") != rb - ra:
+        errs.append(f"✗ {PAYLOAD_TRIM_JSON}：signal_chars_saved="
+                    f"{t.get('signal_chars_saved')!r}，重算是 {rb - ra}")
+    if not (d.get("n_calls") == len(calls)):
+        errs.append(f"✗ {PAYLOAD_TRIM_JSON}：n_calls={d.get('n_calls')!r} 与 "
+                    f"{len(calls)} 条明细对不上")
+    # ⑦ 承诺必须写清楚边界：产物自己要说清"token 是估计、不是实测"
+    dnp = " ".join(d.get("what_this_does_not_prove") or [])
+    if "估计" not in dnp and "不是实测" not in dnp:
+        errs.append(f"✗ {PAYLOAD_TRIM_JSON}：what_this_does_not_prove 里没有写明"
+                    f"「token 是估计不是实测」—— 这种产物最容易被读成实测值")
+    if not t.get("est_real_tokens_saved_low") or not t.get("est_real_tokens_saved_high"):
+        errs.append(f"✗ {PAYLOAD_TRIM_JSON}：token 估计没给区间 —— "
+                    f"单点估计会被当成实测精度用")
+    return errs
+
+
 def check_one(rel: str) -> list[str]:
     """检查一份产物，返回问题清单（空 = 通过）。"""
     p = REPO_ROOT / rel
@@ -538,6 +662,8 @@ def check_one(rel: str) -> list[str]:
         return _check_cache_report(rel, text)
     if rel == SEARCH_AB_MD:
         return _check_search_ab(rel, text)
+    if rel == PAYLOAD_TRIM_MD:
+        return _check_payload_trim(rel, text)
 
     d = _extract(text)
     errs: list[str] = []

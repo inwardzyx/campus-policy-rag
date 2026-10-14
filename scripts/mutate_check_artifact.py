@@ -246,6 +246,91 @@ def run_check() -> tuple[int, str]:
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
+# ==================================================================
+# ★ 工具返回体积裁剪（evalset/report-payload-trim.json）的变异
+# ==================================================================
+# 这一族的判据与前七条不同：它盯的是"模型可见的文本有没有被悄悄改动"，
+# 所以**必须分两轮打**（本仓 2026-10-13 记过这条）：
+#   · 文档侧（md）—— 改汇总行
+#   · 数据侧（json）—— 直接改逐次明细
+# 而这一族的判据**不从 md 抽数**，只读 json ⇒ 只打 md 是打不到它的。
+# ★ 每条用**不同的形状**（同源变异不携带信息量）：
+#   ① 改 after（把删掉的字段塞回去）→ 判据"after 不许有账目字段"
+#   ② 改 before（把字段删掉）→ 判据"before 必须真有这些字段，否则是空转"
+#   ③ 改 body 成空串 → 判据"正文非空"（防两个空串比出假一致）
+#   ④ 改汇总字数 → 判据"汇总能从明细重算"
+#   ⑤ 删 sig_expected_after → 判据"必须证明 after 来自代码"
+JSON_TARGET = "evalset/report-payload-trim.json"
+
+JSON_MUTATIONS: list[tuple[str, str, str, str]] = [
+    (
+        "① 把账目字段塞回 after（模型上下文里又多了钱数）",
+        "n_sources=3 llm_calls=0",
+        "n_sources=3 tokens_total=0 tokens_calls=0",
+        "判据「after 不许出现账目字段」",
+    ),
+    (
+        "② 把 before 里的账目字段抹掉（这次比较变成空转）",
+        "tokens_total=0 tokens_calls=0 tokens_input=0 tokens_output=0 "
+        "tokens_cache_hit=0",
+        "tokens_total=0",
+        "判据「before 必须真有这些字段」",
+    ),
+    (
+        "③ 改明细里的 before 文本长度来源（汇总与明细分家）",
+        '"signal_chars_before": 2743',
+        '"signal_chars_before": 1',
+        "判据「汇总能从明细重算」",
+    ),
+    (
+        "④ 改汇总字数（不重算就发现不了）",
+        '"signal_chars_saved": 1447',
+        '"signal_chars_saved": 9999',
+        "判据「汇总能从明细重算」",
+    ),
+    (
+        "⑤ 删掉 sig_expected_after（无法证明 after 是代码吐出来的）",
+        '"sig_expected_after": "\\n\\n[检索信号]',
+        '"sig_expected_after_removed": "\\n\\n[检索信号]',
+        "判据「必须存在代码派生值」",
+    ),
+]
+
+
+def run_json_mutations() -> tuple[list[str], list[str], int]:
+    """数据侧变异：直接改 JSON（md 侧改不到这些判据）。返回（漏检, 未注入, 通过数）。"""
+    path = REPO_ROOT / JSON_TARGET
+    if not path.exists():
+        print(f"? 跳过 JSON 变异：找不到 {JSON_TARGET}")
+        return [], [f"（整个 {JSON_TARGET} 不在）"], 0
+    original = path.read_text(encoding="utf-8")
+    undetected: list[str] = []
+    not_applied: list[str] = []
+    applied = 0
+    for desc, old, new, expect in JSON_MUTATIONS:
+        if old not in original:
+            not_applied.append(f"{desc}（原文不存在：{old[:40]!r}）")
+            print(f"? 跳过：{desc}")
+            continue
+        path.write_text(original.replace(old, new), encoding="utf-8", newline="")
+        try:
+            code, out = run_check()
+            if code == 0:
+                undetected.append(desc)
+                print(f"✗ 漏检：{desc}（期望由{expect} 抓到）")
+            else:
+                first = next(
+                    (ln.strip() for ln in out.splitlines() if ln.strip().startswith("✗")),
+                    "(没打印错误行)",
+                )
+                print(f"✓ 检出：{desc}")
+                print(f"    {first}")
+                applied += 1
+        finally:
+            _restore(path, original)
+    return undetected, not_applied, applied
+
+
 def _restore(path: Path, original: str) -> None:
     path.write_text(original, encoding="utf-8", newline="")
 
@@ -417,6 +502,12 @@ def main() -> int:
                 applied += 1
         finally:
             p.write_text(orig, encoding="utf-8", newline="")
+
+    # ---- 数据侧变异：改 JSON（md 侧改不到这些判据，见 JSON_MUTATIONS 的说明）----
+    j_undetected, j_not_applied, j_applied = run_json_mutations()
+    undetected += j_undetected
+    not_applied += j_not_applied
+    applied += j_applied
 
     # ---- 还原后必须还绿 ----
     code, out = run_check()

@@ -114,6 +114,101 @@ def usage_of(ai_msg) -> dict:
     return None
 
 
+# ==================================================================
+# 工具侧的账：**重放取账**（2026-10-14 改；原来靠标记行里的 tokens_* 字段）
+# ==================================================================
+# ★★ 为什么改：账目字段原来跟着标记行一起返回，而标记行整段会**重新进模型上下文**
+#   （每一轮重发）。13 次 `search_policy` 调用实测：标记行合计 1,040 字，账目字段是其中大头，
+#   而模型完全不需要知道自己花了多少钱 —— 这是纯噪声。
+#   删掉之后**模型可见的其余文本一个字节都没变**（`scripts/ab_payload_trim.py` 逐字节比），
+#   所以这是"可机械证明的等价改动"，不是"我觉得没用"。
+#
+# ★ 代价（如实写在这里）：重放要求**被计量的那个服务在测量结束后仍然可用**，
+#   而且重放时语料/模型不能变 —— 否则服务端记账会和当时不一致。
+#   所以这类"拿不到账"的机会比原来多：`missing` 的语义因此更重要，别把它读成 0。
+
+
+class ToolLedger:
+    """按【记录下来的调用参数】重放每个工具调用，取服务端自己报的 usage。
+
+    ★ 两条账一起留着，**互为交叉验证**：
+      · 重放         —— 重放取到的 token（现在的主口径）
+      · `llm_calls` —— 标记行里工具自己报的"服务端调了几次模型"
+    两者对不上就是"重放走的不是当时那条路"，必须报出来，不许挑一个信。
+    """
+
+    def __init__(self) -> None:
+        self.missing = 0                    # 重放失败 / 没拿到 usage 的次数（≠ 花了 0）
+        self.n_calls = 0                    # 一共重放了几次工具调用
+        self.llm_calls_reported = 0
+        self.llm_calls_missing = 0
+        self.mismatch: list[str] = []
+
+    def resolve(self, row: dict) -> None:
+        """把一道题里每次工具调用的账，按调用重放并回填到 `tool_usage` / `tool_by_name`。
+
+        ★ 逐调用回填（而不是整题一个数）：`tool_by_name` 是"该动哪个工具"的依据，
+          颗粒度丢了那张表就没意义了。
+        """
+        agg = {"input": 0, "output": 0, "total": 0, "cache_hit": 0, "n_calls": 0}
+        by_name: dict[str, dict] = {}
+        missing = 0
+        for c in row.pop("_tool_calls", []):
+            name, args, reported = c["name"], c["args"], c.get("reported_calls")
+            slot = by_name.setdefault(
+                name, {"calls": 0, "tokens": 0, "input": 0, "output": 0, "missing": 0})
+            slot["calls"] += 1
+            self.n_calls += 1
+            path = TOOL_ENDPOINT.get(name)
+            if path is None:
+                # 模型幻觉出的工具名：它根本没到服务端 ⇒ 这里也算一次"没拿到"
+                slot["missing"] += 1
+                missing += 1
+                continue
+            try:
+                data = _get_json(path, _replay_payload(name, args))
+                u = data.get("usage")
+                if not isinstance(u, dict):
+                    raise ValueError("响应里没有 usage")
+            except Exception as e:                              # noqa: BLE001
+                slot["missing"] += 1
+                missing += 1
+                print(f"    [账] 重放 {name} 失败（{type(e).__name__}）—— 计缺失，不补 0")
+                continue
+            slot["tokens"] += u.get("total_tokens", 0)
+            slot["input"] += u.get("input_tokens", 0)
+            slot["output"] += u.get("output_tokens", 0)
+            for k_src, k_dst in (("input_tokens", "input"), ("output_tokens", "output"),
+                                 ("total_tokens", "total"), ("cache_read", "cache_hit"),
+                                 ("n_calls", "n_calls")):
+                agg[k_dst] += u.get(k_src, 0)
+            # ---- 交叉验证：工具自己报的调用次数 vs 重放拿到的次数 ----
+            if reported is None:
+                self.llm_calls_missing += 1
+            else:
+                self.llm_calls_reported += reported
+                got = u.get("n_calls", 0)
+                if int(got) != int(reported):
+                    self.mismatch.append(
+                        f"{row['id']} {name}：标记行报 llm_calls={reported}，"
+                        f"重放拿到 n_calls={got}")
+        row["tool_usage"] = agg
+        row["tool_usage"]["cost"] = cost_of(agg)     # 与旧版字段对齐（正文里报过工具侧成本）
+        row["tool_by_name"] = by_name
+        row["tool_usage_missing"] = missing
+        self.missing += missing
+
+
+def _replay_payload(name: str, args: dict) -> dict:
+    """把当时的工具参数还原成服务端请求体。"""
+    if name == "search_policy":
+        return {"question": args.get("query", ""), "top_k": args.get("k", 5)}
+    return {"question": args.get("question", ""), "use_rerank": True}
+
+
+TOOL_ENDPOINT = {"search_policy": "/search", "ask_policy": "/chat"}
+
+
 def sum_usage(ai_msgs: list) -> dict:
     """把一条链路里所有 LLM 调用的 token 加起来。
 
@@ -203,20 +298,12 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                     HumanMessage(content=q["question"])]
             ai_msgs = []
             truncated = False
-            # ★★ 工具内部花掉的 token（2026-10-12 补）：原来**完全没进账**。
-            #   每次工具调用打的都是 /chat，服务内部还要跑 改写/精排/生成，
-            #   而那部分账被 `str(out)` 整个丢掉了 ⇒ "agent 贵 1.99 倍"是低估。
-            #   现在工具通过 SIGNAL 协议把 usage 带回来（mcp/tools_impl.py::_usage_fields），
-            #   这里把它单独攒成【第二本账】，**不与 agent 自己的账合并** ——
-            #   两本账并列才看得出"贵在哪一层"。
-            tool_agg = {"input": 0, "output": 0, "total": 0, "cache_hit": 0, "n_calls": 0}
-            tool_missing = 0        # 有几次工具调用**没报上账**（≠ 花了 0）
-            # ★★ 按【工具名】归账（2026-10-13 补，起因是要量"给检索端点去掉生成能省多少"）：
-            #   光有工具侧总量没法判断"该动哪个工具" —— 而两个工具打的是**两条不同的路**：
-            #     search_policy → /chat?use_rerank=False ⇒ 不改写、不精排，**只跑生成**（n_calls=1）
-            #     ask_policy    → /chat?use_rerank=True  ⇒ 改写+精排+生成（命中 3 次、拒答 2 次）
-            #   实测过：search 每次 1 次调用、ask 命中 3 次 / 拒答 2 次 —— 与代码路径一致。
-            tool_by_name: dict[str, dict] = {}
+            # ★★ 工具侧的账（2026-10-12 加、2026-10-14 改成重放取账）：
+            #   这里**只记调用参数**，账等服务端重放时再取（见 ToolLedger 的长注释）。
+            #   为什么不在循环里顺手取账：那需要把账目字段塞进工具返回，
+            #   而工具返回每一轮都会重新进模型上下文 —— 那是纯噪声，
+            #   且会污染"模型看到的文本"这个被其它判据依赖的量。
+            tool_calls_rec: list[dict] = []
             try:
                 for rnd in range(MAX_ROUNDS):
                     resp = bound.invoke(msgs)
@@ -226,31 +313,16 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                     msgs.append(resp)
                     for tc in resp.tool_calls:
                         from mcp.tools_impl import (TOOL_IMPL, ToolError,
-                                                    parse_signal_usage)
+                                                    parse_signal_calls)
                         fn = TOOL_IMPL.get(tc["name"])
                         out = (f"没有名为 {tc['name']} 的工具。现有工具："
                                f"{sorted(TOOL_IMPL)}。" if fn is None
                                else _safe_call(fn, tc["args"]))
-                        # ★ 把工具内部的账收上来。None = 没拿到（不是 0）——
-                        #   旧标记行 / 写了 `?` 都走这里，必须计成"缺失"而不是 0。
-                        tu = parse_signal_usage(str(out))
-                        slot = tool_by_name.setdefault(
-                            tc["name"], {"calls": 0, "tokens": 0,
-                                         "input": 0, "output": 0, "missing": 0})
-                        slot["calls"] += 1
-                        if tu is None:
-                            tool_missing += 1
-                            slot["missing"] += 1
-                        else:
-                            slot["tokens"] += tu["total"]
-                            slot["input"] += tu["input"]
-                            slot["output"] += tu["output"]
-                            for k_src, k_dst in (("input", "input"),
-                                                 ("output", "output"),
-                                                 ("total", "total"),
-                                                 ("cache_hit", "cache_hit"),
-                                                 ("n_calls", "n_calls")):
-                                tool_agg[k_dst] += tu[k_src]
+                        # ★ 记下这次调用（名字 + 参数）供重放；顺带留一份工具自己报的
+                        #   调用次数 —— 它和重放拿到的次数互为交叉验证（见 ToolLedger）。
+                        tool_calls_rec.append(
+                            {"name": tc["name"], "args": dict(tc["args"]),
+                             "reported_calls": parse_signal_calls(str(out))})
                         from langchain_core.messages import ToolMessage
                         msgs.append(ToolMessage(content=str(out),
                                                 tool_call_id=tc["id"]))
@@ -262,22 +334,17 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                 continue
             usage = sum_usage(ai_msgs)
             usage["cost"] = cost_of(usage)
-            tool_agg["cost"] = cost_of(tool_agg)
             rows.append({"id": q["id"], "type": q["type"], "usage": usage,
-                         # ★ 第二本账：工具内部（/chat 那一侧）花掉的。
-                         #   reported_total = usage.total + tool_usage.total 才是这道题的真账。
-                         "tool_usage": tool_agg,
-                         # ★ 按工具名分开的那本账（见上面 tool_by_name 的注释）
-                         "tool_by_name": tool_by_name,
-                         "tool_usage_missing": tool_missing,
+                         # ★ 第二本账（工具内部那一侧）由 ToolLedger 在跑完之后回填，
+                         #   字段名与旧版一致：tool_usage / tool_by_name / tool_usage_missing
+                         "_tool_calls": tool_calls_rec,
                          "n_tool_calls": sum(len(t.tool_calls or [])
                                              for t in ai_msgs),
                          "truncated": truncated, "error": None})
             print(f"  [agent {i}/{len(qs)}] {q['id']:5} "
                   f"LLM 调用 {usage['n_calls']} 次　"
                   f"入 {usage['input']} / 出 {usage['output']} / 合计 {usage['total']} token"
-                  f"　★工具侧 {tool_agg['n_calls']} 次调用 / {tool_agg['total']} token"
-                  f"{'（有 %d 次没报上账）' % tool_missing if tool_missing else ''}"
+                  f"　工具调用 {len(tool_calls_rec)} 次（账稍后重放取）"
                   f"{'　★有调用没拿到 usage' if usage['missing_usage'] else ''}")
     finally:
         PL.TOOL_IMPL = original
@@ -374,6 +441,24 @@ def main():
         print("\n=== 走 agent（MCP + 工具 + 循环）===")
         with StdioMCPClient() as client:
             a_rows = measure_agent(qs, bound, client)
+        # ★★ 工具侧的账在这里取（2026-10-14 改）：按刚才记录的调用参数**重放**，
+        #   不再从工具返回的标记行里读 —— 那会把账目数字塞回模型上下文。
+        #   见 ToolLedger 的注释；★ 这一步要求 RAG 服务仍然可用。
+        print("\n=== 重放取工具侧的账 ===")
+        ledger = ToolLedger()
+        for r in a_rows:
+            if not r.get("error"):
+                ledger.resolve(r)
+        print(f"  重放完成：{ledger.n_calls} 次工具调用"
+              f"（其中 {ledger.missing} 次没拿到账 —— 计缺失，不补 0）")
+        if ledger.mismatch:
+            print(f"  ★★ 交叉验证不一致 {len(ledger.mismatch)} 处"
+                  f"（标记行的 llm_calls vs 重放拿到的 n_calls）：")
+            for m in ledger.mismatch[:10]:
+                print(f"     {m}")
+        if ledger.llm_calls_missing:
+            print(f"  ★ 有 {ledger.llm_calls_missing} 次调用没带上 llm_calls —— "
+                  f"那部分无法交叉验证（≠ 花了 0）")
         runs_summary.append(_summarize_run(run_i, d_rows, a_rows))
 
     # ----汇总 ----

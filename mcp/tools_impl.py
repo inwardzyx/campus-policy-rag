@@ -100,8 +100,11 @@ def search_policy(query: str, k: int = 5) -> str:
       占工具侧总账（26,277）的 **24%**。换成 `/search` 之后这部分是 **0**，
       而返回给模型的文本**逐字节不变**（服务侧两条路共用同一份检索 + 拒答实现，
       `tests/test_guard.py` 的「只检索端点」组另做真 A/B 对照）。
-      ⚠️ 于是本函数**不烧 token**：标记行里 `tokens_total=0`，
+      ⚠️ 于是本函数**不烧 token**：标记行里 `llm_calls=0`，
       这是【可证明的 0】（服务端这条路上一个 LLM 调用点都没有），不是 `?`。
+      ★ 2026-10-14 二次改动：账目数字（`tokens_total` 等五个字段）**已从标记行删掉** ——
+      它们每次调用都重新进模型上下文，是纯噪声；而"恒 0 次调用"这条断言改用
+      `llm_calls=0` 表达。工具侧的账改由 `agent/token_cost.py` 重放取，理由见 `_usage_fields`。
 
     ★★★ 2026-10-12 加：命中标记（SIGNAL 协议）
       为什么加：拒答判据原来只能靠【读模型的措辞】猜它有没有依据，
@@ -192,42 +195,39 @@ SIGNAL_KEY = "hit_status"       # ★ 脚本只认这个 key，别改名字
 
 
 def _usage_fields(usage: dict | None) -> str:
-    """把 `/chat` 返回里的 usage 折进标记行 —— 让【工具内部的账】也能被记上。
+    """只留**一次 LLM 调用都没发生**这条事实，账目数字一律不进标记行。
 
-    ## 为什么必须带（2026-10-12 补）
+    ## ★★★ 2026-10-14 改：账目字段从标记行里**删掉**（先量后改）
 
-    agent 的账（`agent/token_cost.py`）原来只统计**它自己那几轮**的 LLM 调用；
-    而每次工具调用打的都是 `/chat`，服务内部还要跑 改写 / 精排 / 生成。
-    ⇒ 那部分 token **一次都没进账**（工具返回被 `str(out)` 整个丢掉），
-      于是"agent 比直打贵 1.99 倍"是**低估**的。
-    实测复核（cc 独立回放 13 次真实工具调用读 `/chat` 的 usage）：
-      `search_policy` 实测 ~514 token/次、`ask_policy` ~872 token/次、合计均值 ~734；
-      补进账后倍率约 **3.3×（2.8~3.7×）** —— 1.99 落在区间之外。
-    ⇒ 让工具**自己把账报上来**，是这条链上唯一既不用改服务、也不用改 MCP 传输的办法。
+    原来这里会把 `tokens_total / tokens_calls / tokens_input / tokens_output /
+    tokens_cache_hit` 五个字段一并塞进标记行。**现在删掉，理由是一笔量出来的账：**
 
-    ## ★★ usage 为 None 时写 `?` 而不是 0
+    · 标记行每次工具调用都跟着返回，而它整段都会**重新进模型上下文**（每一轮重发）。
+      13 次 `search_policy` 调用实测：标记行合计 1,040 字，其中**账目字段占 1,040 字里的
+      绝大部分**（每次 ~80 字）—— 这是喂给模型的纯噪声：模型不需要知道自己花了多少钱。
+    · 删掉之后**模型可见的其余文本一个字节都不变** ⇒ 这不是"我觉得它没用"，
+      是**可机械证明的等价**（`scripts/ab_payload_trim.py` 逐字节比）。
+    · 而那条"这条路上恒 0 次 LLM 调用"的断言（本仓最值钱的一条外部可验证断言）
+      **必须留下** —— 所以保留 `llm_calls=`，它正是同一个事实的另一种写法。
 
-    `service.py::_take_usage()` 返回 None 有两种可能：
-      · 整次请求**一次都没调模型**（离线层撞上向量短路，真的花 0）
-      · 调了，但**一次都没拿到 usage**
-    **这两者不能都写成 0** —— 填 0 会让"没拿到"看起来像"真的没用"
-    （`service.py` 里 `_record_usage` 的注释为同一件事写过一遍）。
-    所以这里写 `?`，脚本侧见到 `?` 要计入"工具侧账目缺失"，而不是计入 0。
+    ## 账本去哪了
 
-    ★★★ 2026-10-14 补第三种情况：**显式的 0**。
-      `/search`（`search_policy` 现在打的端点）返回的 usage 里带 `n_calls=0` ——
-      那不是"没拿到账"，而是服务端**可证明**的一次模型都没调。
-      ⇒ 此时这里写 0 才是对的，写 `?` 反而是假话（把"确实没花"说成"不知道"）。
-      判据在服务端：`service.py::_zero_usage()` 与 `limits.py::Limiter.record()` 里
-      对 `n_calls == 0` 的处理是同一件事的两头，改一头要连带看另一头。
+    工具侧的账（服务内部为这次工具调用烧掉的 token）**不再经由标记行传递**，
+    改成 `agent/token_cost.py` **按记录下来的调用参数重放**取账（`ToolLedger`）：
+    重放的输入与当时逐字节相同 ⇒ 服务端记账一致，而模型上下文里一个字节都不多。
+    代价写在 `agent/token_cost.py` 的注释里：重放要求服务在测量后仍然可用。
+
+    ## ★ `?` 与 0 的区别（这条没变，也不能变）
+
+    `usage is None` 有两种可能：整次请求一次都没调模型（真的 0）、
+    或调了但一次都没拿到 usage（没拿到）。**前者写 0、后者写 `?`** ——
+    混了就是本仓反复剿的那类错（把"没拿到"说成"真的是 0"）。
+    ★ 2026-10-14 补：`/search` 返回的 `n_calls=0` 属于**可证明的 0**，
+      此时写 0 才对，写 `?` 反而是假话。
     """
     if not usage:
-        return " tokens_total=? tokens_calls=?"
-    return (f" tokens_total={int(usage.get('total_tokens', 0))}"
-            f" tokens_calls={int(usage.get('n_calls', 0))}"
-            f" tokens_input={int(usage.get('input_tokens', 0))}"
-            f" tokens_output={int(usage.get('output_tokens', 0))}"
-            f" tokens_cache_hit={int(usage.get('cache_read', 0))}")
+        return " llm_calls=?"
+    return f" llm_calls={int(usage.get('n_calls', 0))}"
 
 
 def _signal_line(status: str, tool: str, n_src: int = 0,
@@ -235,7 +235,8 @@ def _signal_line(status: str, tool: str, n_src: int = 0,
     """生成末尾的命中标记行。
 
     status ∈ {"hit", "no_hit"}；no_hit 表示库里确实没有这条。
-    usage = `/chat` 响应里的 usage（工具内部花掉的 token），见 `_usage_fields`。
+    usage = `/chat` 响应里的 usage —— ★ 现在**只取它的 `n_calls`**，
+    账目数字不再进模型上下文（见 `_usage_fields` 的取舍说明）。
     """
     return (f"\n\n{SIGNAL_PREFIX} {SIGNAL_KEY}={status} "
             f"tool={tool} n_sources={n_src}" + _usage_fields(usage))
@@ -294,6 +295,38 @@ def parse_signal_usage(tool_text: str) -> dict | None:
                     "cache_hit": int(kv.get("tokens_cache_hit", 0))}
         except ValueError:
             return None                      # 字段坏了也不猜
+
+
+def parse_signal_calls(tool_text: str) -> int | None:
+    """从标记行里解析【这次工具调用在服务端触发了几次 LLM 调用】。
+
+    ★ 为什么不复用 `parse_signal_usage`：那个函数认的是**旧格式**的
+      `tokens_total` 一整套字段。新标记行里已经不放账目数字了（见 `_usage_fields`），
+      所以需要这个只认 `llm_calls` 的解析器。
+
+    ★★ 返回 None 与 0 **不是一回事**，这条不能省：
+      · `None` — 没有标记行 / 没有 `llm_calls` 字段 / 写的是 `?`
+        ⇒ 调用方要计成「这次没拿到」，**不许当成 0**
+      · `0`    — 工具明确报"服务端一次模型都没调"
+        ⇒ 这正是 `search_policy` 走 `/search` 时的**可证明的 0**
+    把 None 当成 0，就是本仓反复剿的"把没拿到说成真的是 0"。
+    """
+    if not tool_text or SIGNAL_PREFIX not in tool_text:
+        return None
+    for line in tool_text.splitlines():
+        line = line.strip()
+        if not line.startswith(SIGNAL_PREFIX):
+            continue
+        for part in line[len(SIGNAL_PREFIX):].split():
+            if part.startswith("llm_calls="):
+                v = part.split("=", 1)[1].strip()
+                if v == "?":
+                    return None
+                try:
+                    return int(v)
+                except ValueError:
+                    return None              # 字段坏了也不猜
+    return None
 
 
 # ★★ 这就是【唯一源】：MCP 侧的 tools/list 和 bind_tools 侧的描述都从这里派生。

@@ -949,44 +949,65 @@ def test_scripts_that_print_unencodable_chars_guard_stdout():
 
 
 # ==================================================================
-# SIGNAL 协议里的【计量字段】：工具必须把自己花掉的 token 报上来
+# SIGNAL 协议：命中标记 + 服务端调用次数（账目数字已从标记行移走）
 # ==================================================================
 # 背景（2026-10-12）：agent 的 token 账原来只统计它自己那几轮 LLM 调用，
 # 而每次工具调用打的都是 /chat（服务内部还要跑 改写/精排/生成）——
-# 那部分账被 `str(out)` 整个丢掉，于是"agent 贵 1.99 倍"是**低估**的
-# （cc 独立回放 13 次真实工具调用实测：补进账后约 3.3×，区间 2.8~3.7×）。
+# 那部分账被 `str(out)` 整个丢掉，于是"agent 贵 1.99 倍"是**低估**的。
+# 当时的做法是把 `tokens_*` 五个字段塞进标记行。
 #
-# ★ 这个用例盯住三条，每条都对应一种**会让数字悄悄错**的写法：
-#   ① 报上来的数必须能原样解回来（不然账目对不上）
+# ★★★ 2026-10-14 改：那五个字段**已从标记行删掉**。理由是量出来的：
+#   标记行每一轮都会重新进模型上下文，13 次 `search_policy` 调用实测标记行合计
+#   1,040 字，账目字段是大头 —— 而模型根本不需要知道自己花了多少钱。
+#   删掉之后**模型可见的其余文本一个字节都不变**（`scripts/ab_payload_trim.py` 逐字节比），
+#   所以这是可机械证明的等价改动。工具侧的账改由 `agent/token_cost.py` 重放取。
+#
+# ★ 这个用例盯住四条，每条都对应一种**会让数字悄悄错**的写法：
+#   ① `llm_calls` 报上来必须能原样解回来
 #   ② 没有 usage 时必须写 `?`，且解析成 None —— **绝不能解析成 0**
 #      （0 = "真的没花"，None = "没拿到"；混了就是本仓反复剿的那类错）
-#   ③ 旧格式的标记行（没有计量字段）仍然要能解析出 hit_status，且 usage 返回 None
-#      （向后兼容：不能让老数据突然被判成"花了 0"）
-def test_signal_line_carries_tool_side_usage():
-    """工具侧的账：报上来 → 解得回来；没拿到 → 是 None 而不是 0。"""
+#   ③ 旧格式的标记行（带 tokens_* 字段）仍要能解析出 hit_status —— 向后兼容，
+#      不能让历史产物突然读不出来
+#   ④ **账目数字不许再出现在模型可见的文本里** —— 这条是本次改动的核心断言，
+#      没有它，"删掉了"就只是我读了一遍代码觉得删掉了
+def test_signal_line_carries_call_count_not_money():
+    """标记行只带"调了几次"，不带"花了多少钱"；`?` 与 0 仍然分得清。"""
     from mcp.tools_impl import (_signal_line, parse_signal,
-                                parse_signal_usage)
+                                parse_signal_calls, parse_signal_usage)
 
     usage = {"input_tokens": 681, "output_tokens": 205,
              "total_tokens": 886, "cache_read": 128, "n_calls": 3}
     line = _signal_line("hit", "search_policy", 3, usage=usage)
 
-    got = parse_signal_usage(line)
-    assert got == {"total": 886, "n_calls": 3, "input": 681,
-                   "output": 205, "cache_hit": 128}, f"解回来对不上：{got}"
-    # ① 新字段不许把老的命中判据弄坏
-    assert parse_signal(line) == "hit", "加了计量字段之后 hit_status 解析坏了"
+    # ① 调用次数解得回来
+    assert parse_signal_calls(line) == 3, f"llm_calls 解不出来：{line!r}"
+    assert parse_signal(line) == "hit", "命中判据被弄坏了"
+
+    # ④ 账目数字**一个都不许出现**（模型看得见的每一个字节都要值钱）
+    for leak in ("tokens_total", "tokens_calls", "tokens_input",
+                 "tokens_output", "tokens_cache_hit", "886", "681", "205", "128"):
+        assert leak not in line, (
+            f"标记行里还有账目痕迹 {leak!r}：{line!r}\n"
+            f"⇒ 它每轮都会重新进模型上下文，是纯噪声；账改由 agent/token_cost.py 重放取")
 
     # ② 没拿到 usage ⇒ 写 `?`，解析成 None —— **不是 0**
     none_line = _signal_line("no_hit", "ask_policy", 0, usage=None)
-    assert "tokens_total=?" in none_line, f"没拿到时应当写 `?`：{none_line!r}"
-    assert parse_signal_usage(none_line) is None, (
+    assert "llm_calls=?" in none_line, f"没拿到时应当写 `?`：{none_line!r}"
+    assert parse_signal_calls(none_line) is None, (
         "没拿到 usage 时必须解析成 None —— 解析成 0 会让'没拿到'看起来像'真的没用'")
 
-    # ③ 旧格式（没有计量字段）仍然只解出命中状态，usage 为 None
-    old = "\n\n[检索信号] hit_status=no_hit tool=ask_policy n_sources=0"
+    # ★ 可证明的 0 要**留得下**：search_policy 走 /search 时服务端一次模型都没调，
+    #   这是本仓唯一一条"外部可验证"的成本断言，写 `?` 反而是假话。
+    zero_line = _signal_line("hit", "search_policy", 3, usage={"n_calls": 0})
+    assert parse_signal_calls(zero_line) == 0, "显式的 0 被弄丢了"
+
+    # ③ 旧格式（带 tokens_* 字段的历史产物）仍然读得出命中状态
+    old = ("\n\n[检索信号] hit_status=no_hit tool=ask_policy n_sources=0 "
+           "tokens_total=886 tokens_calls=3")
     assert parse_signal(old) == "no_hit", "旧格式的命中判据被弄坏了"
-    assert parse_signal_usage(old) is None, "旧格式不该被当成'花了 0 token'"
+    assert parse_signal_usage(old) == {"total": 886, "n_calls": 3, "input": 0,
+                                       "output": 0, "cache_hit": 0}, \
+        "旧格式的账目应当仍能解析（历史产物要靠它复核）"
 
 
 # ==================================================================
@@ -1257,9 +1278,12 @@ def test_search_policy_actually_goes_to_search_endpoint(monkeypatch):
         f"请求体不对：{seen['payload']}"
     assert "use_rerank" not in seen["payload"], "又带上了生成/精排开关"
     assert ti.parse_signal(out) == "hit", "标记行没了（判据全靠它）"
-    u = ti.parse_signal_usage(out)
-    assert u is not None and u["total"] == 0 and u["n_calls"] == 0, \
-        f"工具侧该报【显式的 0】，实际 {u}（None 会被算成工具侧账目缺失）"
+    # ★ 2026-10-14：断言从 `tokens_total=0` 换成 `llm_calls=0`。
+    #   同一条事实（服务端一次模型都没调），但账目数字已从模型可见文本里移走 ——
+    #   见 test_signal_line_carries_call_count_not_money 的第 ④ 条。
+    assert ti.parse_signal_calls(out) == 0, (
+        f"工具侧该报【显式的 0】，实际 {ti.parse_signal_calls(out)}"
+        f"（None 会被算成工具侧账目缺失）")
 
 
 def test_search_is_behind_the_same_gate_and_counts_without_faking_missing(gate):
