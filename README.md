@@ -217,6 +217,29 @@ Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 
 ![自动生成的接口文档：/health、/guard-report、/chat 三个端点 + 请求/响应 schema](docs/images/demo-api-docs.png)
 
+> ★ 上图是 2026-10-12 的截图（当时三个端点）。现在一共 **6 个**：
+> `GET /`（网页）、`POST /chat`（检索+生成）、**`POST /chat/stream`（SSE 流式，2026-10-14 加）**、
+> `POST /search`（只检索不生成）、`GET /health`、`GET /limits`、`GET /guard-report`。
+> ⇒ 要最新的接口文档，起服务后看 `/docs`（FastAPI 自动生成，永远是当前代码的样子）。
+
+**`/chat/stream` 是什么**（为什么要单开一条而不是给 `/chat` 加开关）：
+先推 `event: sources`（**查到了哪几条条款、精排各给了几分**），再逐块推 `event: delta`（答案正文），
+最后是 `done` / `refusal` / `error`。与 `/chat` **共用同一份检索与拒答判断**
+（`rag.search` / `rag.rerank` / `build_answer_prompt` 是唯一实现）⇒ 两条路不会给出不同结论。
+
+| 流式的实测值（真服务，20 题里的一例） | |
+|---|---|
+| 首字节 | **0.01~0.03 s** |
+| 首个 `sources`（条款 + 精排分能看了） | **~2.9 s** |
+| 首个 `delta`（答案第一个字） | **~3.5 s** |
+| 整段 | ~3.9 s |
+
+> ⇒ 用户不用等 3.9 秒才知道有没有查到东西：**2.9 秒时条款和分数已经在屏幕上了**。
+> ⚠️ **已知边界（如实写，别当遗漏）**：SSE 一旦发出 200 和响应头，**HTTP 状态码就回不去了** ——
+> 生成阶段失败只能推 `event: error`（现成的同步 `/chat` 至少是 200 + 失败文案，
+> 所以这个 `error` 事件是必须的）。而**额度被挡时仍是干净的 429**：
+> 闸门在**任何字节写出之前**完成，见 `service.py::chat_stream` 里的顺序说明。
+
 **按 `Ctrl+C` 停止**（不是关掉窗口就行——关窗口也能停，但 Ctrl+C 更干净）。
 
 > 只验证"起没起来"不想开浏览器的话，另开一个终端敲：
@@ -1680,7 +1703,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
 | **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` | 15 秒起（首次还要下模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` | 15 秒起（首次还要下模型） |
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，

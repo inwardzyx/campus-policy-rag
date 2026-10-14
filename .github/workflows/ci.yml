@@ -176,7 +176,7 @@ jobs:
         #   那 5 条「超时 / 返回垃圾 / 幻觉 id / 超长输入」的守门测试【在 CI 里根本没跑】——
         #   同样是"测试写了但没人跑"的摆设。已验证它们不依赖 DEEPSEEK_API_KEY，
         #   能在干净的 CI 环境里跑（删掉 key 实测 5 passed）。
-        run: python -m pytest tests/test_guard.py tests/test_eval_set.py tests/test_llm_resilience.py tests/test_usage_ledger.py -v
+        run: python -m pytest tests/test_guard.py tests/test_eval_set.py tests/test_llm_resilience.py tests/test_usage_ledger.py tests/test_chat_stream.py -v
 
   # ----------------------------------------------------------------
   # 容器 job：证明「镜像里真的跑得起来」

@@ -24,11 +24,13 @@ Step 6：把 RAG 整条链包成 HTTP 服务（FastAPI）
 按 Ctrl+C 停止服务。
 """
 
+import asyncio
 import contextvars
 import hashlib
 import json
 import logging
 import os
+import queue
 import re
 import threading
 import time
@@ -67,7 +69,7 @@ env_compat.ensure_uuid_utils()                      # 同上，拦的是 uuid_ut
 from kb.loader import load_documents                # noqa: E402  知识库从 docs/ 加载，不再写死 RAW_DOCS
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import HTMLResponse          # noqa: E402
+from fastapi.responses import HTMLResponse, StreamingResponse   # noqa: E402
 from fastembed import TextEmbedding                 # noqa: E402
 from langchain_core.messages import HumanMessage    # noqa: E402
 from langchain_deepseek import ChatDeepSeek         # noqa: E402
@@ -958,14 +960,46 @@ class RAG:
             out.append((chunk, float(vec_score), score, reason))
         return out
 
+    @staticmethod
+    def build_answer_prompt(question, chunks) -> str:
+        """拼生成用的 prompt —— **`answer()` 与流式端点共用的唯一实现**。
+
+        ★ 为什么抽成 staticmethod 而不是让流式那条自己拼一遍：
+          两条路必须喂**完全一样**的资料与措辞，否则"流式和非流式答的是同一件事"
+          就成了靠注释承诺的话（本仓库为这种"两处各写一份"栽过好几次）。
+          抽出来之后，测试可以直接比两边的 prompt 字符串。
+        """
+        ctx = "\n".join(f"- {c.get('text_full', c['text'])}" for c in chunks)
+        return ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
+                f"资料：\n{ctx}\n\n问题：{question}")
+
     def answer(self, question, chunks):
         # ★ 生成同样用全文：喂给模型的资料不该比库里的少
-        ctx = "\n".join(f"- {c.get('text_full', c['text'])}" for c in chunks)
-        prompt = ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
-                  f"资料：\n{ctx}\n\n问题：{question}")
+        prompt = self.build_answer_prompt(question, chunks)
         # 超时 / 限流 / 网络错误都会被 _invoke_llm 统一转成 LLMCallError 抛出来，
         # 不再让异常一路裸奔成 500 —— /chat 会接住它、记日志并降级。
         return _invoke_llm(self.llm, [HumanMessage(content=prompt)]).content
+
+    def answer_stream(self, question, chunks):
+        """流式生成：**逐块 yield 文本增量**，并在最后一块把 usage 记进账本。
+
+        ★ 超时怎么算（这是流式与 `_invoke_llm` 最大的不同）：
+          `_invoke_llm` 用 `future.result(timeout=)` 兜超时，而流式是**迭代**，
+          没法用一个 timeout 覆盖整段 ⇒ 改成检查**整段已耗时**是否超 `LLM_TIMEOUT_SEC`。
+          ⚠️ 这不是同一个语义：`_invoke_llm` 是"等结果最多 N 秒"，这里是"整段最多 N 秒"。
+            两者都不是"能掐断"（同步调用的天花板，README 已记）。
+        ★ 记账：每块都过一遍 `_record_usage` —— 正文块没有 usage 会被它忽略（只计数不记 token），
+          最后那块带 `usage_metadata` 才真正累加。**实测确认 DeepSeek 在末块带 usage**。
+        """
+        prompt = self.build_answer_prompt(question, chunks)
+        deadline = time.time() + LLM_TIMEOUT_SEC
+        for chunk in self.llm.stream([HumanMessage(content=prompt)]):
+            _record_usage(chunk)                       # ★ 旁路记账，不改返回值
+            text = getattr(chunk, "content", None)
+            if text:
+                yield text                            # 只在真的有正文时 yield（首块常常是空串）
+            if time.time() > deadline:
+                raise LLMCallError(f"流式生成超时（整段超过 {LLM_TIMEOUT_SEC:g} 秒）")
 
 
 rag = RAG()
@@ -1037,6 +1071,22 @@ class ChatRequest(BaseModel):
     # ★ None = 跟着 use_rerank 走（见 chat() 里的说明）：
     #   产品默认路径（rerank）本来就要调模型；离线路径不许偷偷调模型。
     use_rewrite: bool | None = Field(None, description="是否用 LLM 改写检索查询（None=跟着 use_rerank）")
+
+
+class ChatStreamRequest(BaseModel):
+    """`/chat/stream` 的请求体 —— 与 `ChatRequest` 的区别与理由。
+
+    ★ 为什么**单独一个模型**而不是给 `ChatRequest` 加字段：
+      `ChatRequest` 是 `/chat` 的对外契约，它的字段集被 `tests` 与 A/B 脚本依赖
+      （"除这次改动外逐字段不变"是能被验证的承诺）。把流式开关塞进去，
+      等于让两条路的契约耦合 —— 而流式的语义（SSE、状态码回不去）本来就不同。
+    ★ `use_rerank` 刻意**不留**（与 `/search` 当初的理由同源）：这条端点的全部意义是
+      "边生成边推"，关掉精排就退化成粗捞直出，而那条路已经有 `/search` 了。
+      留一个开关 = 留一条没人测的后门。
+    """
+
+    question: str = Field(..., description="用户的问题", min_length=1, max_length=500)
+    top_k: int = Field(5, description="粗捞几条", ge=1, le=10)
 
 
 class Source(BaseModel):
@@ -1167,6 +1217,176 @@ def chat(req: ChatRequest, request: Request):
     #   同一道闸。两条入口共用一份实现，才不会重演 R4 那次的病：新入口自己抄一遍记账、
     #   然后在某个分支上漏掉，"配额"在那条路上就整个不存在。
     return _gated(request, lambda led: handle_chat(req, led))
+
+
+# ==================================================================
+# 流式端点（SSE）—— 2026-10-14 加
+# ==================================================================
+# ★★ 为什么不是 `return _gated(request, lambda led: StreamingResponse(gen()))`：
+#   `_gated` 的契约是"pipeline() 同步跑完、从返回值里取 usage 记账"。而流式把
+#   「返回响应」和「跑完管道」拆成两个时刻 ⇒ 那样写的话记账会在**任何 token 产生之前**
+#   跑完、`resp` 上没有 usage ⇒ **每条流式请求都记成 `usage_missing`**，
+#   而客户端完全看不出来（流照推）。**这是跨模型盲审（GLM-5.3-Flash）指出的第一条**。
+#
+# ⇒ 这里手写闸门顺序，三条不变式照旧、只是位置换了：
+#     ① `LIMITER.check()` 必须在**任何 SSE 字节写出之前** —— 这样被挡时还能返干净的
+#        429/503，而且"被挡的请求不记账"这条语义不破；
+#     ② 记账在**生成器的终结处**（`finally`），且是**终结代码的第一句、独立包裹** ——
+#        绝不能和别的可能抛异常的动作（比如存会话历史）同一个 try；
+#     ③ `usage` 只 take 一次，`done` 事件与 `record` **共用同一份**
+#        （盲审 P5：取两次的话第二次是 None，真账会被事件拿走、记账拿空）。
+#
+# ★ 为什么用「后台线程 + 队列」而不是直接迭代同步生成器：
+#   `self.llm.stream()` 是**同步阻塞**的。在 `async def` 里直接迭代它会把事件循环卡住，
+#   于是**并发请求互相饿死** —— 而"能并发"本来是这个服务的一个卖点（同步 def + 线程池）。
+#   丢进专职线程、生成器只从队列读，事件循环全程不被占住；账本也跟着那次执行走
+#   （`_record_usage` 在 worker 里调，读的是 worker 自己那份 context 副本）。
+#
+# ★★ 已知边界（如实写在这里，别让读的人以为是遗漏）：
+#   SSE 一旦发出 200 和响应头，**HTTP 状态码就回不去了**。生成阶段失败只能推
+#   `event: error` —— 而**现成的同步 `/chat` 至少是 200 + 失败文案**，所以这个
+#   error 事件是必须的，不推就比现状还倒退（盲审 P2）。
+_STREAM_SENTINEL = object()
+
+
+def _sse(event: str, data: dict) -> str:
+    """把一条事件编成 SSE 帧。★ `ensure_ascii=False`：中文答案不该被转义成 \\uXXXX。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Queue") -> None:
+    """在**专职线程**里跑"检索 → 精排 → 流式生成"，把事件塞进队列。
+
+    ★ 这个函数**只负责产事件**，不碰闸门也不碰记账 —— 那两件事由外层的
+      `chat_stream()` 与生成器的 `finally` 负责。分开是为了让"记账无条件发生"
+      这件事只有一个地方要做（R4 的教训）。
+    """
+    # ★★★ 在本线程**显式绑定**这次请求的账本（这条实测踩了三次才定位对）：
+    #   async 生成器跑在 **anyio 的任务上下文**里，与 worker 线程拿到的上下文副本
+    #   **不是同一份** ⇒ 在生成器里 `set_current_ledger(led)`，worker 里
+    #   `current_ledger()` 读到的**是另一个对象**
+    #   （实测：worker 里 `current = ...337792`，而传入的 `led = ...9827200`）。
+    #   ⇒ 不赌 contextvars 跨线程/跨任务的传播路径：**worker 一开始就把账本钉在自己线程上**，
+    #     之后本线程内所有 `_record_usage` 读到的都是它。
+    set_current_ledger(led)
+    try:
+        # ★★★ 这里**不能**再调 `_take_usage()` 当"丢弃残留"（这是同一个坑的另一半）：
+        #   账本已经由调用方创建好并传进来，而 `_take_usage()` 读的是"当前上下文那个账本"
+        #   ⇒ 它会把**这一个**当成残留清掉 ⇒ 账全丢 ⇒ `led.take()` 返回 None
+        #   ⇒ 每次流式请求都记成 `usage_missing`，**而 SSE 流照样推得漂漂亮亮**。
+        #   ⇒ 规矩：**显式传进来的账本就是这次请求唯一的账本，不要再去找"当前上下文"的那个。**
+        if not rag.ready:
+            out.put(("error", {"message": "服务还在加载模型，请稍等几秒再试"}))
+            return
+
+        search_q = req.question
+        try:
+            search_q = rag.rewrite_query(req.question)
+        except LLMCallError as e:
+            logger.warning("（流式）查询改写不可用（%s），本次用原问题检索", e)
+
+        cands = rag.search(search_q, k=req.top_k)
+        ranked = None
+        try:
+            ranked = rag.rerank(req.question, cands)
+        except LLMCallError as e:
+            logger.warning("（流式）rerank 不可用（%s）", e)
+
+        # ★★ 拒答短路原样保留：精排最高分 < 5 ⇒ 推 refusal，**一个 delta 都不推**，
+        #    也压根不调生成模型。这条设计不能因为"流式"就被绕过。
+        if not ranked or ranked[0][2] < 5:
+            out.put(("refusal", {
+                "answer": "知识库里没有能回答这个问题的资料，我不编。",
+                "sources": [], "rerank_used": bool(ranked)}))
+            return
+
+        picked = [x for x in ranked if x[2] >= 5][:3]
+        sources = [{"doc": f"{c['doc']}｜{c['clause']}",
+                    "text": c.get("text_full", c["text"]),
+                    "score": round(v, 3), "rerank_score": s, "reason": r}
+                   for c, v, s, r in picked]
+        # ★ 先推 sources：这是"首字节"真正有用的地方 —— 用户能立刻看到"查到了哪几条、
+        #   精排给了几分"，不用等整段答案生成完（而这正是 `/chat` 现在做不到的）。
+        out.put(("sources", {"sources": sources, "rerank_used": True}))
+
+        n_delta = 0
+        for piece in rag.answer_stream(req.question, [c for c, _, _, _ in picked]):
+            out.put(("delta", {"text": piece}))
+            n_delta += 1
+        out.put(("__ok__", {"n_delta": n_delta}))
+    except LLMCallError as e:
+        out.put(("error", {"message": f"模型调用失败：{e}"}))
+    except Exception as e:                                      # noqa: BLE001
+        logger.exception("（流式）管道异常")
+        out.put(("error", {"message": f"{type(e).__name__}: {e}"}))
+    finally:
+        out.put(_STREAM_SENTINEL)          # ★ 无论如何都要收尾，否则消费端会一直等
+
+
+async def _chat_stream_events(req: ChatStreamRequest, led: UsageLedger, who: str):
+    """异步生成器：把 worker 线程产的事件转成 SSE 帧，**并在终结处记账**。
+
+    ★ `who` 是**显式传进来的**，不用模块级变量：并发两个流式请求时，
+      模块级那个值会被后一个请求覆盖，于是**记账记到别人头上**（谁都没发现的那种错）。
+    """
+    out: "queue.Queue" = queue.Queue()
+    # ★ 账本的绑定**不在这里做**，在 `_sse_stream_worker` 里做 —— 原因见那段注释：
+    #   async 生成器（anyio 任务上下文）与 worker 线程拿到的上下文副本**不是同一份**，
+    #   在这里 set 等于白 set（实测：worker 里读到的 ledger 与传入的 `led` 是两个不同对象）。
+    worker = threading.Thread(target=_sse_stream_worker, args=(req, led, out), daemon=True)
+    worker.start()
+    try:
+        while True:
+            item = await asyncio.to_thread(out.get)      # ★ 等队列不占事件循环
+            if item is _STREAM_SENTINEL:
+                break
+            event, data = item
+            if event == "__ok__":
+                continue
+            yield _sse(event, data)
+    finally:
+        worker.join(timeout=5)
+        # ★★★ 记账：终结代码的**第一句**，独立包裹 —— 盲审 P4 指出，若把别的可能抛异常
+        #   的动作写在同一段里，那个动作一炸就把记账一起带走（R4 的形态会复发）。
+        #   ★ 而且账从**账本**取，不从"客户端听到的部分"取 —— 生成阶段即使中途出错，
+        #     改写 + 精排那部分钱已经花了，必须照实入账（按实际花掉的钱记）。
+        usage = led.take()
+        LIMITER.record(who, usage)
+
+
+@app.post("/chat/stream")
+def chat_stream(req: ChatStreamRequest, request: Request):
+    """流式问答（SSE）。事件顺序：`sources` → `delta`* → `done` / `refusal` / `error`。
+
+    ★ 与 `/chat` 的关系：**共用 `rag.search` / `rag.rerank` / `build_answer_prompt`**，
+      所以"检索与拒答的判断"与同步那条**同源**；差别只在"生成是边推边给"。
+    ★ 版本/身份口径与 `/chat` 完全一致（同一道闸、同一个 `client_id`）。
+    """
+    # ① 闸门在任何字节之前 —— 被挡时还能返干净的 429/503（且这些请求不记账）
+    who = limits_mod.client_id(
+        request.client.host if request.client else None,
+        {k.lower(): v for k, v in request.headers.items()},
+        LIMITER.limits)
+    decision = LIMITER.check(who)
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=decision.http_status(),
+            detail={"reason": decision.reason, "detail": decision.detail},
+            headers={"Retry-After": str(decision.retry_after)})
+
+    led = UsageLedger()
+    # ★★★ 必须把账本**绑到当前上下文**，worker 线程才记得上账。
+    #   这里是实测踩到的坑（就是盲审 P0 那条的形态）：只在下面 new 一个账本、
+    #   不绑 contextvar 的话，worker 里的 `_record_usage` 找不到账本 ⇒ 账全丢
+    #   ⇒ `led.take()` 返回 None ⇒ 记成 `usage_missing`，**而 SSE 流照样推得漂漂亮亮**。
+    #   （实测：拒答那一路 usage_missing 每次都涨 1。）
+    #   ⚠️ 这里不 reset：生成器在**同一个请求上下文**里跑完并 take 掉账本，
+    #      而 `StreamingResponse` 的生成器引用的是这次请求的上下文副本。
+    set_current_ledger(led)
+    return StreamingResponse(_chat_stream_events(req, led, who),
+                             media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
 
 
 def _gated(request: Request, pipeline):
