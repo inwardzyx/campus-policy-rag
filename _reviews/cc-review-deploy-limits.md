@@ -2,7 +2,7 @@
 > 审的人是另一份上下文里的 agent，**它没看到我的任何结论**；卡里明确要求
 > "不许把注释/docstring/README 里的自我评价当证据"。逐条复核后的处置见
 > README〈盲审发现的缺口：哪些修了、哪些只记下来〉。
-> 原始任务卡：`_task_cc_redteam_limits.md` / `_task_cc_verify_truth.md`（在我本机，未入库）。
+> 原始任务卡已一并入库：`cc-task-redteam-limits.md` / `cc-task-verify-truth.md`（它就是当时给它看的东西，含全部约束）。
 # 红队盲审：`_review_rag-cs` 的限流 / 日配额（`700bc0e..a380b9d`）
 
 署名：cc（外部审稿人）· 2026-10-13 · 只读仓库；唯一写过的地方是 `D:\dsh-work\`
