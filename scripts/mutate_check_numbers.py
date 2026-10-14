@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
@@ -234,6 +235,52 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "精确重复 **0/20**",
         "精确重复 **3/20**",
     ),
+    # ★ 端点个数/名单三条（2026-10-14）。起因：README 说「一共 **6 个**」，
+    #   下面一行却列了 7 个 —— 错了两轮没人看见，因为**没有任何闸门看端点数**。
+    #   ⇒ 补判据的同时必须补变异，否则又是一条"从没被验证过的绿"。
+    #   ⚠️ 这三条**同源程度不同**（2026-10-14 盲审逐条点评，我认了）：
+    #     ② 最同源：被删的 `` `GET /health` `` 与判据构造的 f"`{m} {path}`"
+    #        逐字节相同 ⇒ 它只证明"README 排版与判据写法一致"，信息量最低。
+    #     ① 次之：格式维度同源，但数值维度跨源（README 的 8 vs 现扫代码的 7）。
+    #     ③ 同源最低、信息量最大：改的是被检对象本身，必须走完"现扫代码 → 比对"全程。
+    #     ④（下面）是**真跨源 + 真实事故方向**，盲审点名要的那一条。
+    #   ★ 保留 ①②③ 的理由：它们各自验的是"上一轮修掉的假红不会回来"
+    #     （①验计数、②验名单集合、③验方法），不是充数。
+    (
+        "端点个数：README 7→8（代码里还是 7 个）",
+        "README.md",
+        "现在一共 **7 个**",
+        "现在一共 **8 个**",
+    ),
+    (
+        "端点名单：从 README 声明段里删掉 `GET /health`（个数不改，仍写 7）",
+        "README.md",
+        "`GET /health`、`GET /limits`、`GET /guard-report`",
+        "`GET /limits`、`GET /guard-report`",
+    ),
+    (
+        "★ 端点方法：把 service.py 的 /chat/stream 从 POST 改成 GET（README 仍写 `POST /chat/stream`）",
+        "service.py",
+        '@app.post("/chat/stream")',
+        '@app.get("/chat/stream")',
+    ),
+    (
+        # ★★ 这条是盲审点名要补的**跨源**方向，也是**真实事故的形状**：
+        #   2026-10-14 那次的经过就是"代码加了 /chat/stream，README 只把名单补上、
+        #   个数忘了改"。上面三条里，①是反方向（README 多写）、③只改方法不加路由，
+        #   所以"全检出"只证明了我在意的两个方向，**没证明真会发生的那一种**。
+        #   ⇒ 这条必须改【代码侧】——README 一个字不动，红的原因只能是
+        #     "现扫代码发现多了一条 README 没写的路由"。
+        #   ⚠️ 注入内容必须**语法完好**（本套件现在会用 ast.parse 先验），
+        #     否则红的原因会是语法错，而不是被检判据。
+        "★★ 端点跨源：给 service.py 插一条新路由（README 完全不改）—— 真实事故方向",
+        "service.py",
+        '@app.get("/limits")\n',
+        '@app.get("/limits")\n'
+        '@app.get("/version")\n'
+        'def _mutated_version():\n'
+        '    return {"v": "0.0.0"}\n\n',
+    ),
 ]
 
 
@@ -307,6 +354,18 @@ def main() -> int:
 
         mutated = base.replace(old, new)  # ★ 全量替换，不带次数
         assert mutated != base, "替换没生效"
+        # ★★ 2026-10-14 盲审补的第 5 条：**被改的是 .py 时必须先验语法**。
+        #   起因：我要新增一条"给 service.py 插一条路由"的变异，如果插进去的文件
+        #   语法坏了，`run_check` 会因为别的原因报非 0 ⇒ 套件把**语法错误读成"检出成功"**。
+        #   这正是本仓库那条老规矩（"检出≠证明"）的又一形态：红的原因不是我注入的那个错。
+        if target.suffix == ".py":
+            try:
+                ast.parse(mutated)
+            except SyntaxError as e:
+                not_applied.append(desc)
+                print(f"? 跳过（变异后语法就是坏的，红的原因不是被检判据）：{desc}")
+                print(f"    {e}")
+                continue
         # ★ 换行必须原样写回。
         #   实测踩过（DSH 指出的读码推断，我确认了机制）：
         #   read_text 会把 CRLF 统一成 \n，write_text 又按 os.linesep 翻回去。

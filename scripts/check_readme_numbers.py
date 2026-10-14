@@ -587,6 +587,116 @@ def _check_scale_ranks() -> list[str]:
     return []
 
 
+def _check_endpoints() -> list[str]:
+    """端点**个数**与**名单**：README 声明的 ↔ `service.py` 里真实的。
+
+    ★ 起因（2026-10-14）：写简历时发现 README 说「现在一共 **6 个**」，
+      紧跟着的一行却列了 **7** 个路由 —— **同一句话内部自相矛盾**，
+      而且它已经错了不止一次（数 6 写 5、数 5 写 6）。
+      端点数是**手写的**，全仓库没有任何闸门看它：这正是这个仓库
+      自己那条规矩（"数字不许手写"）的反例，所以补上。
+
+    ★ 只扫 `service.py`：`experiments/step6_fastapi_service.py` 是学习脚本的
+      历史快照（当时只有 4 个端点），它本来就该停在过去 —— 扫它等于要求
+      教学脚本跟着生产代码改，是假要求。
+
+    ★ 为什么同时查"个数"和"名单"：只查个数的话，把 `/chat/stream` 换成
+      别的路径、个数照样对 ⇒ 检查看着是绿的。名单必须逐条出现。
+
+    ★★ 2026-10-14 跨模型盲审（GLM-5.3-Flash）后的四处加固 —— 它抓到的三条
+       我自己没想到，逐条记在这里（改动都必须留下为什么）：
+       ① **名单判据原本只在 block 里 grep，而 block 是"锚行到第一个非 `>` 行"**：
+          于是"锚行与名单行之间插一行 `> ⇒`"就会把 block 截短 ⇒ 7 条全部报缺失
+          = **假红**。而"段落边界靠碰巧后面是空行"又让尾注行里的同款字样能替名单
+          兜底 = **假绿**。⇒ 现在改成**集合相等**：名单 = block 里所有
+          `` `方法 /路径` `` 字样，代码侧 = 现扫出的路由集合，两边必须**完全一致**
+          （缺一条报、多一条也报）。这比"逐条 grep"强的地方在于它同时挡住了
+          "名单里留着一条已经删掉的旧路由"。
+       ② 盲审指出：`?`/`\s*` 这类宽松写法会让 `>  ⇒`（多一个空格）不被当成终止行。
+          根治办法不是把正则写得更巧，而是**不再依赖终止行**（见 ①）。
+       ③ **锚行原本只要求含「现在一共」**：将来任何更早的 `> ` 引用行里出现一次
+          同词就会抢先锚定，然后报"声明句里抽不到 N 个"= 假红。⇒ 锚必须同时含
+          「现在一共」与「个」，并且**扫全部出现处要求唯一** —— 与本文件
+          `fetch_actual` 对产物侧的规矩（扫全部、不一致就报）保持一致。
+          （盲审原话：README 侧没有同款多处一致性防线。现在有了。）
+       ④ 盲审指出三条端点变异**同源程度不同**，且合起来没覆盖真实事故方向
+          （"代码新增第 8 条路由、README 还写 7"）—— 那是**跨源**方向，
+          已补一条变异，见 `mutate_check_numbers.py` 末尾。
+    """
+    errs: list[str] = []
+    svc = REPO_ROOT / "service.py"
+    if not svc.exists():
+        return ["✗ 端点数：找不到 service.py —— 这条检查的被检对象没了"]
+
+    # ---- 真值：现扫路由装饰器（代码侧，唯一的真值来源）----
+    # 只认行首的 @app.<方法>("<路径>"。⚠️ 已知边界：用 APIRouter / add_api_route /
+    #   methods=[...] / websocket 注册的路由**扫不到** —— 真那么改，先改这条判据。
+    routes = re.findall(
+        r'^@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"',
+        svc.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if not routes:
+        return ["✗ 端点数：service.py 里一条 @app.<方法>(\"/...\") 都没扫到 —— "
+                "★扫到 0 条必须报红（要么路由写法变了，要么被检文件指错了），不许当通过"]
+    code_tokens = {f"{m.upper()} {p}" for m, p in routes}   # 例：{"GET /health", ...}
+    if len(code_tokens) != len(routes):
+        dup = sorted(t for t in code_tokens if [f"{m.upper()} {p}" for m, p in routes].count(t) > 1)
+        errs.append(f"✗ 端点数：service.py 里有重复路由 {dup} —— 以哪条为准？")
+
+    # ---- README 侧：锚在**声明句本身**（同时含「现在一共」与「个」）----
+    #   ★ 锚在「上图」上踩过坑：README 里另有一段 LangGraph 解释也以「上图」开头，
+    #     按它分段会抽出 2 段 ⇒ 判据崩成假红。**锚点比被检对象宽，就会卷入无关文本。**
+    rd = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    anchors = re.findall(r"^> .*现在一共.*个.*$", rd, re.MULTILINE)
+    if not anchors:
+        return ["✗ 端点数：README 里找不到『现在一共 **N 个**』那句声明 —— "
+                "★这句话被删了/改写了，这条检查就静默失效了，所以抽不到要报红"]
+    if len(anchors) != 1:
+        return [f"✗ 端点数：README 里有 {len(anchors)} 行同时含『现在一共』与『个』"
+                f"（应为 1）—— 多处声明可能互相矛盾，且 re.search 只会锚第一个。"
+                f"原文：{[a.strip() for a in anchors]}"]
+
+    n_readme = re.search(r"现在一共\s*\*\*(\d+)\s*个\*\*", anchors[0])
+    if not n_readme:
+        return ["✗ 端点数：README 声明句里抽不到『现在一共 **N 个**』—— "
+                "★措辞改了要同步改这条检查，不要静默当通过"]
+    if int(n_readme.group(1)) != len(code_tokens):
+        errs.append(
+            f"✗ 端点数：README 写 {n_readme.group(1)} 个，service.py 里实际 {len(code_tokens)} 个"
+            f"（{', '.join(sorted(code_tokens))}）"
+        )
+
+    # ---- 名单：**集合相等**（缺一条报、多一条也报）----
+    #   名单范围 = 锚行 + 紧随其后的引用行（到第一个非 `>` 行为止）。
+    #   ⚠️ 这里不追求"精确切出名单行"：切不准就会假红/假绿（见 docstring ①②）。
+    #      改判**集合相等**之后，段落多切进来的尾注散文只要没写 `` `方法 /路径` ``
+    #      就不影响结论；写了就是"文档里存在一条代码里没有的路由"——那也确实该报。
+    m_block = re.compile(r"^> .*现在一共.*个.*(?:\n^>.*)*", re.MULTILINE).search(rd)
+    block = m_block.group(0) if m_block else anchors[0]
+    readme_tokens = set(re.findall(
+        r"`(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[^`]*?)`", block
+    ))
+    readme_tokens = {f"{m} {p}" for m, p in readme_tokens}
+
+    missing = sorted(code_tokens - readme_tokens)   # 代码里有、README 没写
+    extra = sorted(readme_tokens - code_tokens)     # README 写了、代码里没有
+    if missing:
+        errs.append(
+            f"✗ 端点名单：README 没写这些**真实存在**的路由 {missing} —— "
+            "★只对个数的话，换个路径名/换错方法照样绿"
+        )
+    if extra:
+        errs.append(
+            f"✗ 端点名单：README 写了这些**代码里不存在**的路由 {extra} —— "
+            "★多半是删了端点没改文档；这一类是「集合相等」比「逐条 grep」多挡住的"
+        )
+    if not readme_tokens:
+        errs.append("✗ 端点名单：README 声明段里一条 `方法 /路径` 都没抽到 —— "
+                    "★扫到 0 条必须报红（措辞变了 / 名单被删了），不许当通过")
+    return errs
+
+
 # ---------------------------------------------------------------
 # ★ 待办陈述的过期检查（2026-10-10，同类问题第 4 次）
 # ---------------------------------------------------------------
@@ -995,6 +1105,8 @@ def check() -> tuple[list[str], list[str]]:
     errors += _check_completed_list_metrics()
     errors += _check_recall()
     errors += _check_scale_ranks()
+    # ★ 端点个数/名单（2026-10-14）：手写的数字、没有任何闸门看 → 补上
+    errors += _check_endpoints()
     # ★ 缓存可行性（2026-10-13）：那一行的数字以前没有落盘，是"推断"出来的。
     #   现在实验落盘了，README 就必须与产物一致 —— 否则"被实验判死"这个结论没有出处。
     errors += _check_cache_feasibility()
