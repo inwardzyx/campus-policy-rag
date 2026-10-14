@@ -20,10 +20,12 @@
         --restart-cmd "pwsh -NoProfile -File <重启服务脚本>" \
         --restart-redis-cmd "pwsh -NoProfile -File <重启 Redis 脚本>"
 
-它验七件事，缺一个都说明这套配额不能上线：
+它验八件事，缺一个都说明这套配额不能上线：
 
   ① /health 报的限流存储是 **redis** 且可用（不是进程内内存）
   ② 突发打满 `--burst` 次之后 ⇒ 429 + `Retry-After` + `reason=rate`
+     ★ 2026-10-14 起顺带验 **`/search` 也在同一道闸后面**（桶空了它也得 429）——
+       不然新端点就是个"免费入口"，而它能吃 CPU（向量 + BM25 + RRF）
   ③ **重启服务之后日计数还在**（给了 --restart-cmd 才验）—— 这是"用 Redis"的全部意义
   ④ 计数确实落在 Redis 里（按 /limits 报的 who/day 直接读，并检查 key 有 TTL）
   ⑤ 把 Redis 里的日用量顶到上限 ⇒ 必须按 `daily_req` 拒（**先把桶补满**，否则先撞速率）
@@ -32,6 +34,11 @@
      ★ ③ 证明的是"计数不在服务内存里"，⑦ 证明的是"**Redis 自己**也不会把它丢了"。
        少了 ⑦，一个 `--appendonly no` 的 Redis 能让 ①~⑥ 全绿，
        而真实后果是"Redis 一重启，当天额度归零" —— 一个能被触发的绕过口子。
+  ⑧ **只检索端点 `/search` 在部署形态下也成立**（2026-10-14 加，见
+     `check_search_endpoint`）：给出处、**不烧 token**、拒答照样拒。
+     ★ 这条为什么必须在**这里**而不能只在 pytest 里：pytest 打的是进程内的
+       `TestClient`，而这里打的是真 uvicorn + 真 Redis；新端点最容易坏的一层
+       恰恰是接线（路由注册 / 请求响应模型 / 闸门有没有接上）。
 
 ★ 前提（脚本会自己说清，不猜）：服务那份配置得是"小额度"，否则打不出 429。
   默认按 `RATE_BURST=3 / RATE_PER_MIN=1 / DAILY_REQ_QUOTA=5 / DAILY_TOKEN_QUOTA=0`
@@ -145,6 +152,46 @@ def check_store_is_redis(api: str, expect_fail_mode: str) -> dict:
     return lim
 
 
+SEARCH_HIT_BODY = {"question": "请假一天以内由谁审批？", "top_k": 3}
+SEARCH_REFUSE_BODY = {"question": "图书馆几点关门？", "top_k": 3}
+
+
+def check_search_endpoint(api: str) -> None:
+    """⑧ 只检索端点 `/search` 在**部署形态**下也得是它说的那样（2026-10-14 加）。
+
+    三件事，都不需要 DEEPSEEK_API_KEY（拒答题不生成，`/search` 更是永远不生成）：
+      ① 存在且能用：命中题给出处、`knowledge_hit=true`、**不启用精排**；
+      ② **不烧 token**：`usage.n_calls == 0` 且 `total_tokens == 0`
+         （这是"工具侧省下 6,337 token"那条结论的**服务端凭据** —— 它一旦不成立，
+          README 里那套成本数字全部作废）；
+      ③ 拒答照样成立：库里没有的题 `knowledge_hit=false` 且 `sources=[]`
+         （"顺手把生成关掉、也顺手把拒答关掉"是这条路上最容易犯的错）。
+    ⚠️ 第 ④ 件事（它在不在闸门后面）不在这里验：那必须**等桶被打空之后**才看得见，
+       所以写在 `check_burst_then_429` 里。
+    """
+    code, _, body = http("POST", f"{api}/search", SEARCH_HIT_BODY)
+    if code != 200 or not isinstance(body, dict):
+        raise Failed(f"/search 没通（{code}）：{body}")
+    if not (body.get("sources") or []):
+        raise Failed("/search 对库里有的问题一条出处都没给 —— 端点接错了？")
+    if body.get("knowledge_hit") is not True:
+        raise Failed(f"/search 命中题的 knowledge_hit 不是 true：{body.get('knowledge_hit')!r}")
+    if body.get("rerank_used") is not False:
+        raise Failed(f"/search 不该用精排（那会再调一次模型）："
+                     f"rerank_used={body.get('rerank_used')!r}")
+    u = body.get("usage") or {}
+    if u.get("n_calls") != 0 or int(u.get("total_tokens") or 0) != 0:
+        raise Failed(f"/search 花了 token（usage={u}）—— 它应当一个 LLM 调用点都没有。"
+                     f"★ 这条不成立，README 里「工具侧省下 6,337 token」就作废了")
+
+    code, _, body = http("POST", f"{api}/search", SEARCH_REFUSE_BODY)
+    if code != 200 or not isinstance(body, dict):
+        raise Failed(f"/search 拒答题没通（{code}）：{body}")
+    if body.get("knowledge_hit") is not False or (body.get("sources") or []):
+        raise Failed(f"/search 对库里没有的问题没拒答：knowledge_hit="
+                     f"{body.get('knowledge_hit')!r} sources={len(body.get('sources') or [])} 条")
+
+
 def check_burst_then_429(api: str, burst: int) -> None:
     codes = []
     for _ in range(burst):
@@ -161,6 +208,15 @@ def check_burst_then_429(api: str, burst: int) -> None:
         raise Failed(f"429 必须带 Retry-After（否则调用方只能瞎重试）；实际 {ra!r}")
     if (body or {}).get("detail", {}).get("reason") != "rate":
         raise Failed(f"429 的原因应当是 rate，实际 {body}")
+
+    # ★ 2026-10-14 加：只检索端点必须在**同一道闸**后面。
+    #   它照样吃 CPU（向量 + BM25 + RRF），不设闸就是开了个免费入口；
+    #   而"新入口忘了接闸门"正是 R4 那次的病（新入口自己抄一遍、然后漏一处）。
+    code, _, body = http("POST", f"{api}/search", SEARCH_HIT_BODY)
+    if code != 429:
+        raise Failed(f"桶打空之后 /search 还是 {code} —— 新端点没接闸门（免费入口）：{body}")
+    if (body or {}).get("detail", {}).get("reason") != "rate":
+        raise Failed(f"/search 的 429 原因应当是 rate，实际 {body}")
 
 
 def boot_id(api: str) -> str:
@@ -454,6 +510,17 @@ def main() -> int:
             raise Failed(f"/limits 没报出 who/day：{usage0!r}")
         reset_client_state(r, who0, day0)
 
+        # ★ ⑧ 必须排在 ② **前面**（2026-10-14 踩到）：② 会把桶打空，
+        #   而 ⑧ 要验的是"这条路给出处、不烧 token、拒答也在"，请求必须先被放行。
+        #   ⚠️ 但 ⑧ 自己会用掉两枚令牌 ⇒ 跑完**把它借的那两枚还回去**（同一个 reset），
+        #   否则紧接着的 ②「突发 --burst 次」就不成立了（第一版就这么红了一次）。
+        print("── ⑧ 只检索端点 /search：给出处、不烧 token、拒答也在 ──")
+        check_search_endpoint(api)
+        reset_client_state(r, who0, day0)          # ★ 还令牌，见上面的注释
+        ran.append("⑧")
+        print("  ✓ /search 通了：命中题给出处、usage.n_calls=0、拒答题 knowledge_hit=false"
+              "（已把这枚令牌还回去）")
+
         print("── ① 限流存储必须是 redis ──")
         lim = check_store_is_redis(api, args.fail_mode)
         ran.append("①")
@@ -462,7 +529,7 @@ def main() -> int:
         print(f"── ② 突发 {args.burst} 次后必须 429 ──")
         check_burst_then_429(api, args.burst)
         ran.append("②")
-        print("  ✓ 429 + Retry-After + reason=rate")
+        print("  ✓ 429 + Retry-After + reason=rate（顺带验了 /search 也在同一道闸后面）")
 
         if args.restart_cmd:
             print("── ③ 重启服务后日计数还在（Redis 的全部意义）──")
@@ -517,7 +584,7 @@ def main() -> int:
         print("  ⇒ 这两项要的是『重启之后还在』，没有重启命令就等于**没测** —— "
               "本脚本不替它们下结论。")
         return 0
-    print(f"✓ 七项全过：这套配额在【真服务 + 真 Redis】下挡住了，"
+    print(f"✓ 八项全过：这套配额在【真服务 + 真 Redis】下挡住了，"
           f"且服务重启、Redis 重启都不丢账（两项都验过『重启真的发生了』）")
     return 0
 

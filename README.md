@@ -1776,10 +1776,14 @@ Redis 服务本身、启动顺序（服务必须等 Redis 健康，否则那段�
      剩两处（拿掉闸门 / 拿掉记账）仍是手工注入，做法写在 `scripts/verify_limits_e2e.py`
      与本节的反向验证清单里，照着改那两行即可。
 4. **端到端**：CI 的容器 job 里**真的** `docker compose up`，然后跑 `scripts/verify_limits_e2e.py`
-   （本机对真 uvicorn + 真 Redis 跑的是**同一份**脚本，断言不抄第二遍）。它验七件事：
+   （本机对真 uvicorn + 真 Redis 跑的是**同一份**脚本，断言不抄第二遍）。它验八件事：
    `limits.store == "redis"`、突发用完返 429 且带 `Retry-After`、**重启服务后日计数还在**、
    计数确实在 Redis 里且 key 有 TTL、直接把 Redis 里的额度顶满就会被拦、
-   拿不到 usage 时 `usage_missing` 必须留痕，以及 **重启 Redis 之后额度状态还在**（AOF 生效）。
+   拿不到 usage 时 `usage_missing` 必须留痕、**重启 Redis 之后额度状态还在**（AOF 生效），
+   以及**只检索端点 `/search` 在部署形态下也成立**（给出处、`usage.n_calls=0`、拒答照样拒，
+   而且桶空了它也得 429）。
+   ★ 最后那条是 2026-10-14 加的：新端点最容易坏的一层是**接线**（路由注册 / 请求响应模型 /
+   闸门有没有接上），而 pytest 打的是进程内的 `TestClient`，看不到这一层。
 
    ★ 最后那条是刻意单独立的：它证明的是"**Redis 自己**也不会把额度丢了" ——
      少了它，一个 `--appendonly no` 的 Redis 能让前面六条全绿，
