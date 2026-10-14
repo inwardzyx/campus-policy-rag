@@ -24,6 +24,7 @@ Step 6：把 RAG 整条链包成 HTTP 服务（FastAPI）
 按 Ctrl+C 停止服务。
 """
 
+import contextvars
 import hashlib
 import json
 import logging
@@ -242,9 +243,161 @@ _LLM_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="llm")
 #     线程局部保证每个请求读到的是自己那次调用的 usage。
 _LLM_USAGE = threading.local()
 
+# ★★★ 2026-10-14：账本从"线程局部"改成"随请求走的显式对象 + contextvar"。
+#
+# ## 为什么非改不可（跨模型盲审 GLM-5.3-Flash 抓的，是流式改造的前置条件）
+#
+# 要加 SSE 流式端点，而流式把「返回响应」和「跑完管道」拆成了**两个时刻**：
+#   · 若照抄 `_gated(lambda: StreamingResponse(gen()))`，`_gated` 的 finally 会在
+#     **任何 token 产生之前**就跑完 ⇒ `resp` 上没有 usage ⇒ 每条流式请求都记成
+#     `usage_missing` ⇒ `daily_tokens` 那道软闸对流式**永远不动**，而客户端完全看不出来。
+#
+# 更要命的是线程局部本身在流式下**语义就崩了**：
+#   Starlette 对「同步生成器」是每次 `next()` 丢进线程池跑一次，**跨 yield 不保证同一线程**。
+#   于是：① 累加落在 A 线程、取账落在 B 线程 ⇒ 记成 `usage_missing`；
+#        ② 入口那句"丢弃残留"可能丢掉的正是**另一个请求**正在累加的半截账；
+#        ③ 反过来线程复用会把别人的账混进来。
+#   ★ 这不是流式引入的新病 —— 它是**本来就在**的隐患（同步请求恰好每次都在同一线程，
+#     所以一直没暴露）。流式只是把它逼出来了。⇒ 顺手根治，别留给下一个人。
+#
+# ## 为什么用 contextvar 而不是"加一个 ledger 参数穿透三层"
+#   调用链是 `handle_chat → rag.rewrite_query / rerank / answer → _invoke_llm`，
+#   要穿透**四个方法签名**，还要动 tests/evalset 里一堆直接调用点（扩散面太大）。
+#   contextvar 的传播语义正好是我们需要的（**已实测，本机 Python 3.14**）：
+#     · `asyncio.to_thread`  → 带上下文 ✅（`LLM_POOL` 就是 ThreadPoolExecutor，
+#       提交时会 `copy_context()` ⇒ 池内线程看得到同一个账本）
+#     · 裸 `threading.Thread` → **不带** ❌
+#   ⇒ 只要保证「在 to_thread 之前 set」，账本就能穿过线程池那一跳。
+#
+# ## 兼容面（不能破坏）
+#   `_record_usage` / `_take_usage` 是**模块级函数，测试长期直接调用**
+#   （`tests/test_llm_resilience.py` 有 5 处直接读写 `svc._LLM_USAGE`）。
+#   ⇒ 保留它们：**没有显式账本时，行为与旧版逐字节一致**（走线程局部）；
+#     有账本时走账本。两条路只差"账放哪儿"。
+_CURRENT_LEDGER: contextvars.ContextVar["UsageLedger | None"] = \
+    contextvars.ContextVar("rag_usage_ledger", default=None)
+
+
+class UsageLedger:
+    """一次请求的 token 账本。**累加、可重复取、取完清零**。
+
+    ★ 为什么单独一个类而不是继续用一堆散落的属性：
+      流式下"谁在什么时候取账"变得微妙（SSE 最后要推 usage，而 `_gated` 的 finally
+      也要记账）—— 盲审点到的那条 P5 就是"取两次、第二次取到 None"。
+      把它做成一个对象之后，「取一次、两处共用」是**结构上自然而然**的，
+      而不是靠两处代码碰巧都写对。
+    """
+
+    def __init__(self) -> None:
+        self._acc: dict | None = None
+        self.n_calls = 0
+        self.missing_calls = 0
+        # ★ 单独一个标记，而不是靠 n_calls==0 推断 —— 见 mark_zero() 的注释
+        self._zero = False
+
+    def record(self, resp) -> None:
+        """把一次模型调用的 usage 累加进来；取不到就只加 `missing_calls`（**绝不填 0**）。"""
+        um = getattr(resp, "usage_metadata", None)
+        if not isinstance(um, dict):
+            self.missing_calls += 1
+            return
+        try:
+            inp = um.get("input_tokens")
+            out = um.get("output_tokens")
+            tot = um.get("total_tokens")
+            if inp is None or out is None:
+                self.missing_calls += 1
+                return
+            cache_read = 0
+            det = um.get("input_token_details")
+            if isinstance(det, dict):
+                cache_read = det.get("cache_read") or 0
+            prev = self._acc or {"input_tokens": 0, "output_tokens": 0,
+                                 "total_tokens": 0, "cache_read": 0}
+            self._acc = {
+                "input_tokens": prev["input_tokens"] + int(inp),
+                "output_tokens": prev["output_tokens"] + int(out),
+                "total_tokens": prev["total_tokens"]
+                                + int(tot if tot is not None else inp + out),
+                "cache_read": prev["cache_read"] + int(cache_read),
+            }
+            self.n_calls += 1
+        except (TypeError, ValueError):
+            self.missing_calls += 1
+
+    def mark_zero(self) -> None:
+        """记一次【可证明的 0 次调用】—— 与"什么都没记"**不是一回事**。
+
+        ★ 为什么非要有这个方法（2026-10-14 实测踩到，被 `test_guard.py` 当场抓住）：
+          改造前，`/search` 是在**响应里**塞 `_zero_usage()` 那个显式 0，`_gated` 从 resp 取出来
+          交给 `LIMITER.record` ⇒ 记成"真的没调"，`usage_missing` 不涨。
+          改成从账本取之后，`/search` 这条路一次模型都没调 ⇒ 账本 `take()` 返回 None ⇒
+          被记成 `usage_missing` ⇒ **每次 /search 都往"token 账有缺口"上抹一笔假痕**。
+          而"假痕一多，真缺口就看不出来了"是本仓库反复剿的东西（`limits.py` 顶部有长注释）。
+        ⇒ 所以账本必须能表达"我确实一次都没调"，而不是只有"我没记到"。
+        """
+        self._acc = _zero_usage()
+        self.n_calls = 0
+        self._zero = True
+
+    def peek(self) -> dict | None:
+        """**看一眼但不清空** —— 给"响应里要带 usage"用。
+
+        ★★ 为什么必须有这个方法（2026-10-14 实测踩到的真 bug，差点漏过去）：
+          改造第一版让 `handle_chat` 的四个 return 点继续调 `_take_usage()`，
+          而它现在读的是**同一个账本** ⇒ 响应把账取走了，`_gated` 的 finally 再取就是
+          `None` ⇒ `LIMITER.record(who, None)` ⇒ **每次 /chat 都记成 `usage_missing`**，
+          而响应里的 usage 看起来完全正常（`n_calls=3`），全靠 `/health` 的计数器现形。
+          （这正好是盲审 P5 警告的"取两次"，只是方向与它猜的相反：
+            它猜'事件先取走、record 拿空'，实际是'响应先取走、record 拿空'。）
+        ⇒ 规则改成：**账本只由 `_gated` 清空**；响应侧只能 peek。
+          这样"响应里那份"和"记账那份"**取自同一次累加**，天然一致（P5 的要求）。
+        """
+        if self._zero:
+            out = dict(self._acc or {})
+            out["n_calls"] = 0
+            return out
+        if not self._acc or self.n_calls == 0:
+            return None
+        out = dict(self._acc)
+        out["n_calls"] = self.n_calls
+        out["missing_calls"] = self.missing_calls
+        return out
+
+    def take(self) -> dict | None:
+        """取走并清零。**返回 None 的唯一条件：整次请求一次都没成功记账。**"""
+        acc, n, missing, zero = self._acc, self.n_calls, self.missing_calls, self._zero
+        self._acc, self.n_calls, self.missing_calls, self._zero = None, 0, 0, False
+        if zero:
+            # 【可证明的 0】：确实一次模型都没调。照实返回 0，**不返回 None**
+            # （None 会被 `LIMITER.record` 记成 usage_missing = 假痕）
+            out = dict(acc or {})
+            out["n_calls"] = 0
+            return out
+        if not acc or n == 0:
+            return None
+        out = dict(acc)
+        out["n_calls"] = n
+        out["missing_calls"] = missing
+        return out
+
+
+def set_current_ledger(ledger: "UsageLedger | None"):
+    """绑定/解绑当前上下文的账本。返回一个可传给 `ContextVar.reset()` 的 token。
+
+    ★ 为什么要返回 token 而不是简单地 set(None) 复原：
+      请求是**嵌套/回收**线程的，直接设回 None 会把"更外层"的账本一起清掉。
+      用 `reset(token)` 才是精确复原。这条在 `/chat` 与 `/search` 共用 `_gated` 之后尤其重要。
+    """
+    return _CURRENT_LEDGER.set(ledger)
+
+
+def current_ledger() -> "UsageLedger | None":
+    return _CURRENT_LEDGER.get()
+
 
 def _record_usage(resp) -> None:
-    """把一次调用的 usage **累加**到当前线程上（取不到就跳过，不填 0）。
+    """把一次调用的 usage **累加**掉（取不到就跳过，不填 0）。
 
     ★ 为什么要区分"没有 usage"和"usage 是 0"：
       填 0 会让"没拿到"看起来像"真的没用 token"，
@@ -262,7 +415,15 @@ def _record_usage(resp) -> None:
       `getattr(_LLM_USAGE, "n_calls", 0) + 1`，而那个属性从没人写过，
       每次都读到 0 ⇒ 恒等于 1 ⇒ 【每一次】请求都显示只调了 1 次模型。
       这两个数一起看像"合理"，实际全错 —— 只能靠"拿真实响应逐段对照"发现。
+
+    ★ 2026-10-14：有显式账本就写账本（流式/并发安全），
+      没有就退回旧的线程局部 —— **测试与脚本的既有调用点因此一个字都不用改**。
     """
+    led = current_ledger()
+    if led is not None:
+        led.record(resp)
+        return
+
     um = getattr(resp, "usage_metadata", None)
     prev = getattr(_LLM_USAGE, "acc", None) or {
         "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cache_read": 0,
@@ -297,12 +458,30 @@ def _record_usage(resp) -> None:
         _LLM_USAGE.missing_calls = missing + 1
 
 
+def _usage_for_response(led: "UsageLedger | None" = None) -> dict | None:
+    """拼响应时取 usage：**有账本就 peek（不清空），没有就走旧路径**。
+
+    ★ 为什么不清空：账本由 `_gated` 在 finally 里**唯一一次** take 掉（见 `peek()` 的注释）。
+      `handle_chat` 只是"把这次的账也放进响应里给调用方看"，不是消费它。
+    """
+    if led is not None:
+        return led.peek()
+    return _take_usage()
+
+
 def _take_usage() -> dict | None:
-    """取走并清空本线程累积的 usage（跨调用要清，否则会重复计数）。
+    """取走并清空当前账本（跨调用要清，否则会重复计数）。
 
     ★ 返回 None 的条件只有一种：整次请求【一次都没成功记账】。
       「记到了 N 次、其中 M 次拿不到」是有效数据，要如实返回并带上 missing_calls。
+    ★ 2026-10-14：同 `_record_usage` —— 有显式账本走账本，否则走旧的线程局部。
+      ⚠️ 取账只认**当前上下文**那一个账本：流式下事件与 `_gated` 的记账必须**共用同一次 take**
+        （盲审 P5：take 两次，第二次拿到 None，于是真账被事件拿走、record 记成缺失）。
     """
+    led = current_ledger()
+    if led is not None:
+        return led.take()
+
     acc = getattr(_LLM_USAGE, "acc", None)
     n = getattr(_LLM_USAGE, "n_calls", 0)
     missing = getattr(_LLM_USAGE, "missing_calls", 0)
@@ -987,7 +1166,7 @@ def chat(req: ChatRequest, request: Request):
     # ★ 2026-10-14：闸门 + 记账抽进下面的 `_gated()` —— 因为新加的 `/search` 也要走
     #   同一道闸。两条入口共用一份实现，才不会重演 R4 那次的病：新入口自己抄一遍记账、
     #   然后在某个分支上漏掉，"配额"在那条路上就整个不存在。
-    return _gated(request, lambda: handle_chat(req))
+    return _gated(request, lambda led: handle_chat(req, led))
 
 
 def _gated(request: Request, pipeline):
@@ -1006,6 +1185,14 @@ def _gated(request: Request, pipeline):
       所以"被挡的请求不记账"这条仍然成立（有回归用例守着）。
     ★ `pipeline` 传函数、在这里调，是为了让"记账"落在**同一个 try/finally** 里：
       哪个端点进来都一样，没有第二条记账路径可以漂移。
+
+    ★★★ 2026-10-14（为流式改造铺路，跨模型盲审给的设计）：
+      `pipeline` 现在收一个**本次请求的账本** `UsageLedger` 作参数，并把它绑到 contextvar 上。
+      两个理由：
+        ① **异常路径也能记到真账**（旧写法从 `resp` 里取，异常时取不到）；
+        ② **流式/并发下不再依赖线程局部**（见 `UsageLedger` 上面那段长注释）。
+      ⚠️ 调用方必须写成 `lambda led: handle_xxx(req)` —— 账本由这里创建并传下去，
+         **绝不允许哪个端点自己 new 一个**（那就会退化成"两条记账路径"，正是 R4 的病根）。
     """
     who = limits_mod.client_id(
         request.client.host if request.client else None,
@@ -1018,12 +1205,23 @@ def _gated(request: Request, pipeline):
             detail={"reason": decision.reason, "detail": decision.detail},
             headers={"Retry-After": str(decision.retry_after)})
 
-    usage = None
+    led = UsageLedger()
+    token = set_current_ledger(led)          # ★ 账本随这次请求走（见 UsageLedger 的注释）
     try:
-        resp = pipeline()
-        usage = resp.get("usage") if isinstance(resp, dict) else getattr(resp, "usage", None)
+        resp = pipeline(led)
         return resp
     finally:
+        # ★★ 记账必须无条件（R4 那次的血）：即使上面抛异常也要走到这里。
+        #   而且它必须是**终结代码的第一句**——盲审 P4 指出：若把别的可能抛异常的动作
+        #   （比如"存会话历史"）写在它前面或同一个 try 里，那个动作一炸就把记账一起带走。
+        #
+        # ★ 账从【账本】取，不从 `resp` 取 —— 这是这次改造最实质的一处收益：
+        #   旧写法 `usage = resp.usage` 在**异常路径上根本执行不到**，于是
+        #   「改写 + 精排已经烧了 token、然后生成抛异常」这种请求会记成 `usage_missing`。
+        #   账本是边调边累加的 ⇒ 异常时它手里就是那半截真账（"实际花掉的钱"）。
+        #   ⚠️ take 只调用一次：流式那边事件与记账必须共用同一份，不能各取一次（盲审 P5）。
+        usage = led.take()
+        _CURRENT_LEDGER.reset(token)          # 精确复原（不是 set(None) —— 那会清掉外层账本）
         LIMITER.record(who, usage)
 
 
@@ -1042,7 +1240,7 @@ def search(req: SearchRequest, request: Request):
       接口 —— 它照样吃 CPU（向量 + BM25 + RRF），不设闸就等于开了个免费入口。
       ⚠️ 但它**不烧 token**，所以记账时 token 那部分是可证明的 0（见 `handle_search`）。
     """
-    return _gated(request, lambda: handle_search(req))
+    return _gated(request, lambda led: handle_search(req, led))
 
 
 def _vec_reject(cands) -> bool:
@@ -1064,13 +1262,15 @@ def _vec_sources(cands):
     return sources, [c for c, _ in picked]
 
 
-def handle_chat(req: ChatRequest):
+def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
     """问答主体：**不含 HTTP 那道限流闸门**（HTTP 入口是上面的 `chat()`）。
 
     ★ 为什么把它单独拎出来：闸门要 `Request` 对象（拿客户端身份），
       而"直连管道"的调用方（评测集、回归测试、脚本）没有 HTTP 请求，
       它们关心的是检索/拒答/生成的行为，不该被限额影响，也不该往额度里记账。
       ⇒ 拆开之后：`chat()` = 闸门 + 记账，`handle_chat()` = 管道本身。
+    ★ 2026-10-14：`led` 是账本（默认 None = 走旧的线程局部）。
+      `_gated` 里的 `pipeline(led)` 会把它传进来；直连调用不传 ⇒ 行为与旧版一致。
     """
     _take_usage()                      # ★ 丢弃残留（不是读取）—— 见 chat() 的 docstring
     t0 = time.time()
@@ -1121,7 +1321,7 @@ def handle_chat(req: ChatRequest):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False,
-                usage=_take_usage())
+                usage=_usage_for_response(led))
 
         picked = [x for x in ranked if x[2] >= 5][:3]     # 只留 5 分以上的，最多 3 条
         sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
@@ -1146,7 +1346,7 @@ def handle_chat(req: ChatRequest):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
-                usage=_take_usage())
+                usage=_usage_for_response(led))
 
         sources, ctx = _vec_sources(cands)
         # 关掉 rerank 时用的是粗捞的向量分，比精排分粗（"意思接近但答非所问"更容易漏进来），
@@ -1161,14 +1361,14 @@ def handle_chat(req: ChatRequest):
         return ChatResponse(
             answer="⚠️ 已找到相关资料，但模型调用失败（超时或限流），请稍后重试。",
             sources=sources, took_ms=took(), rerank_used=use_rerank, knowledge_hit=True,
-            usage=_take_usage())
+            usage=_usage_for_response(led))
 
     # ★ 2026-09-27：这里【显式】写上 knowledge_hit=True，不再靠上面的默认值。
     #   之前靠 ChatResponse 的字段默认值躺赢 —— 一旦有人改动那个默认值，
     #   成功路径的语义会悄悄跟着变，而且看这段代码的人根本看不出来它依赖了默认值。
     return ChatResponse(answer=answer, sources=sources, took_ms=took(),
                         rerank_used=use_rerank, knowledge_hit=True,
-                        usage=_take_usage())
+                        usage=_usage_for_response(led))
 
 
 def _zero_usage() -> dict:
@@ -1188,7 +1388,7 @@ def _zero_usage() -> dict:
             "cache_read": 0, "n_calls": 0}
 
 
-def handle_search(req: SearchRequest):
+def handle_search(req: SearchRequest, led: "UsageLedger | None" = None):
     """只检索、不生成（HTTP 入口是上面的 `search()`，闸门与 `/chat` 共用 `_gated`）。
 
     ★ 与 `/chat?use_rerank=False` 的关系：`sources` / `knowledge_hit` **必然一致**，
@@ -1203,6 +1403,11 @@ def handle_search(req: SearchRequest):
       要改就一起改、并单独留痕 —— 不塞进这次改动里。）
     """
     _take_usage()                      # ★ 丢弃残留（不是读取）—— 理由同 handle_chat 入口
+    # ★ 2026-10-14：把"这条路上一次模型都没调"这件事**写进账本**。
+    #   不写的话，`_gated` 从账本取到的是 None ⇒ 记成 `usage_missing` ⇒
+    #   每次 /search 都往"token 账有缺口"上抹一笔假痕（`test_guard.py` 当场抓住过）。
+    if led is not None:
+        led.mark_zero()
     t0 = time.time()
     if not rag.ready:
         return SearchResponse(sources=[], took_ms=0, rerank_used=False,
