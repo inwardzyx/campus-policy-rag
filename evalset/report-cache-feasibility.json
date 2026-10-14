@@ -5,9 +5,10 @@
   "observability": {
     "has_real_traffic": false,
     "why": "校园政策 QA，仅作者自用，服务未对外部署 ⇒ 结构上没有对外流量",
-    "question_text_logged": false,
-    "why_not_logged": "问题文本属个人信息，本项目有一整关在做 PII 脱敏 ⇒ 刻意不落盘",
-    "consequence": "精确重复率不可观测；step1 的 0/20 只在『本自造题集内』成立"
+    "question_text_logged": true,
+    "consequence": "精确重复率仍不可观测（会话数据不用于分析）；step1 的 0/20 只在『本自造题集内』成立",
+    "logged_scope": "多轮会话的临时存储：只存最近 5 轮的**问题原文**，TTL 30 分钟，仅用于服务本次对话；不进日志、不入持久化库、不做行为分析",
+    "disk_note": "⚠️ Redis 开了 AOF（compose 里 --appendonly yes）⇒ 会话数据会落进容器卷，由 TTL 到期清除。要更严：会话用独立实例/db 并关 AOF。"
   },
   "step1_unique_questions": 20,
   "step1_exact_duplicate_groups": 0,
@@ -1173,5 +1174,11 @@
   "verdict": "overlap_kills_semantic_cache",
   "verdict_zh": "判死：同 gold 与不同 gold 两组余弦【重叠】⇒ 任何阈值都会误命中，语义缓存不可行",
   "generated_at": "2026-10-13 23:30:54",
-  "exit_code_semantics": "0=跑完并落盘（判定见 verdict）；2=前置不成立（样本不足）；1=脚本真异常"
+  "exit_code_semantics": "0=跑完并落盘（判定见 verdict）；2=前置不成立（样本不足）；1=脚本真异常",
+  "policy_update": {
+    "date": "2026-10-14",
+    "what": "question_text_logged: false → true；why_not_logged 换成 logged_scope + disk_note",
+    "why": "加了多轮会话（session.py）：服务端会在临时存储里持有问题原文（TTL 30 分钟、只留 5 轮）",
+    "method": "★ 这次**没有重跑实验**（重跑要 ~210 次模型调用）；只改了这一段文本口径，其余数字（190 对余弦、0/20、极值 0.3136/0.7606）全部原样未动。生成脚本 experiments/cache_feasibility.py 已同步改好 ⇒ 下次重跑得到的口径与这里一致。"
+  }
 }

@@ -1703,7 +1703,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
 | **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` | 15 秒起（首次还要下模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` | 15 秒起（首次还要下模型） |
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，

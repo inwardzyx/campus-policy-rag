@@ -68,6 +68,7 @@ env_compat.ensure_mmh3()                            # 本机 DLL 被策略拦截
 env_compat.ensure_uuid_utils()                      # 同上，拦的是 uuid_utils（langchain 用它生成 trace id）
 from kb.loader import load_documents                # noqa: E402  知识库从 docs/ 加载，不再写死 RAW_DOCS
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
+import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import HTMLResponse, StreamingResponse   # noqa: E402
 from fastembed import TextEmbedding                 # noqa: E402
@@ -851,8 +852,13 @@ class RAG:
         kept = list(newest.values())
         return kept, rejected
 
-    def rewrite_query(self, q: str) -> str:
+    def rewrite_query(self, q: str, prior_questions: list[str] | None = None) -> str:
         """把口语问题改写成制度用语 —— **只用于检索**。
+
+        ★ 2026-10-14 加 `prior_questions`（多轮）：把最近几轮的**问题**一起给模型，
+          用来解指代（"那二专业呢？"里的"那"指的是上一句问的东西）。
+          ★ 默认 None ⇒ 单轮行为**一个字不变**（探针与 A/B 脚本的既有调用点不用改）。
+          ★ 只传**问题**、不传答案、不传检索结果 —— 见 `_rewrite_query_with_history` 里的取舍。
 
         ★ 为什么需要它（held-out 实测，不是猜的）：
           44 道应答题上只做**一次**改写，就有 7 道从"捞不到"变成"捞到"、0 道被弄坏
@@ -865,7 +871,15 @@ class RAG:
         ★ 代价：每次查询多一次模型调用。失败时**退回原问题**（产品不该因此不答）。
           ——注意这个兜底只适合产品；探针里兜底会把"探针坏了"伪装成"改写没用"。
         """
-        resp = _invoke_llm(self.llm, [HumanMessage(content=REWRITE_PROMPT.format(q=q))]).content
+        prompt = REWRITE_PROMPT.format(q=q)
+        if prior_questions:
+            # ★ 把历史**显式标成"仅用于理解指代"**，而不是让模型自由发挥：
+            #   不这样写的话，模型容易把历史问题的答案也揉进检索词里，
+            #   于是检索跑偏（而"改写只该决定拿什么去检索"是这个设计的边界）。
+            ctx = "\n".join(f"- {x}" for x in prior_questions[-3:])
+            prompt = ("以下是同一个用户最近问过的几个问题（**只用于理解这一句里的指代**，"
+                      "不要把它们的内容混进检索词）：\n" + ctx + "\n\n" + prompt)
+        resp = _invoke_llm(self.llm, [HumanMessage(content=prompt)]).content
         out = (resp or "").strip().strip('"').strip()
         if not out or len(out) > 120:          # 模型跑偏（空 / 超长）→ 不用它
             logger.warning("查询改写结果异常（长度 %d），本次用原问题检索", len(out))
@@ -1022,6 +1036,13 @@ rag = RAG()
 #   TRUST_PROXY_HEADERS / ALLOW_CLIENT_ID_HEADER   身份怎么认，默认都不信（见 limits.client_id）
 LIMITER = limits_mod.build_limiter(os.environ, log=logger)
 
+# ★ 2026-10-14：会话历史存储（多轮追问用）。
+#   ★ 与限流**分家**：生命周期与清理语义不同（限流按日界滚、会话按最后活动续期），
+#     详见 session.py 顶部——把两件事粘一起是给自己埋雷。
+#   ★ 没配 REDIS_URL 时退回进程内（只对单进程有效），启动日志会警告，
+#     而且**每次响应里都会带 `session_used`** 说明这次到底有没有用上历史（降级不静默）。
+SESSION_STORE = session_mod.build_session_store(os.environ, log=logger)
+
 # ★ 本次进程的身份（2026-10-13 加，起因是盲审 F1）：见 /health 里那段说明。
 BOOT_ID = uuid.uuid4().hex[:12]
 
@@ -1071,6 +1092,12 @@ class ChatRequest(BaseModel):
     # ★ None = 跟着 use_rerank 走（见 chat() 里的说明）：
     #   产品默认路径（rerank）本来就要调模型；离线路径不许偷偷调模型。
     use_rewrite: bool | None = Field(None, description="是否用 LLM 改写检索查询（None=跟着 use_rerank）")
+    # ★ 2026-10-14 加：多轮会话的标识（客户端生成的不透明串）。
+    #   默认 None ⇒ 与旧调用方**完全兼容**（不传就是单轮，行为一个字不变）。
+    #   ⚠️ 它**只影响查询改写**（解决"那二专业呢？"这类指代），
+    #     不喂精排、不喂生成 —— 见 session.py 顶部的取舍说明。
+    session_id: Optional[str] = Field(None, description="多轮会话标识（不传=单轮）",
+                                      max_length=64)
 
 
 class ChatStreamRequest(BaseModel):
@@ -1087,6 +1114,9 @@ class ChatStreamRequest(BaseModel):
 
     question: str = Field(..., description="用户的问题", min_length=1, max_length=500)
     top_k: int = Field(5, description="粗捞几条", ge=1, le=10)
+    # ★ 同 `ChatRequest`：多轮会话标识，默认 None ⇒ 不传就是单轮。
+    session_id: Optional[str] = Field(None, description="多轮会话标识（不传=单轮）",
+                                      max_length=64)
 
 
 class Source(BaseModel):
@@ -1109,6 +1139,11 @@ class ChatResponse(BaseModel):
     #   填 0 会让"没拿到"看起来像"真的没用 token"。
     #   默认 None 让旧调用方拿不到时也不报错。
     usage: Optional[dict] = None
+    # ★ 2026-10-14 加：这次请求"有没有用上会话历史"。
+    #   ★ 与 `rerank_used=false` 同款的**降级可见标记** —— 会话存储挂了、或者压根没传
+    #     `session_id`，都必须**明说**，别让"降级成单轮"静默成"正常单轮"。
+    #   ⚠️ 默认 None ⇒ `response_model` 的字段集对旧调用方不变（有 A/B 判据依赖这点）。
+    session_used: Optional[bool] = None
 
 
 class SearchRequest(BaseModel):
@@ -1279,13 +1314,22 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
             out.put(("error", {"message": "服务还在加载模型，请稍等几秒再试"}))
             return
 
-        search_q = req.question
-        try:
-            search_q = rag.rewrite_query(req.question)
-        except LLMCallError as e:
-            logger.warning("（流式）查询改写不可用（%s），本次用原问题检索", e)
+        # ★ 多轮：先取历史（**在本轮写入之前**取），只喂给"查询改写"。
+        #   ★ 取历史失败/没有历史都退回单轮，并把 session_used 如实报出去。
+        prior: list[str] = []
+        if req.session_id:
+            prior = SESSION_STORE.get_questions(req.session_id)
+        search_q, session_used = _rewrite_query_with_history(req.question, prior)
 
         cands = rag.search(search_q, k=req.top_k)
+        # ★ 写会话放在**检索之后**：检索用的历史已经取到手，现在把本轮追加进去
+        #   （下一轮就能看到它）。★ 存的是**问题原文** —— 口径见 session.py 顶部：
+        #   "会话级临时存储 + 短 TTL，不进日志、不入持久化库"。
+        #   ⚠️ 写入失败**不抛**（best-effort）：会话存不上不该让这一轮答不出来。
+        if req.session_id:
+            SESSION_STORE.append_turn(req.session_id, req.question,
+                                      session_mod.DEFAULT_MAX_TURNS,
+                                      session_mod.DEFAULT_TTL_SEC)
         ranked = None
         try:
             ranked = rag.rerank(req.question, cands)
@@ -1297,7 +1341,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         if not ranked or ranked[0][2] < 5:
             out.put(("refusal", {
                 "answer": "知识库里没有能回答这个问题的资料，我不编。",
-                "sources": [], "rerank_used": bool(ranked)}))
+                "sources": [], "rerank_used": bool(ranked),
+                "session_used": session_used}))          # ★ 降级不静默
             return
 
         picked = [x for x in ranked if x[2] >= 5][:3]
@@ -1307,7 +1352,10 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
                    for c, v, s, r in picked]
         # ★ 先推 sources：这是"首字节"真正有用的地方 —— 用户能立刻看到"查到了哪几条、
         #   精排给了几分"，不用等整段答案生成完（而这正是 `/chat` 现在做不到的）。
-        out.put(("sources", {"sources": sources, "rerank_used": True}))
+        #   ★ `session_used` 与 `rerank_used` 并列报出去：两者都是"这次到底走了哪条路"
+        #     的可见标记，缺了任何一个都会让降级静默成正常。
+        out.put(("sources", {"sources": sources, "rerank_used": True,
+                             "session_used": session_used}))
 
         n_delta = 0
         for piece in rag.answer_stream(req.question, [c for c, _, _, _ in picked]):
@@ -1375,14 +1423,10 @@ def chat_stream(req: ChatStreamRequest, request: Request):
             headers={"Retry-After": str(decision.retry_after)})
 
     led = UsageLedger()
-    # ★★★ 必须把账本**绑到当前上下文**，worker 线程才记得上账。
-    #   这里是实测踩到的坑（就是盲审 P0 那条的形态）：只在下面 new 一个账本、
-    #   不绑 contextvar 的话，worker 里的 `_record_usage` 找不到账本 ⇒ 账全丢
-    #   ⇒ `led.take()` 返回 None ⇒ 记成 `usage_missing`，**而 SSE 流照样推得漂漂亮亮**。
-    #   （实测：拒答那一路 usage_missing 每次都涨 1。）
-    #   ⚠️ 这里不 reset：生成器在**同一个请求上下文**里跑完并 take 掉账本，
-    #      而 `StreamingResponse` 的生成器引用的是这次请求的上下文副本。
-    set_current_ledger(led)
+    # ★ 账本的绑定**不在这里做** —— 在 `_sse_stream_worker` 线程入口做。
+    #   这里 set 会**静默无效**（实测过三次）：同步端点跑在 FastAPI 的线程池线程、
+    #   异步生成器跑在 anyio 的任务上下文、worker 又是第三个上下文副本。
+    #   ⇒ 规矩：**账本在"真正调模型的那个线程"里绑**（见那段长注释）。
     return StreamingResponse(_chat_stream_events(req, led, who),
                              media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
@@ -1482,6 +1526,30 @@ def _vec_sources(cands):
     return sources, [c for c, _ in picked]
 
 
+def _rewrite_query_with_history(question: str, prior: list[str]) -> tuple[str, bool]:
+    """查询改写：**多轮时把最近几轮的问题一起给模型**，用来解指代。
+
+    返回 `(检索用的查询, 有没有真的用上历史)`。
+
+    ★★ 为什么历史**只喂这一处**（不喂精排、不喂生成）—— 这是本次多轮的**核心安全性质**：
+      · 精排打分是"是否拒答"的判据。把历史喂进去，模型就能**靠着上一轮的资料**
+        绕过本轮检索 ⇒ "不喂假资料"那条设计被削弱 ⇒ 拒答会漏。
+      · 生成只看本轮检索到的条款 ⇒ 既有的「渲染文本逐字节一致」那类判据继续成立。
+      · 而指代（"那二专业呢？"）**只需要改写这一步**就能解决 —— 它决定"拿什么去检索"。
+
+    ★ 降级不伪装：改写失败 / 没历史 / 存储挂了，都退回原问题检索，并把
+      `session_used=False` 如实报出去（与 `rerank_used=false` 同款的做法）。
+    """
+    if not prior:
+        return question, False
+    try:
+        q = rag.rewrite_query(question, prior_questions=prior)
+        return (q or question), True
+    except LLMCallError as e:
+        logger.warning("（多轮）带历史的查询改写不可用（%s），本次用原问题检索", e)
+        return question, False
+
+
 def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
     """问答主体：**不含 HTTP 那道限流闸门**（HTTP 入口是上面的 `chat()`）。
 
@@ -1501,10 +1569,21 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
     # ★ 查询改写：把"学生怎么说"翻译成"制度怎么写"，**只用于检索**。
     #   精排与生成看到的仍是 req.question（用户原话）—— 答的是他真正问的问题。
     use_rewrite = req.use_rewrite if req.use_rewrite is not None else req.use_rerank
+    # ★ 2026-10-14 多轮：先取历史（**必须在本轮写入之前取**），且**只喂改写**。
+    #   · 取不到 / 没传 session_id ⇒ 退回单轮，`session_used=False` 如实报出去；
+    #   · 历史绝不进精排与生成 —— 否则模型能靠上一轮的资料绕过本轮检索，
+    #     "不喂假资料"那条拒答设计就被削弱了（见 `_rewrite_query_with_history`）。
+    prior: list[str] = []
+    session_used = False
+    if req.session_id:
+        prior = SESSION_STORE.get_questions(req.session_id)
     search_q = req.question
     if use_rewrite:
         try:
-            search_q = rag.rewrite_query(req.question)
+            if prior:
+                search_q, session_used = _rewrite_query_with_history(req.question, prior)
+            else:
+                search_q = rag.rewrite_query(req.question)
             if search_q != req.question:
                 logger.info("检索查询已改写：%r → %r", req.question, search_q)
         except LLMCallError as e:
@@ -1512,6 +1591,14 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
             logger.warning("查询改写不可用（%s），本次用原问题检索", e)
 
     cands = rag.search(search_q, k=req.top_k)
+    # ★ 写会话放在**检索之后**：本轮要用的历史已经取到手，现在把本轮追加进去。
+    #   ★ 存的是**问题原文** —— 口径见 `session.py` 顶部：
+    #     "会话级临时存储 + 短 TTL；不进日志、不入持久化库"。
+    #   ⚠️ 写入失败**不抛**（best-effort）：会话存不上不该让这一轮答不出来。
+    if req.session_id:
+        SESSION_STORE.append_turn(req.session_id, req.question,
+                                  session_mod.DEFAULT_MAX_TURNS,
+                                  session_mod.DEFAULT_TTL_SEC)
 
     took = lambda: int((time.time() - t0) * 1000)          # 匿名函数，算"到现在用了多少毫秒"
 
@@ -1541,7 +1628,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False,
-                usage=_usage_for_response(led))
+                usage=_usage_for_response(led),
+                session_used=session_used)
 
         picked = [x for x in ranked if x[2] >= 5][:3]     # 只留 5 分以上的，最多 3 条
         sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
@@ -1566,7 +1654,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
-                usage=_usage_for_response(led))
+                usage=_usage_for_response(led),
+                session_used=session_used)
 
         sources, ctx = _vec_sources(cands)
         # 关掉 rerank 时用的是粗捞的向量分，比精排分粗（"意思接近但答非所问"更容易漏进来），
@@ -1581,14 +1670,16 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
         return ChatResponse(
             answer="⚠️ 已找到相关资料，但模型调用失败（超时或限流），请稍后重试。",
             sources=sources, took_ms=took(), rerank_used=use_rerank, knowledge_hit=True,
-            usage=_usage_for_response(led))
+            usage=_usage_for_response(led),
+                session_used=session_used)
 
     # ★ 2026-09-27：这里【显式】写上 knowledge_hit=True，不再靠上面的默认值。
     #   之前靠 ChatResponse 的字段默认值躺赢 —— 一旦有人改动那个默认值，
     #   成功路径的语义会悄悄跟着变，而且看这段代码的人根本看不出来它依赖了默认值。
     return ChatResponse(answer=answer, sources=sources, took_ms=took(),
                         rerank_used=use_rerank, knowledge_hit=True,
-                        usage=_usage_for_response(led))
+                        usage=_usage_for_response(led),
+                session_used=session_used)
 
 
 def _zero_usage() -> dict:
