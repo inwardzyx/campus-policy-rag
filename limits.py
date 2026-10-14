@@ -527,6 +527,9 @@ class Limiter:
           请求数能**事前**判（硬闸），token 数只能**事后**记（软闸，见模块 docstring 边界 ③）。
         ★ usage 取不到时**不许补 0**（本项目已记过这条：补 0 会让"没拿到"看起来像"没花费"），
           改为把 usage_missing 记上，让 /health 能看出"token 账有缺口"。
+        ★ 反过来也成立（2026-10-14）：**可证明的 0** 也不许记成缺口 ——
+          `n_calls=0` 是端点自己报上来的"这次一个模型都没调"（典型：`/search`），
+          把它记成 usage_missing 等于往"缺口"里灌假痕。见下面 usage 分支的注释。
         """
         now = time.time() if now is None else now
         day = utc_day(now)
@@ -540,7 +543,24 @@ class Limiter:
                 total = int(total)
             except (TypeError, ValueError):
                 total = 0
-            if total > 0:
+            # ★★ 2026-10-14：「**可证明的 0**」和「**没拿到账**」是两件事，别混在一起。
+            #   新端点 `/search`（只检索不生成）**一个 LLM 调用点都没有**，
+            #   它返回的账里带 `n_calls=0` —— 这是"确实没花钱"，不是"账没拿到"。
+            #   原来一律 bump `usage_missing`，于是每一次 /search 都会往
+            #   "token 账有缺口"上抹一笔**假痕**：指标被稀释成噪音之后，
+            #   真出了缺口也没人能从数字上看出来（"判据被稀释到不会响"）。
+            #   ⚠️ 判据必须看**显式的** `n_calls == 0`：`usage=None`（老路径没拿到账，
+            #      例如 /chat 的拒答路径）**仍然**记 usage_missing ——
+            #      scripts/verify_limits_e2e.py 的 ⑥ 就是在钉这一条。
+            n_calls = usage.get("n_calls")
+            try:
+                proven_zero = n_calls is not None and int(n_calls) == 0
+            except (TypeError, ValueError):
+                proven_zero = False
+            if proven_zero:
+                # 请求数上面已经记过；token 账本来就是 0，不需要"缺口"这笔账
+                pass
+            elif total > 0:
                 self._call(lambda: self.store.incr_daily(f"q:{day}:{who}:tok", total), default=None)
                 self._call(lambda: self.store.incr_daily(f"q:{day}:{GLOBAL_KEY}:tok", total),
                            default=None)

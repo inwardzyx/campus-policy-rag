@@ -1169,3 +1169,124 @@ def test_client_id_header_is_ignored_by_default(gate):
                        headers={"X-Client-Id": "A"}).status_code == 200
     r = client.post("/chat", json=_REFUSE_Q, headers={"X-Client-Id": "B"})
     assert r.status_code == 429, "默认配置下自称头居然能换一个新桶 ⇒ 改个 header 就绕过限流"
+
+
+# ==================================================================
+# ⑦ 只检索端点 `/search`：工具侧省下的那 24% 不能靠"它们应该一样"来担保
+#
+# 为什么单开一组（2026-10-14）：把 `search_policy` 从 `/chat` 改到 `/search` 之后，
+#   有两条判据**只有这里守得住**：
+#     ① 这条路上一个 LLM 调用点都没有 —— 不然"省下 6,337 token"是假的；
+#     ② 它的 sources / knowledge_hit 与 `/chat?use_rerank=False` **逐字段一致**
+#        —— 不然"返回给模型的内容不变"是假的，答案质量可能因此悄悄变差。
+#   ★ 这两条都不是"读代码觉得对"就够的：
+#     ① 用会炸的哨兵盯着调用点；
+#     ② 用**真 A/B**（同题同参数，两条路各跑一遍再比）。
+#     教科书式的做法是写个注释说"两边共用同一个函数" —— 这里不满足于注释。
+# ==================================================================
+
+def test_search_makes_zero_llm_calls(rag, monkeypatch):
+    """★ 这条是"省下 6,337 token"的**唯一**凭据：这条路上一个 LLM 调用点都没有。
+
+    做法：把 `_invoke_llm` 换成一调就炸的哨兵。
+    哪天有人"顺手"在这条路上补一次查询改写/生成，这里立刻红 ——
+    而其它测试（比 sources、比 token 账）都可能照旧绿。
+    ★ 顺便钉住 usage 是【可证明的 0】而不是 None：None 会被工具侧写成 `?`
+      （"账没拿到"），那是**假话**，且会让 `usage_missing` 涨。
+    """
+    calls = []
+
+    def _boom(*a, **kw):
+        calls.append(a)
+        raise AssertionError("`/search` 调了模型 —— 它应该一个 LLM 调用点都没有")
+
+    monkeypatch.setattr(svc, "_invoke_llm", _boom)
+    resp = svc.handle_search(svc.SearchRequest(question="什么情况会被开除学籍？"))
+    assert calls == [], "`/search` 调了模型：这条路上的 token 省不下来了"
+    assert len(resp.sources) > 0, "库里明明有的题却没给出处"
+    assert resp.usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+                          "cache_read": 0, "n_calls": 0}, \
+        f"usage 不是【可证明的 0】而是 {resp.usage} —— 工具侧会把它写成 `?`"
+
+
+def test_search_sources_identical_to_chat_without_rerank(rag, monkeypatch):
+    """真 A/B：命中题与拒答题，两条路的 sources / knowledge_hit 必须逐字段一致。
+
+    ★ 为什么必须真跑两遍：这次改动对外的承诺是"**除了不再生成，其余不变**"。
+      只读代码说"两边共用 `_vec_sources()`"不够 —— 生成那一步会通过
+      `_take_usage()`、`knowledge_hit` 默认值、`took_ms` 之类旁路影响响应形状，
+      而这些旁路只有真跑一遍才看得见。
+    ★ 拒答题也必须比：那条路上两边都该是 `knowledge_hit=False` 且 `sources=[]`，
+      而它恰恰是最容易被"只比命中题"漏掉的一半。
+    """
+    monkeypatch.setattr(rag, "_llm", _FakeLLM("（假模型返回，未真实调用）"))
+    for q in ("什么情况会被开除学籍？", "图书馆几点关门？"):
+        a = svc.handle_search(svc.SearchRequest(question=q))
+        b = svc.handle_chat(svc.ChatRequest(question=q, use_rerank=False))
+        assert a.knowledge_hit == b.knowledge_hit, f"{q}：命中判断不一致"
+        assert [s.model_dump() for s in a.sources] == [s.model_dump() for s in b.sources], \
+            f"{q}：sources 不一致（逐字段）"
+        assert a.rerank_used is False and b.rerank_used is False, f"{q}：rerank 标记不一致"
+
+
+def test_search_policy_actually_goes_to_search_endpoint(monkeypatch):
+    """工具侧真的改道了：`search_policy` 必须打 `/search`，且标记行带【显式的 0】。
+
+    ★ 拦在 `_get_json` 这一层：不起服务也能钉住"打的是哪个端点"。
+      这条断言的理由很具体 —— **改回 `/chat` 不会有任何其它测试变红**，
+      但每次工具调用会白烧 ~488 token（实测均值），而账面上看不出来
+      （token 账照样记，只是记的是服务端自己的账）。
+    """
+    import mcp.tools_impl as ti
+
+    seen = {}
+
+    def fake_get_json(path, payload=None, **kw):
+        seen["path"] = path
+        seen["payload"] = payload
+        return {"sources": [{"doc": "学生手册｜第十二条", "text": "原文", "score": 0.91}],
+                "knowledge_hit": True, "rerank_used": False,
+                "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+                          "cache_read": 0, "n_calls": 0}}
+
+    monkeypatch.setattr(ti, "_get_json", fake_get_json)
+    out = ti.search_policy("请假一天以内由谁审批？", k=3)
+
+    assert seen["path"] == "/search", f"search_policy 打的是 {seen['path']}，不是 /search"
+    assert seen["payload"] == {"question": "请假一天以内由谁审批？", "top_k": 3}, \
+        f"请求体不对：{seen['payload']}"
+    assert "use_rerank" not in seen["payload"], "又带上了生成/精排开关"
+    assert ti.parse_signal(out) == "hit", "标记行没了（判据全靠它）"
+    u = ti.parse_signal_usage(out)
+    assert u is not None and u["total"] == 0 and u["n_calls"] == 0, \
+        f"工具侧该报【显式的 0】，实际 {u}（None 会被算成工具侧账目缺失）"
+
+
+def test_search_is_behind_the_same_gate_and_counts_without_faking_missing(gate):
+    """新入口走同一道闸，而且**照样记账**（R4 那次的病就是"新入口忘了记账"）。
+
+    三条断言：
+      ① 放行时 200，且 token 账是 0、调用数是 0；
+      ② `usage_missing` **不涨** —— 可证明的 0 不是"账缺口"，
+         涨了就说明判据在往指标里灌假痕；
+      ③ 配额用尽时返 429（它照样吃 CPU：向量 + BM25 + RRF，不是 `/health` 那种看一眼的接口）。
+    """
+    lim, client = gate(burst=10, per_min=0.0, daily_req=5)
+    body = {"question": "请假一天以内由谁审批？"}
+
+    r = client.post("/search", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["usage"]["n_calls"] == 0, "这条路上居然记了 LLM 调用"
+    assert client.get("/limits").json()["usage"]["requests_used"] == 1, \
+        "放行的 /search 没记账 ⇒ 配额在这条路上不存在"
+    assert lim.stats()["usage_missing"] == 0, \
+        "可证明的 0 被记成了 usage_missing —— 指标被灌了假痕"
+
+    for _ in range(6):
+        code = client.post("/search", json=body).status_code
+        if code == 429:
+            break
+    else:
+        raise AssertionError("配额用尽后 /search 一直是 200 ⇒ 新入口没设闸")
+    assert client.get("/limits").json()["usage"]["requests_used"] == 5, \
+        "被挡的 /search 也记账了（额度会越挡越少，客户端永远回不来）"

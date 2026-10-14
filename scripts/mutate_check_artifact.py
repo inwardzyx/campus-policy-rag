@@ -150,6 +150,41 @@ PER_ARTIFACT_MUTATIONS: list[tuple[str, str, str, str, str]] = [
         "`truncated = 3`",
         "token 判据（截断均值不可信）",
     ),
+    # ---- 只检索端点 A/B 对照（2026-10-14 加）----
+    #   ★ 这一组的变异**必须能证明"判据抓得到"**，否则新判据就是"从没被验证过的绿"。
+    #     尤其第一条：这条 A/B 的全部价值就是"答案没人读 ⇒ 省下来"，而
+    #     JSON 里那个 `search_total_tokens: 0` 是最容易被下一次改动悄悄变成非 0 的数。
+    #   ⚠️ 有几条是**不纯的**（一次改动同时踩中两条判据）—— 我把它写进说明里，
+    #     而不是假装它证明了单独某一条：本仓库的规矩是"检出 ≠ 证明"。
+    (
+        "★ A/B：结论里写着 /search 恒 0 token，但 JSON 里那个汇总数被改成非 0"
+        "（纯化不了：它同时踩中「汇总必须能从明细重算」那条）",
+        "evalset/report-search-ab.json",
+        '"search_total_tokens": 0,',
+        '"search_total_tokens": 7,',
+        "A/B 判据④（这条路上恒 0 次调用）或判据②（汇总要能重算）",
+    ),
+    (
+        "★ A/B：md 里的「/search 合计 token」与 json 对不上（有人手改了 md）",
+        "evalset/report-search-ab.md",
+        "- /search 合计 token：0",
+        "- /search 合计 token：4",
+        "A/B 判据⑦（md 与 json 同源）",
+    ),
+    (
+        "★ A/B：md 声称「渲染文本逐字节一致」但分母不是这次跑的题数",
+        "evalset/report-search-ab.md",
+        "- 渲染文本逐字节一致：20/20",
+        "- 渲染文本逐字节一致：20/19",
+        "A/B 判据⑦（一致性分母 = 配对题数）",
+    ),
+    (
+        "★ A/B：题数被截断（n_pairs 与逐题明细对不上）",
+        "evalset/report-search-ab.json",
+        '"n_pairs": 20,',
+        '"n_pairs": 3,',
+        "A/B 判据①（分母自洽 / 题集没被截断）",
+    ),
 ]
 
 

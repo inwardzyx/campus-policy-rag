@@ -168,7 +168,20 @@ TOKEN_REPORT = "evalset/report-token-cost.md"
 CACHE_REPORT = "evalset/report-cache-feasibility.md"
 CACHE_REPORT_JSON = "evalset/report-cache-feasibility.json"
 
-EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT, CACHE_REPORT]
+# ---- 类型五：只检索端点 A/B 对照（**这次改动的凭据**）----
+#   起因（2026-10-14）：`search_policy` 从 `/chat?use_rerank=False`（会白跑一次生成）
+#   改到 `/search`（只检索）。README 里因此多了两句话：
+#     · 每次工具调用省 ~370 token；
+#     · 而**模型看到的文本一个字都没变**。
+#   这两句都必须能被机器校，而不是"读代码觉得对"：
+#     · 省了多少 —— 来自 `report-search-ab.json` 的逐题明细，可以重算；
+#     · "一个字没变" —— 来自逐题的 `text_identical`（比的是渲染后的字符串）；
+#   而**跑它需要真服务 + 真 key，校它不需要** —— 所以跑在作者本机、校在 CI。
+#   这个分工是刻意的：`scripts/ab_search_vs_chat.py` 自己也会说明同一件事。
+SEARCH_AB_MD = "evalset/report-search-ab.md"
+SEARCH_AB_JSON = "evalset/report-search-ab.json"
+
+EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT, CACHE_REPORT, SEARCH_AB_MD]
 ARTIFACTS = ARTIFACTS + EXTRA_ARTIFACTS
 
 
@@ -398,6 +411,114 @@ def _check_cache_report(rel: str, text: str) -> list[str]:
     return errs
 
 
+def _check_search_ab(rel: str, text: str) -> list[str]:
+    """只检索端点 A/B 对照的判据（这次改动的凭据）。
+
+    ★ 为什么这份"实验产物"也要配判据：它不是实验，是**改动的理由**。
+      README 用它说"省了 ~370 token/次且模型看到的没变" ——
+      如果这份 json 被跑坏/手改/只留一半，那句话就变成了无出处的断言，
+      而它恰恰是"为什么值得多一个端点"的全部论证。
+    """
+    errs: list[str] = []
+    jp = REPO_ROOT / SEARCH_AB_JSON
+    if not jp.exists():
+        return [f"✗ {rel}：找不到它的数据源 {SEARCH_AB_JSON} —— "
+                f"这份报告是**生成的**，光是 md 在、json 不在，说明有人手放了它"]
+    try:
+        d = json.loads(jp.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return [f"✗ {SEARCH_AB_JSON}：不是合法 JSON（{e}）—— 跑到一半崩过？"]
+
+    per = d.get("per_question") or []
+    n = d.get("n_pairs")
+
+    # ① 分母自洽 + 题集没被截断（题集设计是 10 应答题 + 10 拒答题）
+    if not isinstance(n, int) or n != len(per):
+        errs.append(f"✗ {SEARCH_AB_JSON}：n_pairs={n!r} 与逐题明细的 {len(per)} 条对不上")
+    elif n < 20:
+        errs.append(f"✗ {SEARCH_AB_JSON}：只配对了 {n} 题（< 20）—— "
+                    f"题集是 10 应答题 + 10 拒答题，少于这个数说明跑的是别的题集或被截断，"
+                    f"README 引用它的数字就不成立了")
+
+    def _ok(r: dict) -> bool:
+        """逐题的 `ok` 只能等于它自己那几个标记的合取 —— 不许手写一个 True。"""
+        return bool(r.get("hit_agrees") and r.get("rerank_agrees")
+                    and r.get("fields_identical") and r.get("text_identical")
+                    and r.get("search_tokens") == 0 and r.get("search_calls") == 0)
+
+    # ② 汇总值必须能从逐题明细**重算**（能重算的量，就别信存下来的那个）
+    chat = sum(int(r.get("chat_tokens") or 0) for r in per)
+    search = sum(int(r.get("search_tokens") or 0) for r in per)
+    recomputed = {
+        "all_fields_identical": all(r.get("fields_identical") for r in per),
+        "all_text_identical": all(r.get("text_identical") for r in per),
+        "all_hits_agree": all(r.get("hit_agrees") for r in per),
+        "search_total_tokens": search,
+        "search_max_calls_per_response": max((int(r.get("search_calls") or 0) for r in per),
+                                            default=0),
+        "chat_total_tokens": chat,
+        "chat_calls_total": sum(int(r.get("chat_calls") or 0) for r in per),
+        "tokens_saved_total": chat - search,
+        "n_mismatch": sum(1 for r in per if not _ok(r)),
+    }
+    for k, v in recomputed.items():
+        if d.get(k) != v:
+            errs.append(f"✗ {SEARCH_AB_JSON}：{k}={d.get(k)!r}，"
+                        f"按逐题明细重算是 {v!r}")
+
+    # ③ 逐题的 `ok` 不许与它自己的子标记矛盾（手改一个 True 也不行）
+    for i, r in enumerate(per, 1):
+        if bool(r.get("ok")) != _ok(r):
+            errs.append(f"✗ {SEARCH_AB_JSON}：第 {i} 题的 ok={r.get('ok')!r}，"
+                        f"但它的子标记算出来是 {_ok(r)} —— 有人手写了一个 True")
+
+    # ④ 这次改动的**核心断言**：这条路上恒为 0 次 LLM 调用
+    if d.get("search_total_tokens") != 0 or d.get("search_max_calls_per_response") != 0:
+        errs.append(f"✗ {SEARCH_AB_JSON}：/search 合计 "
+                    f"{d.get('search_total_tokens')!r} token / 单次最多 "
+                    f"{d.get('search_max_calls_per_response')!r} 次调用 —— "
+                    f"「这条路上没有 LLM 调用点」这条断言**被实测推翻了**，"
+                    f"README 里「省下这段 token」的说法要跟着改")
+
+    # ⑤ 空转护栏：对照组必须真的花过钱，否则这次对照什么都没证明
+    if chat <= 0 or d.get("chat_calls_total", 0) <= 0:
+        errs.append(f"✗ {SEARCH_AB_JSON}：对照路径 /chat 合计 {chat} token / "
+                    f"{d.get('chat_calls_total')!r} 次调用 —— "
+                    f"对照组自己就是 0，这次 A/B **什么都没证明**（空转的绿）")
+    if not any(int(r.get("n_sources") or 0) > 0 for r in per):
+        errs.append(f"✗ {SEARCH_AB_JSON}：每一题的 sources 条数都是 0 —— "
+                    f"于是「渲染文本逐字节一致」比的是两个空串，是**假一致**")
+
+    # ⑥ 命中的题必须真的有出处（命中却 0 条 ⇔ 口径变了，"一致"就可能是两边一起错）
+    hits = [r for r in per if r.get("knowledge_hit")]
+    bad_hit = [r for r in hits if int(r.get("n_sources") or 0) == 0]
+    if bad_hit:
+        errs.append(f"✗ {SEARCH_AB_JSON}：{len(bad_hit)} 道命中题的 sources 是空的 —— "
+                    f"两条路一致地错，和两条路一致地对，在这里分不出来")
+
+    # ⑦ md 与 json 同源：md 里那几行数字必须等于 json 算出来的
+    for pattern, key, cast in (
+        (r"^- 配对题数：(\d+)", "n_pairs", int),
+        (r"^- /search 合计 token：(\d+)", "search_total_tokens", int),
+        (r"^- 旧路径 /chat 合计 token：(\d+)", "chat_total_tokens", int),
+    ):
+        m = re.search(pattern, text, re.M)
+        if not m:
+            errs.append(f"✗ {rel}：抽不到「{pattern}」那一行 —— 格式可能变了，"
+                        f"⚠️ 不要直接改判据，先确认新格式")
+        elif cast(m.group(1)) != d.get(key):
+            errs.append(f"✗ {rel}：写着 {m.group(1)}，而 {SEARCH_AB_JSON} 里是 "
+                        f"{d.get(key)!r} —— md 与 json 不同源（md 是生成的，"
+                        f"出现这种情况说明有人手改了 md）")
+    m = re.search(r"^- 渲染文本逐字节一致：(\d+)/(\d+)", text, re.M)
+    if not m:
+        errs.append(f"✗ {rel}：抽不到「渲染文本逐字节一致：n/m」那一行")
+    elif (int(m.group(1)), int(m.group(2))) != (n, n):
+        errs.append(f"✗ {rel}：写着 {m.group(1)}/{m.group(2)} 逐字节一致，"
+                    f"但这次对照跑了 {n} 题 ⇒ README 不该引用它")
+    return errs
+
+
 def check_one(rel: str) -> list[str]:
     """检查一份产物，返回问题清单（空 = 通过）。"""
     p = REPO_ROOT / rel
@@ -415,6 +536,8 @@ def check_one(rel: str) -> list[str]:
         return _check_token_report(rel, text)
     if rel == CACHE_REPORT:
         return _check_cache_report(rel, text)
+    if rel == SEARCH_AB_MD:
+        return _check_search_ab(rel, text)
 
     d = _extract(text)
     errs: list[str] = []

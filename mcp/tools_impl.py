@@ -87,12 +87,21 @@ def search_policy(query: str, k: int = 5) -> str:
     而真服务明明在好好跑着。
     ⇒ **这是"没实测就写代码"的典型**：架构图上看着顺，跑起来才发现自相矛盾。
 
-    ★ 正确做法（实测 /chat 的 sources 里就带着原文）：
-      /chat 返回的 sources 里每条都有 {doc（含条款号）, text（原文）, score}。
+    ★ 正确做法（实测 sources 里就带着原文）：
+      `sources` 里每条都有 {doc（含条款号）, text（原文）, score}。
     ⇒ 要原文根本不用碰检索那一层，直接读 sources 就行，
       而且这样【两个工具都走 HTTP】，MCP server 保持纯跨进程。
-    ⇒ 代价：/chat 内部会跑一遍生成，所以比纯检索慢 ——
-      对一个工具调用来说可以接受，而且这一点必须写在文档里，别假装它更轻。
+
+    ★★ 2026-10-14：改走 `/search`（只检索、不生成），不再借道 `/chat`。
+      原来这里写着"代价：/chat 内部会跑一遍生成，对一个工具调用来说可以接受"
+      —— **不接受了，而且是先把代价量出来才改的**：
+      同一批 20 题实测，借道 `/chat` 时本函数 13 次调用共 **6,337 token**，
+      而其中每一个 token 都是**没人读的答案文本**（这个函数只读 sources），
+      占工具侧总账（26,277）的 **24%**。换成 `/search` 之后这部分是 **0**，
+      而返回给模型的文本**逐字节不变**（服务侧两条路共用同一份检索 + 拒答实现，
+      `tests/test_guard.py` 的「只检索端点」组另做真 A/B 对照）。
+      ⚠️ 于是本函数**不烧 token**：标记行里 `tokens_total=0`，
+      这是【可证明的 0】（服务端这条路上一个 LLM 调用点都没有），不是 `?`。
 
     ★★★ 2026-10-12 加：命中标记（SIGNAL 协议）
       为什么加：拒答判据原来只能靠【读模型的措辞】猜它有没有依据，
@@ -105,7 +114,7 @@ def search_policy(query: str, k: int = 5) -> str:
         模型仍可能无视它编答案。所以它解决的是"判据能不能客观测量"，
         不是"模型会不会硬答"。后者要靠 hard_answer_rate 单独测。
     """
-    data = _get_json("/chat", {"question": query, "use_rerank": False, "top_k": k})
+    data = _get_json("/search", {"question": query, "top_k": k})
     # ★ 把服务内部的账带上去（见 _usage_fields）：不然这部分 token 全在 agent 账外
     u = data.get("usage")
     if not data.get("knowledge_hit", True):
@@ -113,10 +122,22 @@ def search_policy(query: str, k: int = 5) -> str:
     srcs = data.get("sources", [])
     if not srcs:
         return NO_HIT_TEXT + _signal_line("no_hit", "search_policy", usage=u)
+    return _format_sources(srcs) + _signal_line("hit", "search_policy", len(srcs), usage=u)
+
+
+def _format_sources(srcs: list[dict]) -> str:
+    """把 `sources` 渲染成喂给模型的文本 —— **唯一的**一处渲染实现。
+
+    ★ 2026-10-14 抽出来的理由跟"改端点"是同一件事的两面：
+      这次改动的对外承诺是"模型看到的东西**一个字都没变**"。
+      `sources` 逐字段相同 + 走同一个渲染函数 ⇒ 文本逐字节相同，
+      两条都是可验证的（`scripts/ab_search_vs_chat.py` 直接比字符串）。
+      ⚠️ 如果渲染散在 if/else 里，这个承诺就退化成"我读了一遍，看着一样"。
+    """
     lines = []
     for s in srcs:
         lines.append(f"· {s['doc']}（相似度 {s['score']:.4f}）\n  {s['text'][:200]}")
-    return "\n".join(lines) + _signal_line("hit", "search_policy", len(srcs), usage=u)
+    return "\n".join(lines)
 
 
 def ask_policy(question: str) -> str:
@@ -192,6 +213,13 @@ def _usage_fields(usage: dict | None) -> str:
     **这两者不能都写成 0** —— 填 0 会让"没拿到"看起来像"真的没用"
     （`service.py` 里 `_record_usage` 的注释为同一件事写过一遍）。
     所以这里写 `?`，脚本侧见到 `?` 要计入"工具侧账目缺失"，而不是计入 0。
+
+    ★★★ 2026-10-14 补第三种情况：**显式的 0**。
+      `/search`（`search_policy` 现在打的端点）返回的 usage 里带 `n_calls=0` ——
+      那不是"没拿到账"，而是服务端**可证明**的一次模型都没调。
+      ⇒ 此时这里写 0 才是对的，写 `?` 反而是假话（把"确实没花"说成"不知道"）。
+      判据在服务端：`service.py::_zero_usage()` 与 `limits.py::Limiter.record()` 里
+      对 `n_calls == 0` 的处理是同一件事的两头，改一头要连带看另一头。
     """
     if not usage:
         return " tokens_total=? tokens_calls=?"

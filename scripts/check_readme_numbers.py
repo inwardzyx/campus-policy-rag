@@ -239,6 +239,21 @@ ASSERTIONS: list[Assertion] = [
         expect=None,
         readme_pattern=r"token/题（均值） \| \*\*\d+\*\* \| \*\*(\d+)\*\*（直打的",
     ),
+    # ★ 2026-10-14 加：把「`search_policy` 改走 `/search` 省了多少」锚在产物上。
+    #   为什么必须锚：README 里那句「每次调用省 369.5 token」是**全篇唯一**支撑
+    #   "为此多开一个端点值得"的数字，而它来自 `evalset/report-search-ab.json` ——
+    #   那份产物**每跑一次都会变**（每次生成的答案长短不同）。
+    #   没有这条断言，README 会安静地过期，而过期的成本数字比没有数字更坏：
+    #   它看起来像实测。（`check_artifact_sanity.py` 校那份产物的**内部**自洽，
+    #   这里校的是**README 与它一致** —— 两边职责不重叠。）
+    Assertion(
+        name="只检索端点每次调用省下的 token",
+        readme_value="369.5",
+        src="evalset/report-search-ab.json",
+        pattern=r'"tokens_saved_per_call": ([0-9.]+)',
+        expect=None,
+        readme_pattern=r"每次调用省 ([0-9.]+) token",
+    ),
 ]
 
 

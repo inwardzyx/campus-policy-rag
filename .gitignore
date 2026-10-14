@@ -84,3 +84,11 @@ agent/_mut/_*.txt
 #   跟 _refusal_regression.json / _token_cost.json 一样属于"跑一次才生成"的东西，
 #   进仓库只会让人分不清"它是当前结果"还是"某次旧跑批的残留"。
 agent/_baseline_direct.json
+
+# ★ 2026-10-14 加：只检索端点那次的"改前 / 改后"两遍量账（`agent/token_cost.py --out`）。
+#   同上面几条：它们是**跑一次才生成**的中间产物，进仓库只会让人分不清
+#   "它是当前结果"还是"某次旧跑批的残留"。
+#   ⚠️ README / report 里引用的那个配对数字（每次调用省 369.5 token）
+#   **另有入库的出处**：`evalset/report-search-ab.json`（由检查器校）——
+#   所以这里的忽略不会让文档变成一个没有出处的断言。
+agent/_tool_split_*.json

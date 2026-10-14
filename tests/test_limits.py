@@ -304,6 +304,28 @@ def test_missing_usage_is_counted_not_treated_as_zero(store):
     assert delta == 2, f"两次都拿不到 usage，usage_missing 只涨了 {delta}"
 
 
+def test_provably_zero_usage_is_not_a_gap(store):
+    """★ 反过来也要守：**可证明的 0** 不许记成 `usage_missing`（2026-10-14 加）。
+
+    起因：新端点 `/search`（只检索不生成）**一个 LLM 调用点都没有**，
+    它把这件事显式报上来（`n_calls=0`）。而 `record` 原来只看 total：
+    total=0 一律 bump `usage_missing` ⇒ 每一次 /search 都往"token 账有缺口"上
+    抹一笔**假痕**。假痕一多，真缺口就看不出来了 ——
+    **判据被稀释到不会响，比判据缺失更难发现**（这仓库已经在别处吃过一次）。
+
+    ★ 判据是**显式的** `n_calls == 0`，不是"total 是 0"：
+      上一条测试里的 `None` 与 `{"total": 0}` **仍然**算缺口，一个字都没松。
+    """
+    lim, w, now = make_limiter(store), who(), 1_000_000.0
+    base = lim.stats()["usage_missing"]
+    lim.record(w, usage={"total_tokens": 0, "n_calls": 0}, now=now)
+    assert lim.stats()["usage_missing"] == base, \
+        "可证明的 0（n_calls=0）被记成了 usage_missing —— 又灌了一笔假痕"
+    u = lim.usage_today(w, now=now)
+    assert u["tokens_used"] == 0, "可证明的 0 不该产生 token 账"
+    assert u["requests_used"] == 1, "可证明的 0 也照样占一次请求额度（它吃 CPU）"
+
+
 # ==================================================================
 # 存储挂了：closed 护钱包 / open 保可用
 # ==================================================================

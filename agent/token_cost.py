@@ -211,6 +211,12 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
             #   两本账并列才看得出"贵在哪一层"。
             tool_agg = {"input": 0, "output": 0, "total": 0, "cache_hit": 0, "n_calls": 0}
             tool_missing = 0        # 有几次工具调用**没报上账**（≠ 花了 0）
+            # ★★ 按【工具名】归账（2026-10-13 补，起因是要量"给检索端点去掉生成能省多少"）：
+            #   光有工具侧总量没法判断"该动哪个工具" —— 而两个工具打的是**两条不同的路**：
+            #     search_policy → /chat?use_rerank=False ⇒ 不改写、不精排，**只跑生成**（n_calls=1）
+            #     ask_policy    → /chat?use_rerank=True  ⇒ 改写+精排+生成（命中 3 次、拒答 2 次）
+            #   实测过：search 每次 1 次调用、ask 命中 3 次 / 拒答 2 次 —— 与代码路径一致。
+            tool_by_name: dict[str, dict] = {}
             try:
                 for rnd in range(MAX_ROUNDS):
                     resp = bound.invoke(msgs)
@@ -228,9 +234,17 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                         # ★ 把工具内部的账收上来。None = 没拿到（不是 0）——
                         #   旧标记行 / 写了 `?` 都走这里，必须计成"缺失"而不是 0。
                         tu = parse_signal_usage(str(out))
+                        slot = tool_by_name.setdefault(
+                            tc["name"], {"calls": 0, "tokens": 0,
+                                         "input": 0, "output": 0, "missing": 0})
+                        slot["calls"] += 1
                         if tu is None:
                             tool_missing += 1
+                            slot["missing"] += 1
                         else:
+                            slot["tokens"] += tu["total"]
+                            slot["input"] += tu["input"]
+                            slot["output"] += tu["output"]
                             for k_src, k_dst in (("input", "input"),
                                                  ("output", "output"),
                                                  ("total", "total"),
@@ -253,6 +267,8 @@ def measure_agent(qs: list, bound, client: StdioMCPClient) -> list[dict]:
                          # ★ 第二本账：工具内部（/chat 那一侧）花掉的。
                          #   reported_total = usage.total + tool_usage.total 才是这道题的真账。
                          "tool_usage": tool_agg,
+                         # ★ 按工具名分开的那本账（见上面 tool_by_name 的注释）
+                         "tool_by_name": tool_by_name,
                          "tool_usage_missing": tool_missing,
                          "n_tool_calls": sum(len(t.tool_calls or [])
                                              for t in ai_msgs),
@@ -295,9 +311,19 @@ def _summarize_run(run_i: int, d_rows: list, a_rows: list) -> dict:
     a_mean = (sum(r["usage"]["total"] for r in a_ok) / len(a_ok)) if a_ok else 0.0
     t_mean = (sum(r.get("tool_usage", {}).get("total", 0) for r in a_ok) / len(a_ok)) if a_ok else 0.0
     t_missing = sum(r.get("tool_usage_missing", 0) for r in a_ok)
+    # ★ 按工具名汇总（2026-10-13）：用来回答"这笔工具侧的账里，哪个工具占了多少"。
+    #   两个工具打的是不同的路（search 只跑生成、ask 还跑改写+精排），
+    #   所以"该动哪个"必须看这张表，不能看总数。
+    by_tool: dict[str, dict] = {}
+    for r in a_ok:
+        for name, slot in (r.get("tool_by_name") or {}).items():
+            agg = by_tool.setdefault(name, {"calls": 0, "tokens": 0, "missing": 0})
+            agg["calls"] += slot.get("calls", 0)
+            agg["tokens"] += slot.get("tokens", 0)
+            agg["missing"] += slot.get("missing", 0)
     return {"run": run_i, "n_direct": len(d_ok), "n_agent": len(a_ok),
             "direct_mean": d_mean, "agent_own_mean": a_mean, "tool_mean": t_mean,
-            "tool_usage_missing": t_missing,
+            "tool_usage_missing": t_missing, "tool_by_tool": by_tool,
             "ratio_own": (a_mean / d_mean) if d_mean else 0.0,
             "ratio_all": ((a_mean + t_mean) / d_mean) if d_mean else 0.0}
 
@@ -314,6 +340,11 @@ def main():
                     help="跑几遍（★ 默认 1；要报波动范围就 >=2。"
                          "单次跑出来的倍率支持不了小数第二位的精度，"
                          "见 evalset/report-token-cost.md 的更正块）")
+    ap.add_argument("--out", default="agent/_token_cost.json",
+                    help="明细写到哪（默认 agent/_token_cost.json）。"
+                         "★ 做**前后对比实验**时必须换一个路径："
+                         "默认那份是 evalset/report-token-cost.md 的真相源，"
+                         "被覆盖会让 check_token_report.py 全线报红（那是设计如此）。")
     args = ap.parse_args()
 
     try:
@@ -424,7 +455,8 @@ def main():
             if vs:
                 print(f"  {label}的倍率范围：{min(vs):.2f} ~ {max(vs):.2f}")
 
-    out = os.path.join(_ROOT, "agent", "_token_cost.json")
+    out = os.path.join(_ROOT, args.out)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump({"price_table": PRICE_TABLE, "n_questions": len(qs),
                    # ★ 多遍的汇总（默认 1 遍时也写，长度 1）
@@ -432,6 +464,16 @@ def main():
                    # direct/agent 保留【最后一遍】的逐题明细 —— 逐格对账器认这两个键
                    "direct": d_rows, "agent": a_rows},
                   f, ensure_ascii=False, indent=2)
+    # ★ 按工具名的那张表单独打印（2026-10-13）：它是"该动哪个工具"的依据。
+    for r in runs_summary:
+        if r.get("tool_by_tool"):
+            print(f"\n工具侧按工具拆（第 {r['run']} 遍）：")
+            for name, slot in sorted(r["tool_by_tool"].items(),
+                                     key=lambda kv: -kv[1]["tokens"]):
+                per = slot["tokens"] / slot["calls"] if slot["calls"] else 0
+                print(f"  {name:16s} 调用 {slot['calls']:3d} 次　合计 {slot['tokens']:6d} token"
+                      f"　每次均 {per:7.1f}"
+                      f"{'　★有 %d 次没报上账' % slot['missing'] if slot['missing'] else ''}")
     print(f"\n明细已写入 {os.path.relpath(out, _ROOT)}")
     # ★ 2026-10-12 修：这里原来没有 return ⇒ main() 隐式返回 None
     #   ⇒ 外层 `if main() is None: sys.exit(1)` 把【成功】也判成失败，

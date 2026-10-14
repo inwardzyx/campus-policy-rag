@@ -882,6 +882,31 @@ class ChatResponse(BaseModel):
     usage: Optional[dict] = None
 
 
+class SearchRequest(BaseModel):
+    """`/search` 的请求体：只检索、不生成（工具 `search_policy` 用）。
+
+    ★ 只有两个字段，**故意没有** use_rerank / use_rewrite：
+      这条端点的契约就是"一个 LLM 调用点都没有"（见 `handle_search`）。
+      在这里留一个开关，等于给"哪天有人把它打开"留了后门，
+      而整条链（工具侧报账、token 报告、README 的数字）都建立在"它恒为 0"上。
+    """
+    question: str = Field(..., description="检索什么", min_length=1, max_length=500)
+    top_k: int = Field(5, description="粗捞几条", ge=1, le=10)
+
+
+class SearchResponse(BaseModel):
+    """`/search` 的响应：`sources` / `knowledge_hit` 与 `/chat?use_rerank=False` **必然一致**。
+
+    ★ 没有 answer 字段 —— 这不是"少返回点东西"，而是这条端点存在的全部理由：
+      服务不再生成一段**没人读**的答案（实测每次 ~488 token，占工具侧总账的 24%）。
+    """
+    sources: list[Source]
+    took_ms: int
+    rerank_used: bool
+    knowledge_hit: bool = True
+    usage: Optional[dict] = None
+
+
 @app.get("/health")
 def health():
     """健康检查：部署后第一件事就是访问它，看服务活着没
@@ -959,6 +984,29 @@ def chat(req: ChatRequest, request: Request):
       在入口清一次，才是真正关掉这条路径的动作：残留只能害到"下一个请求"，而下一个请求
       在这里就把脏数据丢掉了。
     """
+    # ★ 2026-10-14：闸门 + 记账抽进下面的 `_gated()` —— 因为新加的 `/search` 也要走
+    #   同一道闸。两条入口共用一份实现，才不会重演 R4 那次的病：新入口自己抄一遍记账、
+    #   然后在某个分支上漏掉，"配额"在那条路上就整个不存在。
+    return _gated(request, lambda: handle_chat(req))
+
+
+def _gated(request: Request, pipeline):
+    """`/chat` 与 `/search` 共用的**闸门 + 记账**：先问一次，干完再记账。
+
+    ★★ 记账必须**无条件**发生（盲审 R4）：第一版把 `LIMITER.record(...)` 写在
+      `return resp` 前面，于是任何从 `handle_chat` 冒出来的异常都会绕过记账 ——
+      那次请求**只在桶里扣了一枚令牌、日额度上完全不存在**。
+      而 `handle_chat` 只接 `LLMCallError`；别的异常一路冒到 FastAPI 变成 500。
+      有一条**当时就可达**的路径：没配 `DEEPSEEK_API_KEY` 时，默认路径每次 /chat
+      都抛 pydantic 校验错（"缺 key 就该炸出来"是刻意的）⇒ 日额度那道闸全废，
+      只剩桶。README 写着"拒答也计数"，但"异常也计数"漏了 —— 记账应当无条件。
+      ⚠️ 拿不到 usage 时传 None 进去，`record` 会把它记成 `usage_missing`（不补 0）。
+
+    ★ 被挡的请求（429 / 503）走 `raise`，压根到不了这里 —— `check()` 那一步就返回了。
+      所以"被挡的请求不记账"这条仍然成立（有回归用例守着）。
+    ★ `pipeline` 传函数、在这里调，是为了让"记账"落在**同一个 try/finally** 里：
+      哪个端点进来都一样，没有第二条记账路径可以漂移。
+    """
     who = limits_mod.client_id(
         request.client.host if request.client else None,
         {k.lower(): v for k, v in request.headers.items()},
@@ -972,19 +1020,48 @@ def chat(req: ChatRequest, request: Request):
 
     usage = None
     try:
-        resp = handle_chat(req)
+        resp = pipeline()
         usage = resp.get("usage") if isinstance(resp, dict) else getattr(resp, "usage", None)
         return resp
     finally:
-        # ★★ 记账必须**无条件**发生（盲审 R4）：第一版把 `LIMITER.record(...)` 写在
-        #   `return resp` 前面，于是任何从 `handle_chat` 冒出来的异常都会绕过记账 ——
-        #   那次请求**只在桶里扣了一枚令牌、日额度上完全不存在**。
-        #   而 `handle_chat` 只接 `LLMCallError`；别的异常一路冒到 FastAPI 变成 500。
-        #   有一条**当时就可达**的路径：没配 `DEEPSEEK_API_KEY` 时，默认路径每次 /chat
-        #   都抛 pydantic 校验错（"缺 key 就该炸出来"是刻意的）⇒ 日额度那道闸全废，
-        #   只剩桶。README 写着"拒答也计数"，但"异常也计数"漏了 —— 记账应当无条件。
-        #   ⚠️ 拿不到 usage 时传 None 进去，`record` 会把它记成 `usage_missing`（不补 0）。
         LIMITER.record(who, usage)
+
+
+@app.post("/search", response_model=SearchResponse)
+def search(req: SearchRequest, request: Request):
+    """只检索、不生成 —— 给"只要原文条款"的工具用（`mcp/tools_impl.py::search_policy`）。
+
+    ★ 为什么要单开一条（2026-10-14，**先量后改**）：
+      `search_policy` 要的只是 `sources`，原来借道 `/chat?use_rerank=False` 拿，
+      代价是服务内部**白跑一次生成**。同一批 20 题实测：
+      这条路 13 次调用共 6,337 token，其中每一个都是没人读的答案文本，
+      占工具侧总账（26,277）的 24% ⇒ 去掉之后工具返回文本**逐字节不变**。
+      改前的数在 `agent/_tool_split_before.json`，改后同一条命令再量一遍对答案。
+
+    ★ 闸门：和 `/chat` 完全一样（同一个 `_gated`）。它不是 `/health` 那种"看一眼"的
+      接口 —— 它照样吃 CPU（向量 + BM25 + RRF），不设闸就等于开了个免费入口。
+      ⚠️ 但它**不烧 token**，所以记账时 token 那部分是可证明的 0（见 `handle_search`）。
+    """
+    return _gated(request, lambda: handle_search(req))
+
+
+def _vec_reject(cands) -> bool:
+    """粗捞路径的拒答判据：**全部候选里最高的向量分**低于阈值 ⇒ 库里没有。
+
+    ★ 为什么是 max 而不是 RRF 融合后的第一名：见 `handle_chat` 里那段长注释
+      （RRF 可能把 BM25 命中的块顶到第一，而它向量分未必最高 ⇒ 用第一名会误拒）。
+    ★ 2026-10-14 抽成函数：`/chat?use_rerank=False` 与 `/search` 必须给出同一个判断。
+    """
+    return (not cands) or max((s for _, s in cands), default=0.0) < VEC_REJECT_THRESHOLD
+
+
+def _vec_sources(cands):
+    """粗捞路径的 sources 与生成用上下文 —— `/chat` 与 `/search` 共用的唯一实现。"""
+    picked = [x for x in cands if x[1] >= VEC_REJECT_THRESHOLD][:3]
+    sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
+                      text=c.get("text_full", c["text"]),
+                      score=round(s, 3)) for c, s in picked]
+    return sources, [c for c, _ in picked]
 
 
 def handle_chat(req: ChatRequest):
@@ -1060,18 +1137,18 @@ def handle_chat(req: ChatRequest):
         # ★ 用【全部候选里最高的向量分】判断拒答，而不是 RRF 融合后的第一名。
         #   RRF 可能把 BM25 命中的块顶到第一，而它向量分未必最高 ——
         #   用第一名会"把高向量分块挤到第二 → 误拒该答的问题"。用 max 更稳。
-        max_vec = max((s for _, s in cands), default=0.0)
-        if not cands or max_vec < VEC_REJECT_THRESHOLD:
+        # ★ 2026-10-14：判据与 sources 的构造抽成 `_vec_reject()` / `_vec_sources()`
+        #   （定义在 handle_chat 上面）—— 因为 `/search`（只检索不生成）必须给出
+        #   **逐字段一样**的结果。抽成共用实现之后，"两条路给出不同答案"在结构上
+        #   就不可能发生，而不是靠一句"它们应该一样"的注释。真 A/B 对照见
+        #   tests/test_guard.py 的「只检索端点」组。
+        if _vec_reject(cands):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
                 usage=_take_usage())
 
-        picked = [x for x in cands if x[1] >= VEC_REJECT_THRESHOLD][:3]
-        sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
-                          text=c.get("text_full", c["text"]),
-                          score=round(s, 3)) for c, s in picked]
-        ctx = [c for c, _ in picked]
+        sources, ctx = _vec_sources(cands)
         # 关掉 rerank 时用的是粗捞的向量分，比精排分粗（"意思接近但答非所问"更容易漏进来），
         # 所以默认还是开着 rerank —— 关掉只是留一个对比开关，不是关闭防线。
 
@@ -1092,6 +1169,52 @@ def handle_chat(req: ChatRequest):
     return ChatResponse(answer=answer, sources=sources, took_ms=took(),
                         rerank_used=use_rerank, knowledge_hit=True,
                         usage=_take_usage())
+
+
+def _zero_usage() -> dict:
+    """「确定的 0 次 LLM 调用」的账 —— 与 `_take_usage()` 返回的 None **不是一回事**。
+
+    `_take_usage()` 的 None 把两种可能混在一起（真的没调 / 调了但没拿到账）。
+    `/search` 这条路上**没有任何一次 LLM 调用**，是【可证明的 0】⇒ 这里返回显式的 0：
+      · 工具侧于是记成 `tokens_total=0`（真的没花），而不是 `?`（账没拿到）——
+        见 `mcp/tools_impl.py::_usage_fields`；
+      · `limits.py::Limiter.record()` 也据此**不往 `usage_missing` 上记账**：
+        否则每一次 /search 都会往"token 账有缺口"上抹一笔假痕，把指标稀释成噪音。
+    ★ 每次返回**新 dict**：pydantic 响应里塞一个共享可变对象，一旦有人原地改它，
+      所有响应会跟着变 —— 这类"看着对、其实错"的账，本项目已经吃过几次。
+    """
+    return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+            "cache_read": 0, "n_calls": 0}
+
+
+def handle_search(req: SearchRequest):
+    """只检索、不生成（HTTP 入口是上面的 `search()`，闸门与 `/chat` 共用 `_gated`）。
+
+    ★ 与 `/chat?use_rerank=False` 的关系：`sources` / `knowledge_hit` **必然一致**，
+      因为两边共用 `_vec_reject()` / `_vec_sources()`。测试另外做真 A/B 对照，
+      不靠"它们应该一样"这句话。
+
+    ★ 未就绪（模型还在加载）时**照抄 /chat 的老语义**：`sources=[]` 且
+      `knowledge_hit` 留默认 True ⇒ 工具侧照样输出那句「没有找到」。
+      这是**刻意保留**的：本次改动的契约是"除了不再生成，其余逐字段不变"，
+      顺手改掉它就变成"大体一样"，而后者没法验证。
+      （把"未就绪"说成"库里没有"确实是句错话，但它是**两条路共有**的老问题，
+      要改就一起改、并单独留痕 —— 不塞进这次改动里。）
+    """
+    _take_usage()                      # ★ 丢弃残留（不是读取）—— 理由同 handle_chat 入口
+    t0 = time.time()
+    if not rag.ready:
+        return SearchResponse(sources=[], took_ms=0, rerank_used=False,
+                              usage=_zero_usage())
+    cands = rag.search(req.question, k=req.top_k)
+    if _vec_reject(cands):
+        return SearchResponse(sources=[], took_ms=int((time.time() - t0) * 1000),
+                              rerank_used=False, knowledge_hit=False,
+                              usage=_zero_usage())
+    sources, _ = _vec_sources(cands)
+    return SearchResponse(sources=sources, took_ms=int((time.time() - t0) * 1000),
+                          rerank_used=False, knowledge_hit=True,
+                          usage=_zero_usage())
 
 
 # ==================================================================

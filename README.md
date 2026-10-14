@@ -1438,6 +1438,24 @@ token 少算 58%）。原因是「覆盖」写成「累加」，且 `n_calls` �
 sources 条数 ±1 容差），1 遍就够，**实测全绿**。
 （★ 不要用"硬答率还在不在 10.5%~15.8% 区间"来证明没变 —— 那是拿 5 个百分点的底噪当信号。）
 
+**⑤ 第二刀砍的是"没人读的那部分"（2026-10-14，先量后改）。**
+`search_policy`（只取原文条款）原来借道 `/chat?use_rerank=False`，服务内部会**白跑一次生成**，
+而工具只读 `sources` ⇒ 那段答案**没有任何人读**。同一批 20 题、同一条命令实测：
+
+| | 工具侧合计 | `search_policy` | `ask_policy` | 含工具倍率 |
+|---|---|---|---|---|
+| 改动前 | 26,277 token | **6,337**（13 次，487.5/次） | 19,940（949.5/次） | 3.32× |
+| 改动后 | 19,460 token | **0**（13 次，`n_calls=0`） | 19,460（926.7/次） | 3.05× |
+
+⇒ 工具侧 1,314 → 973 token/题（−26%），含工具倍率 3.32× → 3.05×。
+★ **而模型看到的文本一个字都没变**：`/search` 与 `/chat?use_rerank=False` 在 20 道题上
+`sources` 逐字段一致、**渲染后逐字节一致**（`scripts/ab_search_vs_chat.py`，产物
+[`evalset/report-search-ab.md`](evalset/report-search-ab.md)：20/20 一致，`/search` 合计 0 token，
+旧路径同题合计 5,912 token ⇒ **每次调用省 369.5 token**）。
+⚠️ 上表两行来自**两次单遍运行**（`agent/token_cost.py --out agent/_tool_split_{before,after}.json`），
+不是配对实验 —— `ask_policy` 那两格（19,940 / 19,460）的差是抖动，别当精度用；
+**配对的那个数是 A/B 给的 369.5 token/次调用**，它才是"这次改动省了多少"的正解。
+
 报告：[`evalset/report-token-cost.md`](evalset/report-token-cost.md)
 
 ### 守护这一节的工具
@@ -1450,6 +1468,8 @@ sources 条数 ±1 容差），1 遍就够，**实测全绿**。
 | `agent/verify_direct_unchanged.py` | 证"补计量没改动模型行为"：只比结构化不变量，不比文本 |
 | `agent/token_cost.py` | 两条路径同批计量，**拒答/作答按 `n_calls` 自动分流** |
 | `scripts/check_artifact_sanity.py` | 产物合理性检查（含本节两份报告的**独立判据**） |
+| `scripts/ab_search_vs_chat.py` | A/B 对照 `/search` 与 `/chat?use_rerank=False`：字段一致 + 渲染文本逐字节一致 + 省下多少 token |
+| `evalset/report-search-ab.{md,json}` | 上面那一次的产物；「恒 0 次调用」「md↔json 同源」「汇总能从明细重算」由 `check_artifact_sanity.py` 校 |
 | `scripts/mutate_check_artifact.py` | 对上一条做变异测试，**14 条** |
 | `scripts/check_token_report.py` | token 报告 ↔ `_token_cost.json` **逐格**对账（pre-push 调它） |
 | `scripts/mutate_check_token.py` | 对上一条做变异测试，**5 条** |
@@ -1726,6 +1746,14 @@ Redis 服务本身、启动顺序（服务必须等 Redis 健康，否则那段�
   而服务其实好好的 —— 那是"防护把自己变成故障"。
 - **422 不计账**（请求体不合法在闸门之前就被 pydantic 挡了，本来也没花钱）；
   **被 429 挡掉的请求也不再记账**（否则被挡本身会把额度越吃越少，永远回不来）。
+- `/search`（只检索、不生成）与 `/chat` 走**同一道闸门 + 同一处记账**（`service.py::_gated`）：
+  它照样吃 CPU（向量 + BM25 + RRF），所以不能当免费接口。
+  但它**一个模型调用点都没有**，于是它报上来的 token 账是【可证明的 0】（`n_calls=0`）。
+  ★ 这一条顺带修了一处指标口径：**可证明的 0 不再记成 `usage_missing`** ——
+  以前 `total=0` 一律算"账缺口"，那会让每一次 `/search` 都往缺口里灌一笔**假痕**，
+  而假痕一多，真缺口就看不出来了（判据被稀释到不会响，比判据缺失更难发现）。
+  判据是**显式的** `n_calls == 0`；`/chat` 拒答路径那种"没拿到账"（`usage=None`）
+  仍然照旧留痕 —— e2e 的第 ⑥ 条正是在钉它。
 - **进程内存储只对单进程有效**：没给 `REDIS_URL` 时会退回内存实现，
   多 worker / 多副本下每个进程各算各的、配额被放大 N 倍。⇒ 启动日志里会**明确警告**，
   `/health` 里也能看到当前用的是哪种存储 —— 它是"配错了也不报错"的那类问题，必须有个地方能看见。
