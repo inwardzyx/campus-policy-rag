@@ -122,3 +122,31 @@
 - refuse 题：看 `knowledge_hit` 是不是 `false`。是 `false` 算拒对。
 - ★ 本轮**只看这两个检索层指标**，不评"答案写得对不对"——
   当前系统还没做答案级判分，这一点在 README 里是明说的，别假装有。
+
+---
+
+## 附加批次：部分可答（2026-10-16）
+
+上面那套是 **answer / refuse 二分类**。后来发现缺一档：**"半有半无"的题** ——
+底本答得上前半、答不了后半（某个具体值缺）。真实实习 take-home 里就有这一类
+（`answerable / partially answerable / unanswerable`）。
+
+| 产物 | 是什么 |
+|---|---|
+| `_pipeline/build_partial_prompt.py` | 拼"部分可答"批次的出题包（复用同一套盲出题规矩） |
+| `_pipeline/run_partial_blind.py` | 跑出题，原始返回落 `_blind_out/partial.md`，题落 `questions-partial-raw.json` |
+| `_pipeline/verify_partial.py` | **校验每道题的缺口是不是真的不在库里** → `_partial_verify.md` |
+| `_pipeline/run_partial_baseline.py` | 跑基线（真服务 `/chat`）→ `partial-baseline.json` + `_partial_baseline.md` |
+| `questions-partial.json` | **校验后**的题（只有缺口成立的） |
+
+★★ **最重要的教训（这个批次的价值可能不在题本身）**：
+  盲出题人**写了假缺口**。8 道里 5 道它声称"底本没写"，实际原文写着
+  （例：它说"没规定处分是否记入本人档案"，而底本 L1155 明写"归入…本人档案"）。
+  ⇒ 出题人说"没有"，只是**它没找到**，**不等于库里没有**。
+  **不校验就跑基线，会得到一批"系统答对了却被记成错"的假失败。**
+  这条与 `CLAUDE.md` 的「缺失 ≠ 零」同源：别把"没查到"当成"不存在"。
+
+**基线结论（口径要一起引用）**：校验后剩 **3 道**（p1/p3/p7，全是"规程时限"类），
+**3/3 全部是理想行为** —— 答前半 + 明说"资料里没有提到…所以我不知道"，没有硬编。
+⚠️ 但 **n=3 且三道同质**，只能说"系统对**时限类**缺口守规矩"，
+**不能**说"部分可答已经解决了"。完整口径见 `_partial_baseline.md` 末节。
