@@ -105,8 +105,8 @@ cloudflared tunnel --url http://127.0.0.1:8000
    ```
 3. 拉代码 + 配环境变量（**不要把 .env 提交进仓库**）：
    ```bash
-   git clone https://github.com/inwardzyx/rag-customer-service.git
-   cd rag-customer-service
+   git clone https://github.com/inwardzyx/campus-policy-rag.git
+   cd campus-policy-rag
    cp .env.example .env      # 然后编辑：填 DEEPSEEK_API_KEY，压小额度
    ```
 4. 起：

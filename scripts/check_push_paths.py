@@ -8,7 +8,8 @@
 次日 16:14 主干被 `git filter-branch` 重写，这些文件不在当前树里了 ——
 **但 GitHub 上那个提交仍然按 SHA 可达**，而且
 
-    https://github.com/inwardzyx/rag-customer-service/commit/7252a69.patch
+    https://github.com/inwardzyx/campus-policy-rag/commit/7252a69.patch
+    （★ 这是当时的 URL；仓库 2026-10-19 改名后旧地址仍有跳转）
 
 一个普通 URL 就能把这 5 个文件的**完整正文**吐出来（实测 HTTP 200 / 20788 字节）。
 链接入口就在公开的 Actions 页面上（run #1）。

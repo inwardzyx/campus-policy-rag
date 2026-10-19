@@ -1,7 +1,8 @@
 # 校园政策问答：一个不会瞎说的 RAG 服务
 
->仓库名是早期版本留下的（`rag-customer-service`），那时做的是客服知识库。
-> 项目后来换成了校园政策场景，**仓库名没跟着改**——内容以本README 为准。
+> 仓库名 2026-10-19 从 `rag-customer-service` 改成了 `campus-policy-rag`
+> （早期版本做的是客服知识库，后来换成校园政策场景，名字直到这天跟上）。
+> 旧地址会**自动跳转**到新地址；内容以本 README 为准。
 
 ![10 秒实录：先问一个库里有的（带出处作答 +「精排 10 分」），再问一个库里没有的（当场拒答"我不编"）](docs/images/demo.gif)
 
@@ -961,7 +962,7 @@ bge-small-zh-v1.5（512 维中文 embedding）· FastAPI · uvicorn · jieba · 
 ## 项目结构
 
 ```
-rag-customer-service/
+campus-policy-rag/
 ├── service.py                   # HTTP 服务 + 聊天网页（主交付物）
 ├── env_compat.py                # 环境兼容层（mmh3 的纯 Python 兜底）
 ├── requirements.txt
