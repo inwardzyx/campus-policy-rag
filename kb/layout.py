@@ -69,7 +69,13 @@ class DoclingBackend:
             doc = getattr(result, "document", result)
             md = doc.export_to_markdown()
         except Exception as exc:
-            raise BackendUnavailable(f"Docling 解析失败：{exc}") from exc
+            detail = str(exc)
+            if "DLL load failed" in detail or "_pava_pybind" in detail:
+                detail += (
+                    "；这是 Windows 应用控制策略拦截了 Docling 的 .pyd（不是代码问题）。"
+                    "请改在 Docker/WSL 里跑 Docling，或先用文本层 PDF。"
+                )
+            raise BackendUnavailable(f"Docling 解析失败：{detail}") from exc
         if not str(md).strip():
             raise BackendUnavailable("Docling 返回空 Markdown")
         return str(md)

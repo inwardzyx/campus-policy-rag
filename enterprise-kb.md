@@ -225,11 +225,17 @@ PDF_BACKEND=auto
 - 后端没装/输出为空 → 422，不静默返回空文本；
 - 两个后端都很重（模型/显存），不建议塞进默认安装；需要时再装。
 
+**本机实测（2026-10-23）**：Docling `2.142.1` 已装，但 `PDF_BACKEND=docling`
+在加载布局模型时报 `_pava_pybind` **DLL load failed —— 应用程序控制策略已阻止此文件**。
+这是 Windows 应用控制策略（WDAC）拦了 `.pyd`，**不是代码问题**。
+现成可走的路：在 **Docker/WSL** 里跑 Docling（Linux 不受该策略限制），
+再把输出 Markdown 喂回 `kb.store`；在本机直接 import Docling 走不通。
+
 **边界**：扫描件/双栏/表格版式靠后端，不在仓库里手写 OCR/版面算法。
 
 ## 下一步（按优先级）
 
-1. **装一个后端并跑真实扫描件**：`pip install docling` 或按 MinerU 官方安装，设 `PDF_BACKEND` 后上传一份 scanned PDF 验证；
+1. **Docker/WSL 跑 Docling**：本机 WDAC 拦了 `_pava_pybind`；容器里跑通后，把 Markdown 作为 `Source` 喂进来；
 2. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
 3. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
 

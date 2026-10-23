@@ -284,13 +284,19 @@ def _read_pdf(data: bytes) -> str:
     except ParseError as orig:
         from kb.layout import BackendUnavailable, select_backend
 
+        failures: list[str] = []
         for name in ("docling", "mineru"):
             try:
                 be = select_backend(name)
-                if be.available():
-                    return _layout_pdf(data, name)
-            except BackendUnavailable:
-                continue
+                if not be.available():
+                    continue
+                return _layout_pdf(data, name)
+            except (BackendUnavailable, ParseError) as exc:
+                # 装了但跑不起来（例如 Windows 应用控制策略拦了 .pyd）也要继续试下一个，
+                # 最后把真实原因一起报出去 —— 不要用一个后端的失败掩盖原始“无文本”。
+                failures.append(f"{name}: {exc}")
+        if failures:
+            raise ParseError(f"{orig} 后端尝试均失败：{'；'.join(failures)}") from orig
         raise ParseError(
             f"{orig} 当前也没装 Docling/MinerU；装一个或先把扫描件转成 md 再上传。"
         ) from orig
