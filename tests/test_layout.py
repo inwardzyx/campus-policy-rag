@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from kb.layout import BackendUnavailable, DoclingBackend, MinerUBackend, select_backend
+from kb.layout import (
+    BackendUnavailable,
+    DoclingBackend,
+    DoclingDockerBackend,
+    MinerUBackend,
+    select_backend,
+)
 
 
 class _Doc:
@@ -42,6 +48,47 @@ def test_mineru_adapter_reads_output_markdown(tmp_path):
     be = MinerUBackend(cmd="fake-mineru", runner=runner)
     md = be.to_markdown(tmp_path / "x.pdf")
     assert "## OCR 标题" in md
+
+
+def test_docling_docker_adapter_runs_image_and_reads_md(tmp_path):
+    calls = []
+
+    def runner(args):
+        calls.append(args)
+        for i, a in enumerate(args):
+            if a == "-v" and args[i + 1].endswith(":/io/out"):
+                out = Path(args[i + 1].rsplit(":", 1)[0])
+                (out / "doc.md").write_text("## Docker OCR\n\n内容。", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"fake")
+    be = DoclingDockerBackend(cmd="docker", image="docling-runner:test",
+                              cache_volume="docling-models", runner=runner)
+    md = be.to_markdown(pdf)
+    assert "## Docker OCR" in md
+    argv = calls[0]
+    assert "docling-runner:test" in argv
+    assert "/io/in/doc.pdf" in argv and "/io/out/doc.md" in argv
+    assert "docling-models:/root/.cache" in argv
+
+
+def test_docling_docker_timeout_kills_container(tmp_path):
+    killed = []
+
+    def runner(args):
+        if len(args) > 1 and args[1] == "kill":
+            killed.append(args[2])
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        raise subprocess.TimeoutExpired(args, 1)
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"fake")
+    be = DoclingDockerBackend(cmd="docker", image="img", timeout=1, runner=runner)
+    with pytest.raises(BackendUnavailable) as exc:
+        be.to_markdown(pdf)
+    assert "超时" in str(exc.value)
+    assert killed and killed[0].startswith("docling-")
 
 
 def test_mineru_nonzero_exit_raises(tmp_path):

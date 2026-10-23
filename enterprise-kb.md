@@ -204,38 +204,60 @@ curl.exe --data-binary "@制度.pdf"  "http://127.0.0.1:8000/kb/demo/documents?f
 
 适配器：[`kb/layout.py`](kb/layout.py)。**不自研 OCR**，只调用本地已安装的后端。
 
-| 后端 | 安装 | 用法 |
+| 后端 | 形态 | 用法 |
 |---|---|---|
-| Docling | `python -m pip install docling` | `PDF_BACKEND=docling` |
-| MinerU | 按官方安装，确认 `mineru` 命令可用 | `PDF_BACKEND=mineru`，或设 `MINERU_CMD`/`MINERU_ARGS` |
+| Docling（推荐） | **Docker 容器**，`Dockerfile.docling` | `PDF_BACKEND=docling` |
+| Docling（本机进程内） | 仅无 WDAC 的机器/测试 | `PDF_BACKEND=docling-local` |
+| MinerU | 外部命令 | `PDF_BACKEND=mineru`，或设 `MINERU_CMD`/`MINERU_ARGS` |
 
 ```bash
-# 默认：先 pypdf；失败再试已安装的 Docling/MinerU
+# 构建 Docling 镜像（在仓库根；国内建议用镜像源 base）
+docker build -f Dockerfile.docling \
+  --build-arg BASE_IMAGE=docker.1panel.live/library/python:3.11-slim \
+  -t docling-runner:2.142.1 .
+
+# 默认：先 pypdf；失败再试 Docling/MinerU
 PDF_BACKEND=auto
-# 强制走某个后端
+# 强制走 Docker Docling
 # PDF_BACKEND=docling
-# PDF_BACKEND=mineru
-# MINERU_CMD=mineru
-# MINERU_ARGS=-p {input} -o {out}
-# MINERU_TIMEOUT=300
+# DOCLING_CMD=docker
+# DOCLING_IMAGE=docling-runner:2.142.1
+# DOCLING_TIMEOUT=300
+# DOCLING_CACHE_VOLUME=docling-models
 ```
 
-- Docling 产出 Markdown（`export_to_markdown()`），标题会被 `chunk_document` 按 `##` 切块；
-- MinerU 用列表参数 + 超时，不走 shell；读取输出目录下最大的 `.md`；
-- 后端没装/输出为空 → 422，不静默返回空文本；
-- 两个后端都很重（模型/显存），不建议塞进默认安装；需要时再装。
+- `DoclingDockerBackend` 一次性 `docker run --rm`：输入/输出各挂临时目录，输入只读；
+- 模型缓存放 named volume `docling-models:/root/.cache`，避免每次重下；
+- 超时先 terminate，再 `docker kill <唯一 name>`，防孤儿容器；
+- 容器入口是 `docker/docling_worker.py`（`DocumentConverter` + `do_ocr=True`），不依赖易变的 CLI 旗标；
+- 输出 Markdown 的 `##` 标题会被 `chunk_document` 按标题切块；
+- 镜像不存在/超时/空输出 → 422，不静默返回空文本。
 
-**本机实测（2026-10-23）**：Docling `2.142.1` 已装，但 `PDF_BACKEND=docling`
-在加载布局模型时报 `_pava_pybind` **DLL load failed —— 应用程序控制策略已阻止此文件**。
-这是 Windows 应用控制策略（WDAC）拦了 `.pyd`，**不是代码问题**。
-现成可走的路：在 **Docker/WSL** 里跑 Docling（Linux 不受该策略限制），
-再把输出 Markdown 喂回 `kb.store`；在本机直接 import Docling 走不通。
+**已实测（2026-10-23）**：
 
-**边界**：扫描件/双栏/表格版式靠后端，不在仓库里手写 OCR/版面算法。
+| 项 | 结果 |
+|---|---|
+| 镜像 | `docling-runner:2.142.1`，**2.86 GB**（CPU-only torch） |
+| 文本 PDF | Docling 返回 28 字符 |
+| 图片版 PDF（pypdf 抽 0 字） | Docling OCR 返回 85 字符：`## SCAN N TEST 2 2026`、`Reimbursement within 30 days...` |
+| store 上传 | `upload → load_chunks` 成功，1 chunk，`last_errors=[]` |
+
+容器内访问 HF 需要两个环境变量（适配器已默认传）：
+
+```bash
+HF_ENDPOINT=https://hf-mirror.com
+HF_HUB_DISABLE_XET=1     # hf-mirror 的 xet CAS 会 401
+```
+
+**本机为什么不用进程内 Docling**：Docling `2.142.1` 已装，但加载布局模型时报
+`_pava_pybind` **DLL load failed —— 应用程序控制策略已阻止此文件**（WDAC 拦 `.pyd`）。
+容器内是 Linux `.so`，不受该策略影响；`docling-local` 仅留给没有 WDAC 的机器。
+
+**边界**：扫描件/双栏/表格版式靠后端，不在仓库里手写 OCR/版面算法；OCR 会有字符级误差（实测 `SCAN TEST` 被识成 `SCAN N TEST 2`），关键字段要人工抽检。
 
 ## 下一步（按优先级）
 
-1. **Docker/WSL 跑 Docling**：本机 WDAC 拦了 `_pava_pybind`；容器里跑通后，把 Markdown 作为 `Source` 喂进来；
+1. **真实语料验证**：拿你们自己的 scanned PDF/双栏 PDF 跑 `PDF_BACKEND=docling`，检查标题/表格/关键数字的 OCR 质量；
 2. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
 3. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
 

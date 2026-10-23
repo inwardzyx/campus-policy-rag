@@ -1,0 +1,38 @@
+# Docling 容器：只做 PDF -> Markdown，入口是 docker/docling_worker.py
+#
+# 构建（在仓库根）：
+#   docker build -f Dockerfile.docling -t docling-runner:2.142.1 .
+#
+# 可选：把模型预下载进镜像（构建更慢、镜像更大，但运行期不联网）
+#   docker build -f Dockerfile.docling --build-arg PRELOAD_MODELS=1 -t docling-runner:2.142.1 .
+#
+# 运行由 kb/layout.py::DoclingDockerBackend 负责；模型缓存挂 named volume（docling-models）。
+
+ARG BASE_IMAGE=python:3.11-slim
+FROM ${BASE_IMAGE}
+
+ARG DOCLING_VERSION=2.142.1
+ARG PRELOAD_MODELS=0
+
+# OpenCV/pypdfium 的系统库；缺了通常运行期才报
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 国内网络用镜像源；要换回官方源就改这一行
+# ★ 先装 CPU-only torch/torchvision：PyPI 的 torch 会拖 nvidia-* CUDA 包（多 GB），
+#   而我们只跑 OCR/版面，不需要 GPU。
+RUN pip install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cpu \
+      "torch==2.14.1" "torchvision==0.29.1"
+
+RUN pip install --no-cache-dir \
+      -i https://pypi.tuna.tsinghua.edu.cn/simple \
+      "docling==${DOCLING_VERSION}"
+
+# 默认不预下载（构建快）；需要离线/稳定首跑时用 --build-arg PRELOAD_MODELS=1
+RUN if [ "$PRELOAD_MODELS" = "1" ]; then docling-tools models download; fi
+
+COPY docker/docling_worker.py /app/docling_worker.py
+WORKDIR /io
+ENTRYPOINT ["python", "/app/docling_worker.py"]

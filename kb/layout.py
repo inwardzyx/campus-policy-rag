@@ -25,8 +25,27 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Callable, Protocol
+
+
+def _resolve_cmd(cmd: str) -> str:
+    """Windows 下 Docker 常不在 PATH 里；显式找 Docker Desktop 的 bin。"""
+    found = shutil.which(cmd)
+    if found:
+        return found
+    if os.name == "nt":
+        candidates = [
+            Path(os.environ.get("ProgramFiles", r"C:\Program Files")) /
+            "Docker" / "Docker" / "resources" / "bin" / f"{cmd}.exe",
+            Path(os.environ.get("ProgramFiles", r"C:\Program Files")) /
+            "Docker" / "Docker" / "resources" / "bin" / "docker.exe",
+        ]
+        for p in candidates:
+            if p.is_file():
+                return str(p)
+    return cmd
 
 
 class BackendUnavailable(RuntimeError):
@@ -81,6 +100,97 @@ class DoclingBackend:
         return str(md)
 
 
+class DoclingDockerBackend:
+    """在 Docker 容器里跑 Docling —— 绕开 Windows WDAC 对 .pyd 的拦截。
+
+    设计取舍：
+      · 一次性 `docker run --rm`，不常驻；与 MinerU 的外部命令模式一致；
+      · 输入/输出各挂一个临时目录，输入只读；文件名固定为 doc.pdf，
+        避免中文/空格/argv 编码问题；
+      · 超时先 terminate，再 best-effort `docker kill <唯一 name>` ——
+        前台 docker run 被杀不保证容器退出，不能留下孤儿容器。
+    """
+
+    name = "docling"
+
+    def __init__(self, cmd: str | None = None, image: str | None = None,
+                 timeout: int | None = None, runner: Callable | None = None,
+                 cache_volume: str | None = None) -> None:
+        self.cmd = _resolve_cmd(cmd or os.environ.get("DOCLING_CMD", "docker"))
+        self.image = image or os.environ.get("DOCLING_IMAGE", "docling-runner:2.142.1")
+        self.timeout = timeout or int(os.environ.get("DOCLING_TIMEOUT", "300"))
+        self.cache_volume = cache_volume or os.environ.get("DOCLING_CACHE_VOLUME", "docling-models")
+        self._runner = runner
+
+    def available(self) -> bool:
+        if self._runner is not None:
+            return True
+        if shutil.which(self.cmd) is None:
+            return False
+        try:
+            p = subprocess.run([self.cmd, "image", "inspect", self.image],
+                               capture_output=True, timeout=15)
+            return p.returncode == 0
+        except Exception:
+            return False
+
+    def _run(self, args: list[str]) -> subprocess.CompletedProcess:
+        if self._runner is not None:
+            return self._runner(args)
+        try:
+            return subprocess.run(args, capture_output=True, timeout=self.timeout, check=False)
+        except FileNotFoundError as exc:
+            raise BackendUnavailable(f"找不到 Docker 命令 {self.cmd!r}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise exc
+
+    def _kill(self, name: str) -> None:
+        try:
+            self._run([self.cmd, "kill", name])
+        except Exception:
+            pass
+
+    def to_markdown(self, pdf_path: Path) -> str:
+        with tempfile.TemporaryDirectory(prefix="docling_docker_") as td:
+            in_dir = Path(td) / "in"
+            out_dir = Path(td) / "out"
+            in_dir.mkdir()
+            out_dir.mkdir()
+            # 固定文件名，规避中文/空格在 argv / 容器路径里的编码问题
+            shutil.copyfile(pdf_path, in_dir / "doc.pdf")
+            name = f"docling-{uuid.uuid4().hex[:8]}"
+            args = [
+                self.cmd, "run", "--rm", "--name", name,
+                "-v", f"{in_dir}:/io/in:ro",
+                "-v", f"{out_dir}:/io/out",
+                "-v", f"{self.cache_volume}:/root/.cache",
+                "-e", f"HF_ENDPOINT={os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com')}",
+                "-e", "HF_HUB_DISABLE_XET=1",
+                self.image,
+                "/io/in/doc.pdf", "/io/out/doc.md",
+            ]
+            try:
+                proc = self._run(args)
+            except subprocess.TimeoutExpired as exc:
+                self._kill(name)
+                raise BackendUnavailable(f"docling 容器超时（{self.timeout}s）") from exc
+
+            if proc.returncode != 0:
+                err = (proc.stderr or b"").decode("utf-8", errors="replace")[-800:]
+                raise BackendUnavailable(f"docling 容器退出码 {proc.returncode}：{err}")
+
+            md = out_dir / "doc.md"
+            if not md.is_file():
+                candidates = sorted(out_dir.rglob("*.md"), key=lambda p: p.stat().st_size, reverse=True)
+                if not candidates:
+                    raise BackendUnavailable("docling 容器没有生成 .md（检查镜像内 CLI 参数）")
+                md = candidates[0]
+            text = md.read_text(encoding="utf-8", errors="replace").strip()
+            if not text:
+                raise BackendUnavailable("docling 产出的 Markdown 为空")
+            return text
+
+
 class MinerUBackend:
     name = "mineru"
 
@@ -129,7 +239,13 @@ class MinerUBackend:
 def select_backend(name: str) -> LayoutBackend:
     name = (name or "auto").strip().lower()
     if name == "docling":
+        # 默认走 Docker：Windows WDAC 会拦 Docling 的 .pyd；容器内 Linux .so 不受影响。
+        return DoclingDockerBackend()
+    if name == "docling-local":
+        # 仅在没有 WDAC 的机器 / 测试里用；Windows 本机可能报 _pava_pybind DLL 错误。
         return DoclingBackend()
     if name == "mineru":
         return MinerUBackend()
-    raise BackendUnavailable(f"未知 PDF_BACKEND={name!r}（支持 pypdf/docling/mineru/auto）")
+    raise BackendUnavailable(
+        f"未知 PDF_BACKEND={name!r}（支持 pypdf/docling/docling-local/mineru/auto）"
+    )
