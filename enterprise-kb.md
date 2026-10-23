@@ -146,12 +146,41 @@ $py='D:\Python-project\.venv\Scripts\python.exe'
 
 **明确没做**：节点级权限同步（`acl` 由 `--acl` 统一给，生产要接权限源）；不是实时同步（手动/定时跑）。
 
+## SSO 角色注入（ACL）
+
+`auth.py` 把身份转换成 ACL 角色；**SSO 角色存在时覆盖请求体里的 `acl`**（客户端不能自己提权）。
+
+| `AUTH_MODE` | 行为 | 适用 |
+|---|---|---|
+| `none`（默认） | 不校验；`acl` 可来自请求体 | 本地 demo |
+| `proxy` | 只信网关注入的 `X-Auth-Roles`；必须 `TRUST_PROXY_HEADERS=1` | **生产推荐**：OIDC 在网关做 |
+| `jwt` | 应用自己验 HS256 `Authorization: Bearer`，取 `roles` claim | 无网关的 demo/内网 |
+
+```bash
+# 生产：oauth2-proxy / nginx 验完 OIDC，向下游注入角色头
+AUTH_MODE=proxy
+TRUST_PROXY_HEADERS=1
+AUTH_PROXY_HEADER=X-Auth-Roles
+```
+
+```bash
+# 本地：HS256 JWT
+AUTH_MODE=jwt
+AUTH_JWT_SECRET=dev-secret
+AUTH_ROLES_CLAIM=roles
+# token 由 IdP 签发；测试里用 tests/test_auth.py::make_jwt 生成
+```
+
+- 缺 token / 签名错 / 过期 / issuer/audience 不符 → **401**；
+- `proxy` 模式但没 `TRUST_PROXY_HEADERS=1` → 503（拒绝信任可伪造头）；
+- `/kb` 管理接口仍用 `KB_ADMIN_TOKEN`，与 SSO 分开；
+- 只实现 HS256；生产用 RS256/OIDC 时让网关验签后注入角色，别让应用直接暴露公网。
+
 ## 下一步（按优先级）
 
 1. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
-2. **接 SSO/网关注入角色**：把 `acl` 从请求体改为身份头，当前只是 demo 显式传参；
-3. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
-4. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
+2. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
+3. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
 
 ## 不做
 

@@ -72,6 +72,7 @@ from kb.source import UnsupportedFormat            # noqa: E402  格式不支持
 from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke 质检
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
+import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import HTMLResponse, StreamingResponse   # noqa: E402
 from fastembed import TextEmbedding                 # noqa: E402
@@ -1151,6 +1152,10 @@ LIMITER = limits_mod.build_limiter(os.environ, log=logger)
 #     而且**每次响应里都会带 `session_used`** 说明这次到底有没有用上历史（降级不静默）。
 SESSION_STORE = session_mod.build_session_store(os.environ, log=logger)
 
+# ★ SSO 角色注入：mode=none 保持旧行为；proxy 信任网关注入的角色头；jwt 本地验 HS256。
+#   生产推荐 proxy（OIDC 在网关做），应用只在 TRUST_PROXY_HEADERS=1 时信任 X-Auth-Roles。
+AUTH_CONFIG = auth_mod.AuthConfig.from_env(os.environ)
+
 # ★ 本次进程的身份（2026-10-13 加，起因是盲审 F1）：见 /health 里那段说明。
 BOOT_ID = uuid.uuid4().hex[:12]
 
@@ -1171,6 +1176,13 @@ async def lifespan(app: FastAPI):
         logger.warning("★ 限流用的是【进程内存储】⇒ 只对单进程有效："
                        "uvicorn 多 worker / 多副本下每个进程各算各的，配额会被放大。"
                        "要真限流请设 REDIS_URL（docker compose 里已经配好）。")
+    if AUTH_CONFIG.mode != "none":
+        logger.info("认证：mode=%s（proxy 头=%s，JWT issuer=%s）",
+                    AUTH_CONFIG.mode, AUTH_CONFIG.proxy_header, AUTH_CONFIG.issuer or "-")
+        if AUTH_CONFIG.mode == "proxy" and not AUTH_CONFIG.trust_proxy:
+            logger.warning("★ AUTH_MODE=proxy 但 TRUST_PROXY_HEADERS!=1：所有请求会被 503 拒绝")
+        if AUTH_CONFIG.mode == "jwt" and not AUTH_CONFIG.jwt_secret:
+            logger.warning("★ AUTH_MODE=jwt 但没配 AUTH_JWT_SECRET：所有请求会被 503 拒绝")
     rag.startup()
     logger.info(f"就绪：{len(rag.chunks)} 块入库，拦下 {len(rag.rejected)} 块，"
                 f"耗时 {rag.boot_time:.1f} 秒")
@@ -1345,6 +1357,21 @@ def guard_report():
                          for c, r in rag.rejected]}
 
 
+def _request_roles(request: Request):
+    """从 SSO/网关取角色；AUTH_MODE=none 返回 None（旧行为）。
+
+    ★ 认证失败在这里直接 401/503，**不要**在 handler 里用客户端自填的 acl 兜底 ——
+      那等于把权限交给调用方。
+    """
+    try:
+        ident = auth_mod.authenticate(request.headers, AUTH_CONFIG)
+    except auth_mod.AuthError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    if AUTH_CONFIG.mode != "none" and ident is None:
+        raise HTTPException(status_code=401, detail="未认证")
+    return ident.roles if ident else None
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, request: Request):
     """核心接口：问题进来 → 粗捞 → rerank → 生成 → 带出处返回
@@ -1370,7 +1397,9 @@ def chat(req: ChatRequest, request: Request):
     # ★ 2026-10-14：闸门 + 记账抽进下面的 `_gated()` —— 因为新加的 `/search` 也要走
     #   同一道闸。两条入口共用一份实现，才不会重演 R4 那次的病：新入口自己抄一遍记账、
     #   然后在某个分支上漏掉，"配额"在那条路上就整个不存在。
-    return _gated(request, lambda led: handle_chat(req, led))
+    # ★ 认证在闸门之前：未认证请求不该消耗配额。
+    roles = _request_roles(request)
+    return _gated(request, lambda led: handle_chat(req, led, roles=roles))
 
 
 # ==================================================================
@@ -1408,13 +1437,15 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Queue") -> None:
+def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Queue",
+                       roles=None) -> None:
     """在**专职线程**里跑"检索 → 精排 → 流式生成"，把事件塞进队列。
 
     ★ 这个函数**只负责产事件**，不碰闸门也不碰记账 —— 那两件事由外层的
       `chat_stream()` 与生成器的 `finally` 负责。分开是为了让"记账无条件发生"
       这件事只有一个地方要做（R4 的教训）。
     """
+    effective_acl = roles if roles is not None else req.acl
     # ★★★ 在本线程**显式绑定**这次请求的账本（这条实测踩了三次才定位对）：
     #   async 生成器跑在 **anyio 的任务上下文**里，与 worker 线程拿到的上下文副本
     #   **不是同一份** ⇒ 在生成器里 `set_current_ledger(led)`，worker 里
@@ -1440,9 +1471,9 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
             prior = SESSION_STORE.get_questions(req.session_id)
         search_q, session_used = _rewrite_query_with_history(req.question, prior)
 
-        cands = _search_for_request(req, search_q)
+        cands = _search_for_request(req, search_q, roles=roles)
         # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
-        cands = _final_acl_filter(cands, req.acl, "检索后")
+        cands = _final_acl_filter(cands, effective_acl, "检索后")
         # ★ 写会话放在**检索之后**：检索用的历史已经取到手，现在把本轮追加进去
         #   （下一轮就能看到它）。★ 存的是**问题原文** —— 口径见 session.py 顶部：
         #   "会话级临时存储 + 短 TTL，不进日志、不入持久化库"。
@@ -1454,7 +1485,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         ranked = None
         try:
             ranked = rag.rerank(req.question, cands)
-            ranked = _final_acl_filter(ranked, req.acl, "精排后")
+            ranked = _final_acl_filter(ranked, effective_acl, "精排后")
         except LLMCallError as e:
             logger.warning("（流式）rerank 不可用（%s）", e)
 
@@ -1493,7 +1524,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         out.put(_STREAM_SENTINEL)          # ★ 无论如何都要收尾，否则消费端会一直等
 
 
-async def _chat_stream_events(req: ChatStreamRequest, led: UsageLedger, who: str):
+async def _chat_stream_events(req: ChatStreamRequest, led: UsageLedger, who: str,
+                              roles=None):
     """异步生成器：把 worker 线程产的事件转成 SSE 帧，**并在终结处记账**。
 
     ★ `who` 是**显式传进来的**，不用模块级变量：并发两个流式请求时，
@@ -1503,7 +1535,7 @@ async def _chat_stream_events(req: ChatStreamRequest, led: UsageLedger, who: str
     # ★ 账本的绑定**不在这里做**，在 `_sse_stream_worker` 里做 —— 原因见那段注释：
     #   async 生成器（anyio 任务上下文）与 worker 线程拿到的上下文副本**不是同一份**，
     #   在这里 set 等于白 set（实测：worker 里读到的 ledger 与传入的 `led` 是两个不同对象）。
-    worker = threading.Thread(target=_sse_stream_worker, args=(req, led, out), daemon=True)
+    worker = threading.Thread(target=_sse_stream_worker, args=(req, led, out, roles), daemon=True)
     worker.start()
     try:
         while True:
@@ -1533,6 +1565,7 @@ def chat_stream(req: ChatStreamRequest, request: Request):
     ★ 版本/身份口径与 `/chat` 完全一致（同一道闸、同一个 `client_id`）。
     """
     # ① 闸门在任何字节之前 —— 被挡时还能返干净的 429/503（且这些请求不记账）
+    roles = _request_roles(request)
     who = limits_mod.client_id(
         request.client.host if request.client else None,
         {k.lower(): v for k, v in request.headers.items()},
@@ -1549,7 +1582,7 @@ def chat_stream(req: ChatStreamRequest, request: Request):
     #   这里 set 会**静默无效**（实测过三次）：同步端点跑在 FastAPI 的线程池线程、
     #   异步生成器跑在 anyio 的任务上下文、worker 又是第三个上下文副本。
     #   ⇒ 规矩：**账本在"真正调模型的那个线程"里绑**（见那段长注释）。
-    return StreamingResponse(_chat_stream_events(req, led, who),
+    return StreamingResponse(_chat_stream_events(req, led, who, roles),
                              media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
@@ -1626,7 +1659,8 @@ def search(req: SearchRequest, request: Request):
       接口 —— 它照样吃 CPU（向量 + BM25 + RRF），不设闸就等于开了个免费入口。
       ⚠️ 但它**不烧 token**，所以记账时 token 那部分是可证明的 0（见 `handle_search`）。
     """
-    return _gated(request, lambda led: handle_search(req, led))
+    roles = _request_roles(request)
+    return _gated(request, lambda led: handle_search(req, led, roles=roles))
 
 
 def _kb_admin_guard(request: Request) -> None:
@@ -1760,17 +1794,18 @@ def _rewrite_query_with_history(question: str, prior: list[str]) -> tuple[str, b
         return question, False
 
 
-def _search_for_request(req, query):
+def _search_for_request(req, query, roles=None):
     """按请求决定是否带 namespace / acl。
 
-    ★ 默认（namespace=None、acl=None）只查 docs/ 的 default 语料且只要 public，
+    ★ roles 来自 SSO/网关（非 None 时**覆盖** body 里的 acl）；
+      默认（None）只查 docs/ 的 default 语料且只要 public，
       **不会**串到企业 namespace 的私有块。
     ★ 默认走旧签名 `search(query, k=...)`，
       这样测试里的 _StubRag（只有 search(self,q,k=5)）不用改。
     """
     kwargs = {}
     ns = getattr(req, "namespace", None)
-    acl = getattr(req, "acl", None)
+    acl = roles if roles is not None else getattr(req, "acl", None)
     if ns:
         kwargs["namespace"] = ns
     if acl:
@@ -1780,7 +1815,7 @@ def _search_for_request(req, query):
     return rag.search(query, k=req.top_k)
 
 
-def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
+def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
     """问答主体：**不含 HTTP 那道限流闸门**（HTTP 入口是上面的 `chat()`）。
 
     ★ 为什么把它单独拎出来：闸门要 `Request` 对象（拿客户端身份），
@@ -1791,6 +1826,7 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
       `_gated` 里的 `pipeline(led)` 会把它传进来；直连调用不传 ⇒ 行为与旧版一致。
     """
     _take_usage()                      # ★ 丢弃残留（不是读取）—— 见 chat() 的 docstring
+    effective_acl = roles if roles is not None else req.acl
     t0 = time.time()
     if not rag.ready:
         return {"answer": "服务还在加载模型，请稍等几秒再试", "sources": [],
@@ -1820,9 +1856,9 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
             # 降级不崩：改写挂了就用原问题检索 —— 绝不因此拒答
             logger.warning("查询改写不可用（%s），本次用原问题检索", e)
 
-    cands = _search_for_request(req, search_q)
+    cands = _search_for_request(req, search_q, roles=roles)
     # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
-    cands = _final_acl_filter(cands, req.acl, "检索后")
+    cands = _final_acl_filter(cands, effective_acl, "检索后")
     # ★ 写会话放在**检索之后**：本轮要用的历史已经取到手，现在把本轮追加进去。
     #   ★ 存的是**问题原文** —— 口径见 `session.py` 顶部：
     #     "会话级临时存储 + 短 TTL；不进日志、不入持久化库"。
@@ -1839,7 +1875,7 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
     if use_rerank:
         try:
             ranked = rag.rerank(req.question, cands)
-            ranked = _final_acl_filter(ranked, req.acl, "精排后")      # [(块, 向量分, 精排分, 理由)]
+            ranked = _final_acl_filter(ranked, effective_acl, "精排后")      # [(块, 向量分, 精排分, 理由)]
         except LLMCallError as e:
             # ★ 降级而不是崩：rerank 这一层挂了（超时 / 限流 / 返回了解析不了的 JSON），
             #   就退回粗捞路径继续答 —— 绝不把它伪装成"库里没有"直接拒答。
@@ -1932,7 +1968,7 @@ def _zero_usage() -> dict:
             "cache_read": 0, "n_calls": 0}
 
 
-def handle_search(req: SearchRequest, led: "UsageLedger | None" = None):
+def handle_search(req: SearchRequest, led: "UsageLedger | None" = None, roles=None):
     """只检索、不生成（HTTP 入口是上面的 `search()`，闸门与 `/chat` 共用 `_gated`）。
 
     ★ 与 `/chat?use_rerank=False` 的关系：`sources` / `knowledge_hit` **必然一致**，
@@ -1947,6 +1983,7 @@ def handle_search(req: SearchRequest, led: "UsageLedger | None" = None):
       要改就一起改、并单独留痕 —— 不塞进这次改动里。）
     """
     _take_usage()                      # ★ 丢弃残留（不是读取）—— 理由同 handle_chat 入口
+    effective_acl = roles if roles is not None else req.acl
     # ★ 2026-10-14：把"这条路上一次模型都没调"这件事**写进账本**。
     #   不写的话，`_gated` 从账本取到的是 None ⇒ 记成 `usage_missing` ⇒
     #   每次 /search 都往"token 账有缺口"上抹一笔假痕（`test_guard.py` 当场抓住过）。
@@ -1956,8 +1993,8 @@ def handle_search(req: SearchRequest, led: "UsageLedger | None" = None):
     if not rag.ready:
         return SearchResponse(sources=[], took_ms=0, rerank_used=False,
                               usage=_zero_usage())
-    cands = _search_for_request(req, req.question)
-    cands = _final_acl_filter(cands, req.acl, "检索后")
+    cands = _search_for_request(req, req.question, roles=roles)
+    cands = _final_acl_filter(cands, effective_acl, "检索后")
     if _vec_reject(cands):
         return SearchResponse(sources=[], took_ms=int((time.time() - t0) * 1000),
                               rerank_used=False, knowledge_hit=False,
