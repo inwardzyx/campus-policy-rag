@@ -57,7 +57,7 @@ $env:PYTHONIOENCODING='utf-8'
 D:\Python-project\.venv\Scripts\python.exe -m pytest tests/test_kb_store.py -q
 ```
 
-当前：**9 passed**（上传/元数据/namespace 隔离/软删除/txt+html/路径逃逸/契约/重传更新）；`tests/test_kb_api.py` **3 passed**。
+当前：**9 passed**（上传/元数据/namespace 隔离/软删除/txt+html/路径逃逸/契约/重传更新）；`tests/test_kb_api.py` **4 passed**（含 ACL 过滤）。
 
 ## HTTP 接口（2026-10-23 已接）
 
@@ -73,18 +73,22 @@ D:\Python-project\.venv\Scripts\python.exe -m pytest tests/test_kb_store.py -q
 不传 = 只查 docs/ 的 `default` 语料（**不会**串到企业 namespace）；传了 = 只检索该 namespace。
 企业调用方必须显式传 namespace，否则查不到上传的语料。
 
+ACL：请求可带 `acl: ["hr"]`；`public` 永远可见，其余必须与块 `acl` 有交集。
+**生产必须由 SSO/网关注入角色**，不能信客户端自己填的 `acl`。
+企业上传的 `MIN_LEN` 放宽到 6（FAQ 短条目），docs/ 校规仍用 15。
+
 已验证（手动 + 测试）：
 
 ```text
-upload -> list -> search(namespace=demo) 命中
-search(namespace=other) 拒答
-delete -> search(namespace=demo) 拒答
-tests/test_kb_api.py: 3 passed
+upload(acl=hr) -> search(namespace=demo, acl=hr) 命中
+search(namespace=demo, acl=None/finance)          拒答
+delete -> search(namespace=demo)                  拒答
+tests/test_kb_api.py: 4 passed
 ```
 
 ## 下一步（按优先级）
 
-1. **ACL 过滤**：索引时打标 + 最终入选块复检（两级，防父文档扩展/rerank 带回来）；
+1. **ACL 最终块复检**：检索前已按块过滤；父文档扩展/rerank 合并后还要对最终入选块再验一次，防越权内容被带回来；
 2. **飞书 wiki 连接器**：`wiki/v2/spaces/get_node` 树遍历 + docx 正文 + 权限跳过；
 3. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
 4. **评测随语料走**：每 namespace 一份模板题 + 拒答探针 + 人工抽检。

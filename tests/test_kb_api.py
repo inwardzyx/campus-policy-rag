@@ -47,6 +47,25 @@ def test_kb_rejects_unsupported_format(kb_client):
     assert r.status_code == 415
 
 
+def test_search_acl_filters_before_rrf():
+    r = svc.RAG()
+    r.chunks = [
+        {"doc": "PUB", "clause": "c", "text": "p", "namespace": "demo", "acl": ["public"]},
+        {"doc": "HR", "clause": "c", "text": "h", "namespace": "demo", "acl": ["hr"]},
+    ]
+    r.bm25 = object()
+    r.route_orders = lambda q: (
+        q,
+        np.array([0.9, 0.8], dtype="float32"),
+        np.array([0, 1]),
+        np.array([0, 1]),
+    )
+
+    assert [c["doc"] for c, _ in r.search("q", namespace="demo")] == ["PUB"]
+    assert [c["doc"] for c, _ in r.search("q", namespace="demo", acl=["hr"])] == ["PUB", "HR"]
+    assert [c["doc"] for c, _ in r.search("q", namespace="demo", acl=["finance"])] == ["PUB"]
+
+
 def test_search_filters_namespace_before_rrf():
     r = svc.RAG()
     r.chunks = [

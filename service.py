@@ -95,6 +95,10 @@ DOCS_DIR = Path(__file__).parent / "docs"
 KB_DATA_DIR = Path(os.environ.get("KB_DATA_ROOT", str(Path(__file__).parent / "kb_data")))
 
 MIN_LEN = 15
+# ★ 企业上传语料用更低的门槛：FAQ 条目常只有 7–12 字（"七天无理由退货。"），
+#   用 docs/ 校规的 15 字门槛会把它们当碎屑全拦掉。上传是管理员动作，不是公开爬虫，
+#   所以放宽到 6 字；其余五道关卡照旧。
+ENTERPRISE_MIN_LEN = 6
 
 # 近似重复关的阈值。★ 0.96 是量出来的，不是拍脑袋（scripts/ 下两个脚本可复现）：
 #
@@ -639,6 +643,21 @@ REWRITE_PROMPT = """把下面这句学生的口语问题，改写成**学校规�
 # ② 全局资源：模型和库只在【服务启动时】加载一次
 #    ★ 这是服务化最重要的一条：绝不能在每个请求里重新加载模型！
 # ==================================================================
+def _acl_allows(chunk_acl, requested) -> bool:
+    """块级 ACL：public 永远可见；其余必须与调用方角色有交集。
+
+    ★ 生产环境 requested 必须来自 SSO/网关注入的身份，不能由客户端自己填；
+      这里的 `acl` 字段只是本地 demo 的显式传参。
+    ★ 空 ACL 视作 public（docs/ 旧语料没有 acl 字段）。
+    """
+    have = {str(x).lower() for x in (chunk_acl or ["public"])}
+    if "public" in have:
+        return True
+    if not requested:
+        return False
+    return bool(have & {str(x).lower() for x in requested})
+
+
 class RAG:
     """把所有重家伙（模型、向量库）装在里面，全局只有一份"""
 
@@ -733,7 +752,7 @@ class RAG:
                 logger.warning("企业语料[%s]解析失败：%s", ns, err)
             if not raw:
                 continue
-            kept, rejected = self._guard(raw)
+            kept, rejected = self._guard(raw, min_len=ENTERPRISE_MIN_LEN)
             for c in kept:
                 c["namespace"] = ns
             out.extend(kept)
@@ -759,8 +778,11 @@ class RAG:
         self.chunks = self._doc_chunks + self.enterprise_chunks
         self._rebuild_index()
 
-    def _guard(self, docs):
+    def _guard(self, docs, min_len=MIN_LEN):
         """六道关卡 + 版本冲突。
+
+        min_len：默认 15（docs/ 校规）；企业上传传 ENTERPRISE_MIN_LEN=6，
+        否则 FAQ 短条目会被关卡①当碎屑全拦掉。
 
         ⚠️ **关卡顺序不再与 experiments/step5_ingest_guard_demo.py 一致**（2026-10-12）：
         废止声明关是本项目后加的，step5 里没有，所以"顺序一致"只对前五道成立。
@@ -799,7 +821,7 @@ class RAG:
         """
         kept, rejected = [], []
         for c in docs:
-            if len(c["text"].strip()) < MIN_LEN:
+            if len(c["text"].strip()) < min_len:
                 rejected.append((c, "太短碎屑"))
             else:
                 kept.append(c)
@@ -957,7 +979,7 @@ class RAG:
         bm25_order = np.argsort(-self.bm25.get_scores(tokens))
         return query, vec_scores, vec_order, bm25_order
 
-    def search(self, query, k=5, namespace=None):
+    def search(self, query, k=5, namespace=None, acl=None):
         """混合检索：向量（看意思）+ BM25（看字面），用 RRF 融合两路的排名
 
         为什么不只用向量？（都是本项目实测过的翻车现场）
@@ -972,6 +994,8 @@ class RAG:
         ★ namespace：None = 只查 docs/ 的 default 语料（**不会**把企业 namespace 串进来）；
           传了则只查该 namespace。先过滤再在过滤后的名次上做 RRF ——
           否则跨租户的块会占掉 rank 名额。
+        ★ acl：None/空 = 只返回 public 块；传了角色则 public + 有交集的块。
+          这是块级 ACL 的**检索前**过滤；父文档扩展/rerank 合并后的最终块复检是下一步。
         """
         if not self.chunks or self.bm25 is None:
             return []
@@ -980,7 +1004,8 @@ class RAG:
 
         target = namespace or "default"
         allowed = {i for i, c in enumerate(self.chunks)
-                   if c.get("namespace", "default") == target}
+                   if c.get("namespace", "default") == target
+                   and _acl_allows(c.get("acl"), acl)}
         if not allowed:
             return []
         vec_order = [i for i in vec_order if i in allowed]
@@ -1163,9 +1188,11 @@ class ChatRequest(BaseModel):
     #     不喂精排、不喂生成 —— 见 session.py 顶部的取舍说明。
     session_id: Optional[str] = Field(None, description="多轮会话标识（不传=单轮）",
                                       max_length=64)
-    # ★ 企业知识库：不传 = 旧行为（全部语料）；传了 = 只检索该 namespace。
+    # ★ 企业知识库：不传 = docs/ 默认语料；传了 = 只检索该 namespace。
     namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
                                      max_length=64)
+    # ★ 角色/部门列表；本地 demo 显式传，生产必须由 SSO/网关注入，不能信客户端。
+    acl: Optional[list[str]] = Field(None, description="调用方角色/部门（生产应由 SSO 注入）")
 
 
 class ChatStreamRequest(BaseModel):
@@ -1187,6 +1214,7 @@ class ChatStreamRequest(BaseModel):
                                       max_length=64)
     namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
                                      max_length=64)
+    acl: Optional[list[str]] = Field(None, description="调用方角色/部门（生产应由 SSO 注入）")
 
 
 class Source(BaseModel):
@@ -1228,6 +1256,7 @@ class SearchRequest(BaseModel):
     top_k: int = Field(5, description="粗捞几条", ge=1, le=10)
     namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
                                      max_length=64)
+    acl: Optional[list[str]] = Field(None, description="调用方角色/部门（生产应由 SSO 注入）")
 
 
 class SearchResponse(BaseModel):
@@ -1693,16 +1722,22 @@ def _rewrite_query_with_history(question: str, prior: list[str]) -> tuple[str, b
 
 
 def _search_for_request(req, query):
-    """按请求决定是否带 namespace。
+    """按请求决定是否带 namespace / acl。
 
-    ★ 默认（namespace=None）只查 docs/ 的 default 语料，**不会**串到企业 namespace；
-      企业调用方必须显式传 namespace。
+    ★ 默认（namespace=None、acl=None）只查 docs/ 的 default 语料且只要 public，
+      **不会**串到企业 namespace 的私有块。
     ★ 默认走旧签名 `search(query, k=...)`，
       这样测试里的 _StubRag（只有 search(self,q,k=5)）不用改。
     """
+    kwargs = {}
     ns = getattr(req, "namespace", None)
+    acl = getattr(req, "acl", None)
     if ns:
-        return rag.search(query, k=req.top_k, namespace=ns)
+        kwargs["namespace"] = ns
+    if acl:
+        kwargs["acl"] = acl
+    if kwargs:
+        return rag.search(query, k=req.top_k, **kwargs)
     return rag.search(query, k=req.top_k)
 
 
