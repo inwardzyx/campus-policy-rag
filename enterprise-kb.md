@@ -176,9 +176,34 @@ AUTH_ROLES_CLAIM=roles
 - `/kb` 管理接口仍用 `KB_ADMIN_TOKEN`，与 SSO 分开；
 - 只实现 HS256；生产用 RS256/OIDC 时让网关验签后注入角色，别让应用直接暴露公网。
 
+## PDF / DOCX 解析（2026-10-23）
+
+| 格式 | 做法 | 依赖 |
+|---|---|---|
+| `.docx` | 标准库 `zipfile` 解 `word/document.xml`，Heading 转 `##`、表格转 `a \| b` | 无（不装 python-docx/lxml） |
+| `.pdf` | `pypdf` 逐页 `extract_text()` | `pypdf==6.19.0` |
+
+行为：
+
+- DOCX 的 `Heading 1/2/3` 会变成 `## 标题`，现有 `chunk_markdown` 直接按标题切块；
+- 表格按行拼成 `单元格 | 单元格`，不丢表格文字；
+- 扫描版/图片版 PDF **没有文本层** → 返回 **422**，提示“先用 OCR/Docling/MinerU 转 md”；
+- PDF 有密码/损坏 → 422，不返回空文本假装成功；
+- 不支持的扩展名 → 415。
+
+```powershell
+# 上传 docx/pdf（raw body）
+curl.exe --data-binary "@制度.docx" "http://127.0.0.1:8000/kb/demo/documents?filename=制度.docx&acl=public"
+curl.exe --data-binary "@制度.pdf"  "http://127.0.0.1:8000/kb/demo/documents?filename=制度.pdf&acl=public"
+```
+
+测试：`tests/test_parsers.py` **5 passed**（DOCX 标题/表格、PDF 文本、扫描件 422、坏 DOCX）。
+
+**边界**：复杂排版/双栏/扫描件不在这里手写 OCR；用 Docling/MinerU 转成 md 再上传。
+
 ## 下一步（按优先级）
 
-1. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
+1. **扫描件/复杂排版**：接 Docling 或 MinerU（OCR + 版面分析），不在仓库里自研 OCR；
 2. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
 3. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
 

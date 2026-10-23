@@ -47,6 +47,12 @@ def test_kb_rejects_unsupported_format(kb_client):
     assert r.status_code == 415
 
 
+def test_kb_rejects_broken_docx_with_422(kb_client):
+    client, _ = kb_client
+    r = client.post("/kb/demo/documents?filename=x.docx", content=b"not a zip")
+    assert r.status_code == 422
+
+
 def test_final_acl_filter_blocks_private_blocks():
     items = [
         ({"doc": "PUB", "clause": "c", "acl": ["public"]}, 0.9),

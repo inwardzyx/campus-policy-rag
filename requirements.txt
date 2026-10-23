@@ -24,6 +24,10 @@ python-dotenv==1.2.3
 jieba==0.42.1
 rank-bm25==0.2.2
 
+# PDF 正文解析（DOCX 用标准库 zip+XML，不需要 python-docx）
+# ★ 扫描版 PDF 没有文本层，pypdf 只会报“没有可提取文本”；需要 OCR/Docling/MinerU。
+pypdf==6.19.0
+
 # embedding 模型加载（bge-small-zh-v1.5，约 92MB，首次启动会下载一次）
 # 注：fastembed 会依赖 mmh3；若本机应用控制策略拦掉 mmh3 的 DLL，
 #     项目里的 env_compat.py 会用纯 Python 版兜底，不影响运行。

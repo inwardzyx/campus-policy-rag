@@ -68,7 +68,7 @@ env_compat.ensure_mmh3()                            # 本机 DLL 被策略拦截
 env_compat.ensure_uuid_utils()                      # 同上，拦的是 uuid_utils（langchain 用它生成 trace id）
 from kb.loader import load_documents                # noqa: E402  知识库从 docs/ 加载，不再写死 RAW_DOCS
 from kb.store import KnowledgeStore                 # noqa: E402  企业语料：namespace + 上传 + 软删除
-from kb.source import UnsupportedFormat            # noqa: E402  格式不支持时给明确 415
+from kb.source import UnsupportedFormat, ParseError     # noqa: E402  格式不支持/解析失败给明确状态码
 from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke 质检
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
@@ -1706,6 +1706,8 @@ async def kb_upload(
                                title=title, version=version, acl=acl_list)
     except UnsupportedFormat as e:
         raise HTTPException(status_code=415, detail=str(e)) from e
+    except ParseError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     rag.reload_enterprise()

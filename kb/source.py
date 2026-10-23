@@ -21,15 +21,22 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import re
+import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable, Protocol
+from xml.etree import ElementTree as ET
 
 
 class UnsupportedFormat(Exception):
     """文件格式暂不支持 —— 报清楚缺什么依赖，别静默返回空文本。"""
+
+
+class ParseError(Exception):
+    """格式支持，但内容解析不出来（扫描版 PDF / 坏 DOCX / 加密文件）。"""
 
 
 @dataclass(frozen=True)
@@ -199,24 +206,99 @@ def _read_pdf(data: bytes) -> str:
             "PDF 解析需要 pypdf：D:\\Python-project\\.venv\\Scripts\\python.exe -m pip install pypdf "
             "（或先用 Docling/MinerU 转成 md）"
         ) from exc
-    import io
 
-    reader = PdfReader(io.BytesIO(data))
-    return "\n\n".join((page.extract_text() or "") for page in reader.pages).strip()
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as exc:
+        raise ParseError(f"PDF 打不开（文件损坏或格式不对）：{exc}") from exc
+    if getattr(reader, "is_encrypted", False):
+        # 空密码能解的加密 PDF 很常见；解不开就明确报错，别返回空文本。
+        try:
+            if not reader.decrypt(""):
+                raise ParseError("PDF 有密码，无法解析")
+        except ParseError:
+            raise
+        except Exception as exc:
+            raise ParseError(f"PDF 解密失败：{exc}") from exc
+
+    pages: list[str] = []
+    for page in reader.pages:
+        try:
+            text = page.extract_text() or ""
+        except Exception:
+            text = ""
+        if text.strip():
+            pages.append(text.strip())
+    if not pages:
+        raise ParseError(
+            "PDF 没有可提取文本（很可能是扫描件/图片版）。"
+            "请先用 OCR/Docling/MinerU 转成 md，再上传。"
+        )
+    return "\n\n".join(pages)
+
+
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _docx_para_text(p) -> str:
+    return "".join(t.text or "" for t in p.iter(f"{_W}t")).strip()
+
+
+def _docx_table_text(tbl) -> str:
+    rows: list[str] = []
+    for tr in tbl.findall(f"{_W}tr"):
+        cells: list[str] = []
+        for tc in tr.findall(f"{_W}tc"):
+            cells.append(" ".join(_docx_para_text(p) for p in tc.findall(f"{_W}p")).strip())
+        if any(cells):
+            rows.append(" | ".join(cells))
+    return "\n".join(rows)
 
 
 def _read_docx(data: bytes) -> str:
-    try:
-        import docx  # type: ignore
-    except ImportError as exc:
-        raise UnsupportedFormat(
-            "DOCX 解析需要 python-docx：D:\\Python-project\\.venv\\Scripts\\python.exe -m pip install python-docx "
-            "（或先用 Docling/MinerU 转成 md）"
-        ) from exc
-    import io
+    """用标准库解析 DOCX（zip + XML），不依赖 python-docx/lxml。
 
-    d = docx.Document(io.BytesIO(data))
-    return "\n\n".join(p.text for p in d.paragraphs if p.text.strip()).strip()
+    ★ 为什么不用 python-docx：它依赖 lxml，本机应用控制策略可能拦 DLL；
+      DOCX 本质是 zip 里的 word/document.xml，标准库足够。
+    ★ 只取正文段落和表格；页眉/页脚/批注不取（企业问答通常不需要）。
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            xml = z.read("word/document.xml")
+    except (zipfile.BadZipFile, KeyError) as exc:
+        raise ParseError(f"DOCX 结构不对（缺 word/document.xml 或不是 zip）：{exc}") from exc
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise ParseError(f"DOCX XML 解析失败：{exc}") from exc
+
+    body = root.find(f".//{_W}body")
+    if body is None:
+        raise ParseError("DOCX 里没有 body")
+
+    blocks: list[str] = []
+    for child in list(body):
+        if child.tag == f"{_W}p":
+            text = _docx_para_text(child)
+            if not text:
+                continue
+            style = child.find(f"{_W}pPr/{_W}pStyle")
+            val = (style.get(f"{_W}val", "") if style is not None else "")
+            # Heading 1/2/3 → ## 让现有 chunk_markdown 能按标题切块
+            if val.lower().startswith("heading") or "标题" in val:
+                blocks.append(f"## {text}")
+            else:
+                blocks.append(text)
+        elif child.tag == f"{_W}tbl":
+            table = _docx_table_text(child)
+            if table.strip():
+                blocks.append(table)
+
+    text = "\n\n".join(blocks).strip()
+    if not text:
+        raise ParseError("DOCX 里没有可提取的正文（可能全是图片/文本框）")
+    return text
 
 
 def extract_text(filename: str, data: bytes) -> tuple[str, str]:
@@ -236,7 +318,8 @@ def extract_text(filename: str, data: bytes) -> tuple[str, str]:
 
 
 def chunk_document(raw: RawDocument) -> list[dict]:
-    if raw.suffix in (".md", ".markdown"):
+    # DOCX 解析器会把 Heading 转成 `## `，所以走 markdown 切块；没有标题就整篇一块。
+    if raw.suffix in (".md", ".markdown", ".docx"):
         return chunk_markdown(raw.text, raw.meta)
     if raw.suffix in (".html", ".htm"):
         return chunk_plain_text(raw.text, raw.meta)
