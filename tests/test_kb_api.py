@@ -47,6 +47,16 @@ def test_kb_rejects_unsupported_format(kb_client):
     assert r.status_code == 415
 
 
+def test_final_acl_filter_blocks_private_blocks():
+    items = [
+        ({"doc": "PUB", "clause": "c", "acl": ["public"]}, 0.9),
+        ({"doc": "HR", "clause": "c", "acl": ["hr"]}, 0.8),
+    ]
+    assert len(svc._final_acl_filter(items, None, "test")) == 1
+    assert len(svc._final_acl_filter(items, ["hr"], "test")) == 2
+    assert len(svc._final_acl_filter(items, ["finance"], "test")) == 1
+
+
 def test_search_acl_filters_before_rrf():
     r = svc.RAG()
     r.chunks = [

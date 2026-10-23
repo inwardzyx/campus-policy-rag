@@ -1,0 +1,3 @@
+{"id":"A01","type":"answer","question":"报销时限是多久？","expected_sources":["报销制度","第三条"],"acl":["public"],"note":"示例：替换成你的语料与人工确认条款"}
+{"id":"R01","type":"refuse","question":"图书馆几点关门？","acl":["public"],"note":"示例：库外问题"}
+{"id":"D01","type":"deny","question":"员工薪酬可以互相透露吗？","acl":["finance"],"note":"示例：该条只有 hr 可见"}

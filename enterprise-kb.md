@@ -57,7 +57,7 @@ $env:PYTHONIOENCODING='utf-8'
 D:\Python-project\.venv\Scripts\python.exe -m pytest tests/test_kb_store.py -q
 ```
 
-当前：**9 passed**（上传/元数据/namespace 隔离/软删除/txt+html/路径逃逸/契约/重传更新）；`tests/test_kb_api.py` **4 passed**（含 ACL 过滤）；`tests/test_kb_eval.py` **2 passed**（smoke 质检）。
+当前：**9 passed**（上传/元数据/namespace 隔离/软删除/txt+html/路径逃逸/契约/重传更新）；`tests/test_kb_api.py` **5 passed**（含 ACL 过滤与最终复检）；`tests/test_kb_eval.py` **2 passed**（smoke）；`tests/test_eval_runner.py` **5 passed**（独立集打分器）。
 
 ## HTTP 接口（2026-10-23 已接）
 
@@ -77,6 +77,8 @@ D:\Python-project\.venv\Scripts\python.exe -m pytest tests/test_kb_store.py -q
 ACL：请求可带 `acl: ["hr"]`；`public` 永远可见，其余必须与块 `acl` 有交集。
 **生产必须由 SSO/网关注入角色**，不能信客户端自己填的 `acl`。
 企业上传的 `MIN_LEN` 放宽到 6（FAQ 短条目），docs/ 校规仍用 15。
+检索前过滤是第一道；`_final_acl_filter` 在 rerank 之后再做一次“最终入选块复检”，
+防父文档扩展/rerank 合并把未授权块带回上下文。
 
 已验证（手动 + 测试）：
 
@@ -84,15 +86,31 @@ ACL：请求可带 `acl: ["hr"]`；`public` 永远可见，其余必须与块 `a
 upload(acl=hr) -> search(namespace=demo, acl=hr) 命中
 search(namespace=demo, acl=None/finance)          拒答
 delete -> search(namespace=demo)                  拒答
-tests/test_kb_api.py: 4 passed
+tests/test_kb_api.py: 5 passed
 ```
+
+## 独立评测（人工题集，不是 smoke）
+
+- 模板：[`evalset/enterprise_eval_template.md`](evalset/enterprise_eval_template.md)
+- 样例：[`evalset/enterprise_eval_sample.jsonl`](evalset/enterprise_eval_sample.jsonl)
+- 打分器：[`kb/eval_runner.py`](kb/eval_runner.py)（Wilson 95% 区间）
+- 跑法：[`scripts/run_kb_eval.py`](scripts/run_kb_eval.py)
+
+```powershell
+$py='D:\Python-project\.venv\Scripts\python.exe'
+& $py scripts\run_kb_eval.py --url http://127.0.0.1:8000 --namespace demo `
+  --file evalset\enterprise_eval_sample.jsonl --out evalset\report-demo.json
+```
+
+出题纪律：出题人**不看检索代码/结果**；题目来自真实工单/角色走查；冻结后跑，不用它调参。
+`answer` 判“source 命中”，不是“答案完全正确”；后者要人工 rubric。
 
 ## 下一步（按优先级）
 
-1. **ACL 最终块复检**：检索前已按块过滤；父文档扩展/rerank 合并后还要对最终入选块再验一次，防越权内容被带回来；
-2. **飞书 wiki 连接器**：`wiki/v2/spaces/get_node` 树遍历 + docx 正文 + 权限跳过；
-3. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
-4. **独立评测集**：自动质检（self-hit/拒答/ACL）不是独立评测；下一步做每语料模板题 + 人工抽检。
+1. **飞书 wiki 连接器**：`wiki/v2/spaces/get_node` 树遍历 + docx 正文 + 权限跳过；
+2. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
+3. **接 SSO/网关注入角色**：把 `acl` 从请求体改为身份头，当前只是 demo 显式传参；
+4. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑。
 
 ## 不做
 

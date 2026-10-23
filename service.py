@@ -659,6 +659,23 @@ def _acl_allows(chunk_acl, requested) -> bool:
     return bool(have & {str(x).lower() for x in requested})
 
 
+def _final_acl_filter(items, acl, where: str):
+    """最终入选块复检：防父文档扩展 / rerank 合并把未授权块带回上下文。
+
+    检索前已经过滤过一遍；这里再验一次是“双道防线”的第二道。
+    items 是 (chunk, ...) 的序列（/search 是二元组，/chat 是四元组）。
+    """
+    kept = []
+    for it in items:
+        chunk = it[0]
+        if _acl_allows(chunk.get("acl"), acl):
+            kept.append(it)
+        else:
+            logger.warning("[%s] ACL 复检丢弃未授权块：%s｜%s",
+                           where, chunk.get("doc"), chunk.get("clause"))
+    return kept
+
+
 class RAG:
     """把所有重家伙（模型、向量库）装在里面，全局只有一份"""
 
@@ -1424,6 +1441,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         search_q, session_used = _rewrite_query_with_history(req.question, prior)
 
         cands = _search_for_request(req, search_q)
+        # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
+        cands = _final_acl_filter(cands, req.acl, "检索后")
         # ★ 写会话放在**检索之后**：检索用的历史已经取到手，现在把本轮追加进去
         #   （下一轮就能看到它）。★ 存的是**问题原文** —— 口径见 session.py 顶部：
         #   "会话级临时存储 + 短 TTL，不进日志、不入持久化库"。
@@ -1435,6 +1454,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         ranked = None
         try:
             ranked = rag.rerank(req.question, cands)
+            ranked = _final_acl_filter(ranked, req.acl, "精排后")
         except LLMCallError as e:
             logger.warning("（流式）rerank 不可用（%s）", e)
 
@@ -1801,6 +1821,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
             logger.warning("查询改写不可用（%s），本次用原问题检索", e)
 
     cands = _search_for_request(req, search_q)
+    # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
+    cands = _final_acl_filter(cands, req.acl, "检索后")
     # ★ 写会话放在**检索之后**：本轮要用的历史已经取到手，现在把本轮追加进去。
     #   ★ 存的是**问题原文** —— 口径见 `session.py` 顶部：
     #     "会话级临时存储 + 短 TTL；不进日志、不入持久化库"。
@@ -1816,7 +1838,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
     ranked = None
     if use_rerank:
         try:
-            ranked = rag.rerank(req.question, cands)      # [(块, 向量分, 精排分, 理由)]
+            ranked = rag.rerank(req.question, cands)
+            ranked = _final_acl_filter(ranked, req.acl, "精排后")      # [(块, 向量分, 精排分, 理由)]
         except LLMCallError as e:
             # ★ 降级而不是崩：rerank 这一层挂了（超时 / 限流 / 返回了解析不了的 JSON），
             #   就退回粗捞路径继续答 —— 绝不把它伪装成"库里没有"直接拒答。
@@ -1934,6 +1957,7 @@ def handle_search(req: SearchRequest, led: "UsageLedger | None" = None):
         return SearchResponse(sources=[], took_ms=0, rerank_used=False,
                               usage=_zero_usage())
     cands = _search_for_request(req, req.question)
+    cands = _final_acl_filter(cands, req.acl, "检索后")
     if _vec_reject(cands):
         return SearchResponse(sources=[], took_ms=int((time.time() - t0) * 1000),
                               rerank_used=False, knowledge_hit=False,
