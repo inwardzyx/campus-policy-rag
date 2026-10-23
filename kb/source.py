@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import re
+import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -198,7 +200,8 @@ def html_to_text(raw: str) -> str:
     return text.strip()
 
 
-def _read_pdf(data: bytes) -> str:
+def _read_pdf_pypdf(data: bytes) -> str:
+    """pypdf 轻量提取：只适合有文本层的 PDF。"""
     try:
         from pypdf import PdfReader  # type: ignore
     except ImportError as exc:
@@ -232,9 +235,65 @@ def _read_pdf(data: bytes) -> str:
     if not pages:
         raise ParseError(
             "PDF 没有可提取文本（很可能是扫描件/图片版）。"
-            "请先用 OCR/Docling/MinerU 转成 md，再上传。"
+            "可设 PDF_BACKEND=docling 或 mineru 走版面解析。"
         )
     return "\n\n".join(pages)
+
+
+def _layout_pdf(data: bytes, backend_name: str) -> str:
+    """把 PDF 交给 Docling/MinerU 转 Markdown（临时文件只活在这一刻）。"""
+    from kb.layout import BackendUnavailable, select_backend
+
+    backend = select_backend(backend_name)
+    if not backend.available():
+        hint = {
+            "docling": "D:\\Python-project\\.venv\\Scripts\\python.exe -m pip install docling",
+            "mineru": "安装 MinerU 并设 MINERU_CMD/MINERU_ARGS（见 docs）",
+        }.get(backend_name, "")
+        raise ParseError(f"{backend_name} 后端未安装/不可用。{hint}")
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(data)
+        path = Path(f.name)
+    try:
+        return backend.to_markdown(path)
+    except BackendUnavailable as exc:
+        raise ParseError(str(exc)) from exc
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _read_pdf(data: bytes) -> str:
+    """PDF 入口：按 PDF_BACKEND 选 pypdf / Docling / MinerU。
+
+    auto（默认）：先 pypdf；失败（扫描件/无文本层）再依次试已安装的 Docling、MinerU。
+    """
+    backend = (os.environ.get("PDF_BACKEND") or "auto").strip().lower()
+    if backend == "pypdf":
+        return _read_pdf_pypdf(data)
+    if backend in ("docling", "mineru"):
+        return _layout_pdf(data, backend)
+    if backend != "auto":
+        raise ParseError(f"未知 PDF_BACKEND={backend!r}（支持 pypdf/docling/mineru/auto）")
+
+    try:
+        return _read_pdf_pypdf(data)
+    except ParseError as orig:
+        from kb.layout import BackendUnavailable, select_backend
+
+        for name in ("docling", "mineru"):
+            try:
+                be = select_backend(name)
+                if be.available():
+                    return _layout_pdf(data, name)
+            except BackendUnavailable:
+                continue
+        raise ParseError(
+            f"{orig} 当前也没装 Docling/MinerU；装一个或先把扫描件转成 md 再上传。"
+        ) from orig
 
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -318,8 +377,10 @@ def extract_text(filename: str, data: bytes) -> tuple[str, str]:
 
 
 def chunk_document(raw: RawDocument) -> list[dict]:
-    # DOCX 解析器会把 Heading 转成 `## `，所以走 markdown 切块；没有标题就整篇一块。
+    # DOCX 解析器会把 Heading 转成 `## `；Docling/MinerU 产出的 PDF Markdown 也有标题。
     if raw.suffix in (".md", ".markdown", ".docx"):
+        return chunk_markdown(raw.text, raw.meta)
+    if raw.suffix == ".pdf" and re.search(r"(?m)^#{1,3}\s+", raw.text):
         return chunk_markdown(raw.text, raw.meta)
     if raw.suffix in (".html", ".htm"):
         return chunk_plain_text(raw.text, raw.meta)

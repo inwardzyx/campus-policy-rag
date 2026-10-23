@@ -181,13 +181,14 @@ AUTH_ROLES_CLAIM=roles
 | 格式 | 做法 | 依赖 |
 |---|---|---|
 | `.docx` | 标准库 `zipfile` 解 `word/document.xml`，Heading 转 `##`、表格转 `a \| b` | 无（不装 python-docx/lxml） |
-| `.pdf` | `pypdf` 逐页 `extract_text()` | `pypdf==6.19.0` |
+| `.pdf` | 默认 `pypdf` 逐页 `extract_text()`；扫描件/复杂排版可切 Docling / MinerU | `pypdf==6.19.0`；后两者可选 |
 
 行为：
 
 - DOCX 的 `Heading 1/2/3` 会变成 `## 标题`，现有 `chunk_markdown` 直接按标题切块；
 - 表格按行拼成 `单元格 | 单元格`，不丢表格文字；
-- 扫描版/图片版 PDF **没有文本层** → 返回 **422**，提示“先用 OCR/Docling/MinerU 转 md”；
+- 扫描版/图片版 PDF **没有文本层** → 默认 `PDF_BACKEND=auto` 会尝试已安装的 Docling/MinerU；
+  都没装则 422，提示安装或先转 md；
 - PDF 有密码/损坏 → 422，不返回空文本假装成功；
 - 不支持的扩展名 → 415。
 
@@ -197,13 +198,38 @@ curl.exe --data-binary "@制度.docx" "http://127.0.0.1:8000/kb/demo/documents?f
 curl.exe --data-binary "@制度.pdf"  "http://127.0.0.1:8000/kb/demo/documents?filename=制度.pdf&acl=public"
 ```
 
-测试：`tests/test_parsers.py` **5 passed**（DOCX 标题/表格、PDF 文本、扫描件 422、坏 DOCX）。
+测试：`tests/test_parsers.py` **11 passed**（DOCX 标题/表格、PDF 文本、扫描件 422、坏 DOCX、auto 回退、Markdown 切块）。
 
-**边界**：复杂排版/双栏/扫描件不在这里手写 OCR；用 Docling/MinerU 转成 md 再上传。
+## 复杂 PDF / 扫描件：Docling / MinerU（2026-10-23）
+
+适配器：[`kb/layout.py`](kb/layout.py)。**不自研 OCR**，只调用本地已安装的后端。
+
+| 后端 | 安装 | 用法 |
+|---|---|---|
+| Docling | `python -m pip install docling` | `PDF_BACKEND=docling` |
+| MinerU | 按官方安装，确认 `mineru` 命令可用 | `PDF_BACKEND=mineru`，或设 `MINERU_CMD`/`MINERU_ARGS` |
+
+```bash
+# 默认：先 pypdf；失败再试已安装的 Docling/MinerU
+PDF_BACKEND=auto
+# 强制走某个后端
+# PDF_BACKEND=docling
+# PDF_BACKEND=mineru
+# MINERU_CMD=mineru
+# MINERU_ARGS=-p {input} -o {out}
+# MINERU_TIMEOUT=300
+```
+
+- Docling 产出 Markdown（`export_to_markdown()`），标题会被 `chunk_document` 按 `##` 切块；
+- MinerU 用列表参数 + 超时，不走 shell；读取输出目录下最大的 `.md`；
+- 后端没装/输出为空 → 422，不静默返回空文本；
+- 两个后端都很重（模型/显存），不建议塞进默认安装；需要时再装。
+
+**边界**：扫描件/双栏/表格版式靠后端，不在仓库里手写 OCR/版面算法。
 
 ## 下一步（按优先级）
 
-1. **扫描件/复杂排版**：接 Docling 或 MinerU（OCR + 版面分析），不在仓库里自研 OCR；
+1. **装一个后端并跑真实扫描件**：`pip install docling` 或按 MinerU 官方安装，设 `PDF_BACKEND` 后上传一份 scanned PDF 验证；
 2. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
 3. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
 

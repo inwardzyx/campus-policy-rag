@@ -99,6 +99,41 @@ def test_scanned_pdf_raises_parse_error():
     assert "没有可提取文本" in str(exc.value)
 
 
+def test_pdf_auto_falls_back_to_layout(monkeypatch):
+    import kb.layout
+    import kb.source as source
+
+    def no_text(_data):
+        raise ParseError("PDF 没有可提取文本")
+
+    class FakeBackend:
+        name = "docling"
+
+        def available(self):
+            return True
+
+        def to_markdown(self, path):
+            return "## OCR 标题\n\n扫描件识别出的正文。"
+
+    monkeypatch.setattr(source, "_read_pdf_pypdf", no_text)
+    monkeypatch.setattr(kb.layout, "select_backend", lambda name: FakeBackend())
+    monkeypatch.setenv("PDF_BACKEND", "auto")
+
+    text = source._read_pdf(b"%PDF-1.4 dummy")
+    assert "## OCR 标题" in text
+
+
+def test_pdf_layout_markdown_is_chunked_by_heading():
+    from kb.source import DocumentMeta, RawDocument, chunk_document
+
+    meta = DocumentMeta(namespace="demo", doc_id="d1", title="扫描件",
+                        source="upload:x.pdf", version="1", updated_at="")
+    raw = RawDocument(meta, "## 第三条 报销时限\n\n30 日内提交。", ".pdf")
+    chunks = chunk_document(raw)
+    assert chunks[0]["clause"] == "第三条 报销时限"
+    assert "30 日内提交" in chunks[0]["text"]
+
+
 def test_broken_docx_raises_parse_error():
     with pytest.raises(ParseError):
         extract_text("x.docx", b"not a zip")
