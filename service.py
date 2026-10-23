@@ -67,6 +67,8 @@ import env_compat                                   # noqa: E402  ★ 必须放�
 env_compat.ensure_mmh3()                            # 本机 DLL 被策略拦截时的降级方案，见 env_compat.py
 env_compat.ensure_uuid_utils()                      # 同上，拦的是 uuid_utils（langchain 用它生成 trace id）
 from kb.loader import load_documents                # noqa: E402  知识库从 docs/ 加载，不再写死 RAW_DOCS
+from kb.store import KnowledgeStore                 # noqa: E402  企业语料：namespace + 上传 + 软删除
+from kb.source import UnsupportedFormat            # noqa: E402  格式不支持时给明确 415
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
@@ -89,6 +91,8 @@ logger = logging.getLogger(__name__)
 #    想加文档？往 docs/ 扔一个 .md 就行，不用改代码。
 # ==================================================================
 DOCS_DIR = Path(__file__).parent / "docs"
+# 企业语料上传目录（运行时生成，已 gitignore）。可用 KB_DATA_ROOT 覆盖。
+KB_DATA_DIR = Path(os.environ.get("KB_DATA_ROOT", str(Path(__file__).parent / "kb_data")))
 
 MIN_LEN = 15
 
@@ -655,6 +659,10 @@ class RAG:
         #   ⇒ 先把它们初始化成空，让 /health 在启动期真的能回答。
         self.chunks: list[dict] = []
         self.rejected: list[tuple] = []
+        # 企业语料：按 namespace 落盘；docs/ 的固定语料作为 default namespace。
+        self.store = KnowledgeStore(KB_DATA_DIR)
+        self._doc_chunks: list[dict] = []
+        self.enterprise_chunks: list[dict] = []
 
     @property
     def llm(self):
@@ -698,15 +706,58 @@ class RAG:
             logger.warning("没有从 docs/ 加载到任何文档！检查 DOCS_DIR 路径与文件元信息。")
 
         kept, rejected = self._guard(raw_docs)
-        self.chunks = kept
-        self.rejected = rejected
-        self.vectors = np.array(
-            list(self.model.passage_embed([c["text"] for c in kept])), dtype="float32")
-        # BM25 索引（字面检索）：jieba 分词后建索引，和向量检索互补
-        #   向量看"意思像不像"，BM25 看"字面有没有出现" —— 两者都会单用时翻车，见 search() 注释
-        self.bm25 = BM25Okapi([list(jieba.cut_for_search(c["text"])) for c in kept])
+        self._doc_chunks = kept
+        for c in self._doc_chunks:
+            c.setdefault("namespace", "default")
+        self.rejected = list(rejected)
+        self.enterprise_chunks = self._load_enterprise()
+        self.chunks = self._doc_chunks + self.enterprise_chunks
+        self._rebuild_index()
         self.ready = True
         self.boot_time = time.time() - t0
+
+    def _load_enterprise(self) -> list[dict]:
+        """加载 kb_data/ 下所有 namespace 的语料，并复用同一套 _guard。
+
+        ★ 每个 namespace 单独过关：不同租户的同名文档不是“新旧版本”，
+          不能被版本冲突关互相挤掉。
+        """
+        out: list[dict] = []
+        if not self.store.root.exists():
+            return out
+        for ns_dir in sorted(p for p in self.store.root.iterdir()
+                             if p.is_dir() and (p / "manifest.json").exists()):
+            ns = ns_dir.name
+            raw = self.store.load_chunks(ns)
+            for err in self.store.last_errors:
+                logger.warning("企业语料[%s]解析失败：%s", ns, err)
+            if not raw:
+                continue
+            kept, rejected = self._guard(raw)
+            for c in kept:
+                c["namespace"] = ns
+            out.extend(kept)
+            for c, why in rejected:
+                self.rejected.append((c, f"[{ns}] {why}"))
+        return out
+
+    def _rebuild_index(self) -> None:
+        """重建向量矩阵与 BM25 —— 上传/删除后必须调用，否则检索还是旧索引。"""
+        if not self.chunks:
+            self.vectors = np.zeros((0, 1), dtype="float32")
+            self.bm25 = None
+            return
+        self.vectors = np.array(
+            list(self.model.passage_embed([c["text"] for c in self.chunks])), dtype="float32")
+        self.bm25 = BM25Okapi([list(jieba.cut_for_search(c["text"])) for c in self.chunks])
+
+    def reload_enterprise(self) -> None:
+        """上传/删除后热更新企业语料（不重启、不重载 embedding 模型）。"""
+        if not self.ready:
+            return
+        self.enterprise_chunks = self._load_enterprise()
+        self.chunks = self._doc_chunks + self.enterprise_chunks
+        self._rebuild_index()
 
     def _guard(self, docs):
         """六道关卡 + 版本冲突。
@@ -906,7 +957,7 @@ class RAG:
         bm25_order = np.argsort(-self.bm25.get_scores(tokens))
         return query, vec_scores, vec_order, bm25_order
 
-    def search(self, query, k=5):
+    def search(self, query, k=5, namespace=None):
         """混合检索：向量（看意思）+ BM25（看字面），用 RRF 融合两路的排名
 
         为什么不只用向量？（都是本项目实测过的翻车现场）
@@ -917,9 +968,23 @@ class RAG:
         ★ RRF（倒数排名融合）：每路的贡献是 1/(60+名次)。
           用【名次】而不是【原始分数】，是因为向量分在 0~1 之间、BM25 分能到十几，
           直接相加的话 BM25 会把向量完全淹没 —— 不同量纲的分数不能相加，这是常见踩坑。
+
+        ★ namespace：None = 只查 docs/ 的 default 语料（**不会**把企业 namespace 串进来）；
+          传了则只查该 namespace。先过滤再在过滤后的名次上做 RRF ——
+          否则跨租户的块会占掉 rank 名额。
         """
+        if not self.chunks or self.bm25 is None:
+            return []
         # 口语归一化 + 两路排名都在 route_orders 里（探针走的是同一个入口）
         _, vec_scores, vec_order, bm25_order = self.route_orders(query)
+
+        target = namespace or "default"
+        allowed = {i for i, c in enumerate(self.chunks)
+                   if c.get("namespace", "default") == target}
+        if not allowed:
+            return []
+        vec_order = [i for i in vec_order if i in allowed]
+        bm25_order = [i for i in bm25_order if i in allowed]
 
         rrf = {}
         for rank, idx in enumerate(vec_order):
@@ -1098,6 +1163,9 @@ class ChatRequest(BaseModel):
     #     不喂精排、不喂生成 —— 见 session.py 顶部的取舍说明。
     session_id: Optional[str] = Field(None, description="多轮会话标识（不传=单轮）",
                                       max_length=64)
+    # ★ 企业知识库：不传 = 旧行为（全部语料）；传了 = 只检索该 namespace。
+    namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
+                                     max_length=64)
 
 
 class ChatStreamRequest(BaseModel):
@@ -1117,6 +1185,8 @@ class ChatStreamRequest(BaseModel):
     # ★ 同 `ChatRequest`：多轮会话标识，默认 None ⇒ 不传就是单轮。
     session_id: Optional[str] = Field(None, description="多轮会话标识（不传=单轮）",
                                       max_length=64)
+    namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
+                                     max_length=64)
 
 
 class Source(BaseModel):
@@ -1156,6 +1226,8 @@ class SearchRequest(BaseModel):
     """
     question: str = Field(..., description="检索什么", min_length=1, max_length=500)
     top_k: int = Field(5, description="粗捞几条", ge=1, le=10)
+    namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
+                                     max_length=64)
 
 
 class SearchResponse(BaseModel):
@@ -1321,7 +1393,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
             prior = SESSION_STORE.get_questions(req.session_id)
         search_q, session_used = _rewrite_query_with_history(req.question, prior)
 
-        cands = rag.search(search_q, k=req.top_k)
+        cands = _search_for_request(req, search_q)
         # ★ 写会话放在**检索之后**：检索用的历史已经取到手，现在把本轮追加进去
         #   （下一轮就能看到它）。★ 存的是**问题原文** —— 口径见 session.py 顶部：
         #   "会话级临时存储 + 短 TTL，不进日志、不入持久化库"。
@@ -1507,6 +1579,76 @@ def search(req: SearchRequest, request: Request):
     return _gated(request, lambda led: handle_search(req, led))
 
 
+def _kb_admin_guard(request: Request) -> None:
+    """语料管理接口的权限闸。
+
+    ★ 默认只允许本机（127.0.0.1/::1/TestClient）；公网部署必须设 KB_ADMIN_TOKEN，
+      否则任何人都能上传/删除你的知识库。
+    """
+    token = os.environ.get("KB_ADMIN_TOKEN")
+    if token:
+        if request.headers.get("x-kb-admin-token") != token:
+            raise HTTPException(status_code=403, detail="缺少或错误的 X-KB-Admin-Token")
+        return
+    host = request.client.host if request.client else ""
+    if host not in ("127.0.0.1", "::1", "testclient"):
+        raise HTTPException(status_code=403, detail="未配置 KB_ADMIN_TOKEN 时只允许本机访问")
+
+
+@app.post("/kb/{namespace}/documents")
+async def kb_upload(
+    namespace: str,
+    request: Request,
+    filename: str,
+    acl: str = "public",
+    version: str | None = None,
+    title: str | None = None,
+):
+    """上传一篇文档（raw body，不是 multipart）。
+
+    用法：
+        curl --data-binary "@faq.md" \
+          "http://127.0.0.1:8000/kb/demo/documents?filename=faq.md&acl=public"
+    """
+    _kb_admin_guard(request)
+    if not rag.ready:
+        raise HTTPException(status_code=503, detail="服务还在加载模型，请稍后再试")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="请求体为空")
+    acl_list = [a.strip() for a in acl.split(",") if a.strip()] or ["public"]
+    try:
+        rec = rag.store.upload(namespace, filename, body,
+                               title=title, version=version, acl=acl_list)
+    except UnsupportedFormat as e:
+        raise HTTPException(status_code=415, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    rag.reload_enterprise()
+    return {
+        "document": rec,
+        "namespace_chunks": sum(1 for c in rag.chunks if c.get("namespace") == namespace),
+    }
+
+
+@app.get("/kb/{namespace}/documents")
+def kb_list(namespace: str, request: Request, include_deleted: bool = False):
+    """列出某知识库的文档（默认不含已删除）。"""
+    _kb_admin_guard(request)
+    rows = rag.store.list_documents(namespace, include_deleted=include_deleted)
+    return {"namespace": namespace, "documents": rows}
+
+
+@app.delete("/kb/{namespace}/documents/{doc_id}")
+def kb_delete(namespace: str, doc_id: str, request: Request):
+    """软删除一篇文档，并热更新检索索引。"""
+    _kb_admin_guard(request)
+    ok = rag.store.delete(namespace, doc_id)
+    if ok:
+        rag.reload_enterprise()
+    return {"deleted": ok, "doc_id": doc_id, "namespace": namespace}
+
+
 def _vec_reject(cands) -> bool:
     """粗捞路径的拒答判据：**全部候选里最高的向量分**低于阈值 ⇒ 库里没有。
 
@@ -1550,6 +1692,20 @@ def _rewrite_query_with_history(question: str, prior: list[str]) -> tuple[str, b
         return question, False
 
 
+def _search_for_request(req, query):
+    """按请求决定是否带 namespace。
+
+    ★ 默认（namespace=None）只查 docs/ 的 default 语料，**不会**串到企业 namespace；
+      企业调用方必须显式传 namespace。
+    ★ 默认走旧签名 `search(query, k=...)`，
+      这样测试里的 _StubRag（只有 search(self,q,k=5)）不用改。
+    """
+    ns = getattr(req, "namespace", None)
+    if ns:
+        return rag.search(query, k=req.top_k, namespace=ns)
+    return rag.search(query, k=req.top_k)
+
+
 def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
     """问答主体：**不含 HTTP 那道限流闸门**（HTTP 入口是上面的 `chat()`）。
 
@@ -1590,7 +1746,7 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None):
             # 降级不崩：改写挂了就用原问题检索 —— 绝不因此拒答
             logger.warning("查询改写不可用（%s），本次用原问题检索", e)
 
-    cands = rag.search(search_q, k=req.top_k)
+    cands = _search_for_request(req, search_q)
     # ★ 写会话放在**检索之后**：本轮要用的历史已经取到手，现在把本轮追加进去。
     #   ★ 存的是**问题原文** —— 口径见 `session.py` 顶部：
     #     "会话级临时存储 + 短 TTL；不进日志、不入持久化库"。
@@ -1723,7 +1879,7 @@ def handle_search(req: SearchRequest, led: "UsageLedger | None" = None):
     if not rag.ready:
         return SearchResponse(sources=[], took_ms=0, rerank_used=False,
                               usage=_zero_usage())
-    cands = rag.search(req.question, k=req.top_k)
+    cands = _search_for_request(req, req.question)
     if _vec_reject(cands):
         return SearchResponse(sources=[], took_ms=int((time.time() - t0) * 1000),
                               rerank_used=False, knowledge_hit=False,

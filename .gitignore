@@ -97,3 +97,6 @@ agent/_tool_split_*.json
 
 # zcode（GLM 盲审 CLI）的会话状态目录 —— 工具产物，会随每次盲审重新生成
 .mimosa/
+
+# 企业语料上传目录（运行时生成，不入库）
+kb_data/
