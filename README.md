@@ -218,11 +218,12 @@ Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 
 ![自动生成的接口文档：/health、/guard-report、/chat 三个端点 + 请求/响应 schema](docs/images/demo-api-docs.png)
 
-> ★ 上图是 2026-10-12 的截图（当时那张图里是三个端点）。现在一共 **10 个**：
+> ★ 上图是 2026-10-12 的截图（当时那张图里是三个端点）。现在一共 **11 个**：
 > `GET /`（网页）、`POST /chat`（检索+生成）、**`POST /chat/stream`（SSE 流式，2026-10-14 加）**、
 > `POST /search`（只检索不生成）、`GET /health`、`GET /limits`、`GET /guard-report`、
 > **`POST /kb/{namespace}/documents`（上传企业语料，2026-10-23 加）**、
-> **`GET /kb/{namespace}/documents`（列文档）**、**`DELETE /kb/{namespace}/documents/{doc_id}`（软删除）**。
+> **`GET /kb/{namespace}/documents`（列文档）**、**`DELETE /kb/{namespace}/documents/{doc_id}`（软删除）**、
+> **`GET /kb/{namespace}/eval`（每语料 smoke 质检）**。
 > ⇒ 要最新的接口文档，起服务后看 `/docs`（FastAPI 自动生成，永远是当前代码的样子）。
 > ★ **这个数字现在有人管了**：`scripts/check_readme_numbers.py` 的 `_check_endpoints()`
 > 现扫 `service.py` 里的路由装饰器，个数与名单都对一遍（2026-10-14 补 —— 此前它是手写的，

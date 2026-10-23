@@ -57,7 +57,7 @@ $env:PYTHONIOENCODING='utf-8'
 D:\Python-project\.venv\Scripts\python.exe -m pytest tests/test_kb_store.py -q
 ```
 
-当前：**9 passed**（上传/元数据/namespace 隔离/软删除/txt+html/路径逃逸/契约/重传更新）；`tests/test_kb_api.py` **4 passed**（含 ACL 过滤）。
+当前：**9 passed**（上传/元数据/namespace 隔离/软删除/txt+html/路径逃逸/契约/重传更新）；`tests/test_kb_api.py` **4 passed**（含 ACL 过滤）；`tests/test_kb_eval.py` **2 passed**（smoke 质检）。
 
 ## HTTP 接口（2026-10-23 已接）
 
@@ -66,6 +66,7 @@ D:\Python-project\.venv\Scripts\python.exe -m pytest tests/test_kb_store.py -q
 | POST | `/kb/{ns}/documents?filename=faq.md&acl=public` | raw body 上传（不是 multipart，避免加依赖） |
 | GET | `/kb/{ns}/documents?include_deleted=false` | 列文档 |
 | DELETE | `/kb/{ns}/documents/{doc_id}` | 软删除 + 热更新索引 |
+| GET | `/kb/{ns}/eval?acl=hr` | 每语料 smoke 质检：self-hit / 拒答探针 / ACL 泄漏 |
 
 权限：默认只允许本机（127.0.0.1/::1/TestClient）；公网必须设 `KB_ADMIN_TOKEN`，请求头带 `X-KB-Admin-Token`。
 
@@ -91,7 +92,7 @@ tests/test_kb_api.py: 4 passed
 1. **ACL 最终块复检**：检索前已按块过滤；父文档扩展/rerank 合并后还要对最终入选块再验一次，防越权内容被带回来；
 2. **飞书 wiki 连接器**：`wiki/v2/spaces/get_node` 树遍历 + docx 正文 + 权限跳过；
 3. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
-4. **评测随语料走**：每 namespace 一份模板题 + 拒答探针 + 人工抽检。
+4. **独立评测集**：自动质检（self-hit/拒答/ACL）不是独立评测；下一步做每语料模板题 + 人工抽检。
 
 ## 不做
 

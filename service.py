@@ -69,6 +69,7 @@ env_compat.ensure_uuid_utils()                      # 同上，拦的是 uuid_ut
 from kb.loader import load_documents                # noqa: E402  知识库从 docs/ 加载，不再写死 RAW_DOCS
 from kb.store import KnowledgeStore                 # noqa: E402  企业语料：namespace + 上传 + 软删除
 from kb.source import UnsupportedFormat            # noqa: E402  格式不支持时给明确 415
+from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke 质检
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
@@ -1676,6 +1677,24 @@ def kb_delete(namespace: str, doc_id: str, request: Request):
     if ok:
         rag.reload_enterprise()
     return {"deleted": ok, "doc_id": doc_id, "namespace": namespace}
+
+
+@app.get("/kb/{namespace}/eval")
+def kb_eval(namespace: str, request: Request, acl: str = "", top_k: int = 5, max_items: int = 30):
+    """每语料 smoke 质检：self-hit、拒答探针、ACL 泄漏探针。
+
+    ★ 这是自动质检，不是独立评测集；报告里会写明。
+    """
+    _kb_admin_guard(request)
+    if not rag.ready:
+        raise HTTPException(status_code=503, detail="服务还在加载模型，请稍后再试")
+    acl_list = [a.strip() for a in acl.split(",") if a.strip()] or None
+    return evaluate_namespace(
+        rag.chunks, rag.search, namespace,
+        acl=acl_list, top_k=max(1, min(10, top_k)),
+        max_items=max(1, min(100, max_items)),
+        refusal_threshold=VEC_REJECT_THRESHOLD,
+    )
 
 
 def _vec_reject(cands) -> bool:
