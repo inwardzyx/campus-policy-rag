@@ -105,12 +105,53 @@ $py='D:\Python-project\.venv\Scripts\python.exe'
 出题纪律：出题人**不看检索代码/结果**；题目来自真实工单/角色走查；冻结后跑，不用它调参。
 `answer` 判“source 命中”，不是“答案完全正确”；后者要人工 rubric。
 
+## 飞书 wiki 连接器（2026-10-23）
+
+文件：[`kb/feishu.py`](kb/feishu.py)、CLI [`scripts/feishu_sync.py`](scripts/feishu_sync.py)。
+
+用到的飞书接口：
+
+| 接口 | 用途 |
+|---|---|
+| `POST /auth/v3/tenant_access_token/internal` | 取 tenant token |
+| `GET /wiki/v2/spaces/:space_id/nodes` | 分页列子节点（`parent_node_token`） |
+| `GET /docx/v1/documents/:document_id/raw_content` | 取 docx 纯文本 |
+
+应用权限（缺一不可）：
+
+- `wiki:wiki:readonly`（或 `wiki:wiki` / `wiki:space:retrieve`）；
+- `docx:document:readonly`（或 `docx:document`）；
+- **应用被加入目标知识空间，且对节点有阅读权限**。
+
+> 2026-10-23 实测：现有应用 `cli_aa5296…` 调 `iter_spaces()` 返回
+> `99991672 Access denied ... [wiki:wiki, wiki:wiki:readonly, wiki:space:retrieve]`
+> ⇒ 还没开 wiki 权限。去开发者后台「权限管理」加上述 scope、发布版本，
+> 再把应用加入知识空间（成员/管理员），否则连 space 列表都拉不到。
+
+```powershell
+$env:FEISHU_APP_ID="cli_xxx"; $env:FEISHU_APP_SECRET="xxx"
+$py='D:\Python-project\.venv\Scripts\python.exe'
+& $py scripts\feishu_sync.py --space-id <space_id> --namespace feishu_demo --acl public
+# 排错：先列 space
+& $py scripts\feishu_sync.py --list-spaces
+```
+
+同步语义：
+
+- 只同步 `docx`；`sheet/bitable/file` 记 `skipped`；
+- 按 `obj_edit_time` 生成版本；内容哈希不变 → `unchanged`；
+- 飞书里被移除/移走的 docx → 本地 `delete`（tombstone），可用 `--no-delete` 关闭；
+- 单篇无权限不中断整棵树，记进 `errors`；
+- 频率：每篇正文后 sleep 0.25s（飞书 5 次/秒限制）。
+
+**明确没做**：节点级权限同步（`acl` 由 `--acl` 统一给，生产要接权限源）；不是实时同步（手动/定时跑）。
+
 ## 下一步（按优先级）
 
-1. **飞书 wiki 连接器**：`wiki/v2/spaces/get_node` 树遍历 + docx 正文 + 权限跳过；
-2. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
-3. **接 SSO/网关注入角色**：把 `acl` 从请求体改为身份头，当前只是 demo 显式传参；
-4. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑。
+1. **PDF/DOCX 正式支持**：优先 Docling/MinerU，不在仓库里手写解析器；
+2. **接 SSO/网关注入角色**：把 `acl` 从请求体改为身份头，当前只是 demo 显式传参；
+3. **每语料独立题集**：用模板出 40+20+10 题，出题人独立、冻结后跑；
+4. **定时同步**：用 cron/任务队列每天跑 `feishu_sync.py`，并监控 `errors`/`deleted`。
 
 ## 不做
 
