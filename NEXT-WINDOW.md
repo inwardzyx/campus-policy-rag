@@ -1,7 +1,7 @@
 # 新窗口说明书 — 企业知识库 RAG / Context Layer v1
 
 > 用途：把下面「第一条消息」整段复制到新窗口，即可无历史接手。
-> 项目根：`D:\_review_rag-cs`　·　交接快照：`HANDOFF.md`（2026-10-25，HEAD `4635fd3`）
+> 项目根：`D:\_review_rag-cs`　·　交接快照：`HANDOFF.md`（2026-10-25，代码 HEAD `48d9e6e`；说明书提交 `183eab6`）
 
 ---
 

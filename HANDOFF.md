@@ -1,7 +1,8 @@
 # HANDOFF — 企业知识库 RAG（2026-10-25）
 
 > 快照时间：**2026-10-25 19:10（Asia/Shanghai）**
-> 仓库：`D:\_review_rag-cs`　·　分支：`main`　·　HEAD：**`48d9e6e`**
+> 仓库：`D:\_review_rag-cs`　·　分支：`main`　·　代码快照 HEAD：**`48d9e6e`**
+> 本文/说明书的后续提交：`4635fd3`、`183eab6`；**当前 HEAD 以 `git log -1` 为准**。
 > 工作树：只有 `samples/` 未跟踪（本地测试 PDF，见 §6）；代码/文档无未提交改动。
 >
 > ★ 本文是**交接快照，不是真相源**：数字以 `README.md`、`enterprise-kb.md`、测试输出和
