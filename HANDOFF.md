@@ -65,19 +65,38 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | Docling OCR（扫描件/复杂 PDF） | ✅ | `kb/layout.py::DoclingDockerBackend`、`Dockerfile.docling`、`docker/docling_worker.py` |
 | MinerU 外部命令后端 | ✅ 代码 / 未实测 | `kb/layout.py::MinerUBackend` |
 | 上下文层 v1（八层/字符预算/ContextTrace） | ✅ 只对带 namespace 的 `/chat`·`/chat/stream` | `kb/context.py`、`service.py::_plan_context`；实测见 `experiments/_context-v1-acceptance.json` |
+| 失败归因（6 桶：retrieval_miss/rank_shift/budget_cut/gen_uncited/acl_leak/stale_version） | ✅ | `kb/attribution.py`；trace 里新增 `candidates`（没有它分不开 miss 与 rank_shift） |
+| 评测指标（context_recall/precision、nDCG@3、budget_cut_rate、p95） | ✅ | `kb/eval_metrics.py`；nDCG 用 `ir-measures`（TREC 口径，不自己写） |
+| 场景评测 runner + campus 基线 | ✅ campus（20 题）/ ⏳ hr·compliance·support 待真实语料 | `scripts/run_scenario_eval.py`、`evalset/report-scenario-campus.json`、`evalset/scenarios/README.md` |
+| gold ↔ 语料联动检查（扫 0 条报红） | ✅ | `scripts/check_eval_gold.py` |
+| 评测依赖单列（不污染 runtime） | ✅ | `requirements-eval.txt`（`ir-measures` + `pytrec-eval-terrier`；**CI 不装**：Linux 无 cp314 wheel） |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-216 passed, 27 skipped
+233 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
-（2026-10-25 加 Context Layer 前是 196 passed；新增的 20 条在 `tests/test_context.py`。
-其中 2 条的关键判据已被变异体证明会响：`scripts/mutate_context_layer.py` 跑完是
-`2/2 变红 + service.py 字节还原一致` —— 那个脚本会先存原字节、再还原、再比 sha256。）
+（2026-10-25 加 Context Layer 前是 196 passed；`tests/test_context.py` 20 条、
+`tests/test_eval_attribution.py` 17 条。Context Layer 的关键判据已被变异体证明会响：
+`scripts/mutate_context_layer.py` 跑完是 `2/2 变红 + service.py 字节还原一致`。）
+
+**场景评测基线（campus，n=20，2026-10-25）** —— 产物 `evalset/report-scenario-campus.json`：
+
+```text
+应答 14/15 = 93.3%  Wilson [0.7018, 0.9881]
+拒答  5/5  = 100%   Wilson [0.5655, 1.0]
+context_recall 0.9333 / context_precision 0.9333 / nDCG@3 0.9333
+budget_cut_rate 0 / p95 4794ms
+归因：{"ok": 14, "refuse_ok": 5, "retrieval_miss": 1}
+```
+
+失败样本是 q2（"违纪了的话，学校都有哪些处分等级啊？"）：gold 是《学生纪律处分管理规定》
+第二章-第四条，实际捞到的是第二十四条/第五条 —— **释义问法的检索遗漏**，与预算无关
+（`budget_cut_rate=0`，说明 1840 的额度在这批题上没裁块）。
 
 **Docling 容器**：
 
@@ -97,10 +116,13 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 - **上下文层只有 v1**：`kb/context.py` + `service.py::_plan_context` 已接（八层声明、
   chars 预算、ContextTrace、整块丢弃、拒答也带 trace）。**v2 没做**：prompt 模板化、
   压缩（摘句/去重）、memory/tool 层真正注入、未用完额度不借用（v1 是固定 cap）。
+- **评测层只有 v1**：场景 runner + 六桶归因 + 指标（recall/precision/nDCG/budget_cut/p95）
+  已接，但 **hr/compliance/support 三个场景没有语料也没有题集**（不编数据）；
+  `citation_precision` 恒为 `None`（等批 2 的引用锚点）；`stale_version` 桶是空钩子（等 as-of）。
 - **版本/as-of、审计日志没做**：`DocumentMeta.version` 有字段，但没有按版本查询；
   没有审计表/审计事件。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
-- **独立评测集没出**：只有 40+20+10 的模板和样例，没有真实 70 题结果。
+- **独立 70 题集没出**：只有 40+20+10 的模板和样例。
 - **真实扫描件/双栏/表格没验**：目前只有模拟扫描件。
 - **没有公网部署**：只有本地 `uvicorn`；登录、限额、域名、HTTPS 还没做。
 
@@ -142,6 +164,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 真实扫描件未验 | 目前只有“文本 PDF 渲染成图片”的模拟扫描件 | 需要真实扫描仪 PDF（倾斜/噪点/盖章） | **未解决** |
 | 双栏/表格未验 | SISU 样本是单栏正文，没有表格阅读顺序测试 | 需要双栏论文/年报或带表格制度 | **未解决** |
 | OCR 速度慢 | CPU 约 58 秒/页；长文档会拖死同步上传 | 后续做批处理/常驻服务/GPU；当前仅验收 | **未解决（性能）** |
+| `kb_data/` 有残留 namespace ⇒ 全量测试红 | 服务启动会把企业 namespace 一起索引，`test_guard` 断言的是 `docs/` 语料条数（263/23）；我跑完 campus 评测忘了清 `campus_eval`，一下红了 4 条 | 跑完评测/验收后删掉 `kb_data/<ns>`；**这不是代码 bug**，但下次别把它误读成回归 | ✅ 已知（靠记得清） |
 
 ---
 
@@ -168,6 +191,22 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **v2 还没做**（别当成顺手活）：prompt 模板化、压缩（摘句/去重）、memory/tool 层真正注入、
 预算敏感性实验。设计稿在 `D:\dsh-work\_上下文工程-清单-20261023-v2.md`，路线图在
 `D:\dsh-work\_企业知识库-落地清单-20261023.md`。
+
+### P0.5：评测自进化层 v1 —— ✅ 已完成（2026-10-25）
+
+- `kb/attribution.py`：六桶归因（`retrieval_miss / rank_shift / budget_cut / gen_uncited /
+  acl_leak / stale_version`）；**依据是 trace 新增的 `candidates`** —— 没有它，
+  "没捞到"和"捞到但排第 4"分不开，而归因错了后面所有调优都会打偏。
+- `kb/eval_metrics.py`：`context_recall / context_precision / nDCG@3 / budget_cut_rate / p95`；
+  nDCG 用 `ir-measures`（TREC 口径），Wilson 区间复用 `kb/eval_runner.wilson_interval`。
+- `scripts/run_scenario_eval.py`：按场景跑题集 → 指标 + 逐题归因 → JSON 报告；
+  `--responses` 可离线复算（评测逻辑本身进单测，不联网）。
+- `scripts/check_eval_gold.py`：gold ↔ 语料联动检查，**扫 0 条报红**。
+- `evalset/scenarios/README.md`：场景题集格式与出题纪律；campus 直接复用老题集（不复制 data）。
+- 基线见 §2.3；campus 唯一失败是 q2 的**释义问法检索遗漏**（不是预算）。
+
+**下一步（批 2，按选型矩阵修订版）**：引用校验模块（批 2 新增）+ 模板开关（v2 仅 namespace），
+把 `citation_precision` 从 `None` 变成真数字；语义抽样用现有 DeepSeek，不装 NLI。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -208,6 +247,13 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\context.py` | 上下文层 v1：八层声明、chars 预算（1840 检索额度）、整块丢弃、`ContextTrace` |
 | `D:\_review_rag-cs\tests\test_context.py` | 上下文层 20 条：预算/整块丢/旧路径 golden prompt/trace 不存正文/流式 payload |
 | `D:\_review_rag-cs\scripts\mutate_context_layer.py` | 变异体：证明"旧路径不变""裁掉的块不喂"两条判据会响，并核对字节还原 |
+| `D:\_review_rag-cs\kb\attribution.py` | 失败归因六桶（依据 trace 的 `candidates` + `included/excluded`）；`context_available=False` 时不猜原因 |
+| `D:\_review_rag-cs\kb\eval_metrics.py` | 上下文/检索指标：recall/precision/nDCG@3/budget_cut_rate/p95；缺失一律 `None`，不补 0 |
+| `D:\_review_rag-cs\scripts\run_scenario_eval.py` | 场景评测 runner：HTTP 跑题集或 `--responses` 离线复算 → 指标 + 逐题归因 JSON |
+| `D:\_review_rag-cs\scripts\check_eval_gold.py` | gold ↔ 语料联动检查（`## <clause>` 必须存在；扫 0 条报红） |
+| `D:\_review_rag-cs\requirements-eval.txt` | 评测专用依赖（ir-measures + pytrec-eval-terrier）；**不进** runtime，CI 不装（Linux 无 cp314 wheel） |
+| `D:\_review_rag-cs\evalset\scenarios\README.md` | 场景题集格式/出题纪律/campus 现状（hr·compliance·support 待语料，不编数据） |
+| `D:\_review_rag-cs\evalset\report-scenario-campus.json` | campus 基线报告（n=20：14/15 答、5/5 拒、recall 0.9333、nDCG@3 0.9333、1 个 retrieval_miss） |
 | `D:\_review_rag-cs\experiments\_context-v1-acceptance.json` | 3 个真实问题的 `/chat?namespace=` 响应 + trace（第 1 题 used=1187/1840） |
 | `D:\_review_rag-cs\Dockerfile.docling` | Docling 容器镜像（CPU torch、pip/HF 镜像、worker） |
 | `D:\_review_rag-cs\docker\docling_worker.py` | 容器入口：PDF → `DocumentConverter` + OCR → Markdown |

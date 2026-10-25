@@ -1,0 +1,16 @@
+# 评测层专用依赖（**不进** runtime 的 requirements.txt）
+#
+# 为什么单独一个文件：
+#   ① 它们只在"跑评测/算指标"时需要，服务与测试都不该依赖它们；
+#   ② `ir-measures` 的 TREC 口径（nDCG/R@k/RR）是成熟实现，没必要自己写，
+#      但它会带 numpy/scipy 两个大件（服务里已经有 numpy，scipy 是新增）；
+#   ③ CI 只在评测 job 里装它，避免把 25 个包的 ragas/deepeval 拖进主干。
+#
+# 装法：
+#   D:\Python-project\.venv\Scripts\python.exe -m pip install -r requirements-eval.txt
+#
+# ★ 为什么用 `pytrec-eval-terrier` 而不是 `pytrec_eval`：
+#   后者在 PyPI 上已经没有可用发行版（实测 "No matching distribution"），
+#   前者是仍在维护、提供 `pytrec_eval` 模块的那个（本机 Python 3.14 / Windows 有 wheel）。
+ir-measures==0.4.3
+pytrec-eval-terrier==0.5.11

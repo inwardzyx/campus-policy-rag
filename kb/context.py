@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 #: 八层的**固定顺序**（稳定层在前、变化层在后，见设计稿 §3.3 第 4 条）。
@@ -173,6 +173,11 @@ class ContextTrace:
     excluded: list[Block]
     degraded: dict[str, str]
     budget: dict[str, Any]
+    # ★ 2026-10-25 加：候选清单（只有 source/clause/rank，不带正文也不带分数）。
+    #   为什么必须有：没有它就无法区分"检索压根没捞到"（retrieval_miss）和
+    #   "捞到了但排在第 4 名"（rank_shift）—— 这两种失败的修法完全不同，
+    #   而只看 included/excluded 时它们长得一模一样。
+    candidates: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -182,6 +187,7 @@ class ContextTrace:
             "excluded": [b.to_dict() for b in self.excluded],
             "degraded": dict(self.degraded),
             "budget": dict(self.budget),
+            "candidates": [dict(c) for c in self.candidates],
         }
 
 
@@ -225,6 +231,7 @@ def select_retrieved(
     budget: Budget,
     namespace: str,
     trace_id: str | None = None,
+    candidates: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[list[Mapping[str, Any]], ContextTrace]:
     """按**给定顺序**贪心放入，返回 `(真正喂给模型的块, trace)`。
 
@@ -264,7 +271,8 @@ def select_retrieved(
 
     trace = ContextTrace(trace_id=tid, namespace=namespace, blocks=blocks,
                          excluded=excluded, degraded=degraded,
-                         budget=_budget_dict(budget, used))
+                         budget=_budget_dict(budget, used),
+                         candidates=[dict(c) for c in (candidates or [])])
     return kept, trace
 
 
@@ -275,6 +283,7 @@ def exclusion_trace(
     namespace: str,
     reason: str,
     trace_id: str | None = None,
+    candidates: Sequence[Mapping[str, Any]] | None = None,
 ) -> ContextTrace:
     """没走到"选块"那一步的请求（低分拒答 / 模型没就绪）：块全部记 excluded，预算一个没花。
 
@@ -285,7 +294,8 @@ def exclusion_trace(
     excluded = [Block(*_chunk_ids(c), len(_chunk_text(c)), False, reason) for c in chunks]
     return ContextTrace(trace_id=tid, namespace=namespace, blocks=[], excluded=excluded,
                         degraded={"retrieval": reason},
-                        budget=_budget_dict(budget, 0))
+                        budget=_budget_dict(budget, 0),
+                        candidates=[dict(c) for c in (candidates or [])])
 
 
 # ==================================================================

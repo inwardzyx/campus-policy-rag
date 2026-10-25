@@ -168,6 +168,11 @@ python -m venv .venv && .venv/Scripts/activate    # Mac/Linux: source .venv/bin/
 # 1. 装依赖
 pip install -r requirements.txt
 
+# 1b.（可选）跑评测/算指标时再装这一份 —— 服务本身不需要它
+#     ir-measures 提供 TREC 口径的 nDCG/R@k/RR；pytrec-eval-terrier 没有 Linux/cp314 的
+#     wheel（实测），所以 CI **不装**它，nDCG 那条用例在 CI 里是 skip，在本地/评测机才跑。
+pip install -r requirements-eval.txt
+
 # 2. 配密钥：复制模板成 .env，再填上真实值
 copy .env.example .env          # Mac/Linux 用: cp .env.example .env
 # 然后打开 .env，把 DEEPSEEK_API_KEY 换成你的真实 key。
@@ -1710,7 +1715,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
 | **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，

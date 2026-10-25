@@ -1284,6 +1284,9 @@ class ContextSummary(BaseModel):
     excluded: list[ContextBlock]
     degraded: dict[str, str] = {}
     budget: dict = {}
+    # ★ 候选清单（source/clause/rank，无数值分数）：评测归因靠它区分
+    #   「检索没捞到」和「捞到了但排在第 4 名」—— 只看 included/excluded 这两种长得一样。
+    candidates: list[dict] = []
 
     @classmethod
     def from_trace(cls, trace) -> "ContextSummary":
@@ -1539,7 +1542,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
             # ★ 拒答流**没有 sources 事件**，trace 只能挂在这里 ——
             #   否则“最该看 trace 的场景”（没答出来）恰好什么都看不到。
             summary = _exclusion_summary(req, [c for c, _, _, _ in (ranked or [])],
-                                         context_mod.REASON_LOW_SCORE)
+                                         context_mod.REASON_LOW_SCORE,
+                                         _candidate_blocks(ranked or []))
             if summary is not None:
                 refusal["context"] = summary.model_dump()
             out.put(("refusal", refusal))
@@ -1548,7 +1552,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         picked = [x for x in ranked if x[2] >= 5][:3]
         # ★ 与 /chat 共用同一份 `_plan_context`：预算裁掉的块不能只从 trace 里消失，
         #   还要真的不进 `answer_stream`。
-        fed, context_summary = _plan_context(req, [c for c, _, _, _ in picked])
+        fed, context_summary = _plan_context(req, [c for c, _, _, _ in picked],
+                                            _candidate_blocks(ranked or []))
         if not fed:
             refusal = {
                 "answer": "知识库里没有能回答这个问题的资料，我不编。",
@@ -1883,7 +1888,24 @@ def _search_for_request(req, query, roles=None):
     return rag.search(query, k=req.top_k)
 
 
-def _plan_context(req, chunks):
+def _candidate_blocks(items, limit: int = 10):
+    """把候选压成 trace 里的定位信息（source/clause/rank），**不带正文、不带分数**。
+
+    ★ 为什么要记：`included`/`excluded` 只说"最后用了哪几块"，说不出"当时捞到过什么"。
+      没有候选清单，「检索没捞到」（retrieval_miss）和「捞到了但排第 4」（rank_shift）
+      在归因时长得一模一样 —— 而这两种失败的修法完全不同（换切块/改排序）。
+    ★ 为什么要有限额：trace 会进响应体，候选是逐字放大的地方，默认只留前 10 条。
+    """
+    out = []
+    for rank, it in enumerate(list(items or [])[:limit], start=1):
+        chunk = it[0] if isinstance(it, (tuple, list)) else it
+        out.append({"source": str(chunk.get("doc") or ""),
+                    "clause": str(chunk.get("clause") or ""),
+                    "rank": rank})
+    return out
+
+
+def _plan_context(req, chunks, candidates=None):
     """算出这次**真正喂给生成模型**的块 + context 摘要（docs/ 路径原样返回、摘要 None）。
 
     ★ 两件事必须一起做：预算裁掉的块不能只从摘要里消失、却还留在喂给模型的那份里。
@@ -1896,16 +1918,18 @@ def _plan_context(req, chunks):
     if not getattr(req, "namespace", None):
         return list(chunks), None
     kept, trace = context_mod.select_retrieved(chunks, budget=CONTEXT_BUDGET,
-                                               namespace=req.namespace)
+                                               namespace=req.namespace,
+                                               candidates=candidates)
     return list(kept), ContextSummary.from_trace(trace)
 
 
-def _exclusion_summary(req, chunks, reason):
+def _exclusion_summary(req, chunks, reason, candidates=None):
     """没走到"选块"那一步的请求（低分拒答 / 模型没就绪）也留一份 trace。"""
     if not getattr(req, "namespace", None):
         return None
     trace = context_mod.exclusion_trace(chunks, budget=CONTEXT_BUDGET,
-                                        namespace=req.namespace, reason=reason)
+                                        namespace=req.namespace, reason=reason,
+                                        candidates=candidates)
     return ContextSummary.from_trace(trace)
 
 
@@ -1999,12 +2023,14 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
                 sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False,
                 usage=_usage_for_response(led), session_used=session_used,
                 context=_exclusion_summary(req, [c for c, _, _, _ in (ranked or [])],
-                                           context_mod.REASON_LOW_SCORE))
+                                           context_mod.REASON_LOW_SCORE,
+                                           _candidate_blocks(ranked or [])))
 
         picked = [x for x in ranked if x[2] >= 5][:3]     # 只留 5 分以上的，最多 3 条
         # ★ 2026-10-25：namespace 请求先过字符预算。裁掉的块**必须真的不喂**，
         #   否则 context trace 说的就是假话（“丢了”其实喂了）。
-        ctx, context_summary = _plan_context(req, [c for c, _, _, _ in picked])
+        ctx, context_summary = _plan_context(req, [c for c, _, _, _ in picked],
+                                            _candidate_blocks(ranked or []))
         if not ctx:
             # 候选有、却一块都放不进额度 ⇒ 走现有拒答，绝不零上下文硬生成。
             return ChatResponse(
@@ -2038,12 +2064,13 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
                 sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
                 usage=_usage_for_response(led), session_used=session_used,
                 context=_exclusion_summary(req, [c for c, _ in cands],
-                                           context_mod.REASON_LOW_SCORE))
+                                           context_mod.REASON_LOW_SCORE,
+                                           _candidate_blocks(cands)))
 
         sources, ctx = _vec_sources(cands)
         # ★ 同上：预算外的块要从 ctx 与 sources 里**一起**消失（`_vec_sources` 的契约是
         #   两者一一对应；只改一边就会出现“出处列了没喂的块”）。
-        planned, context_summary = _plan_context(req, ctx)
+        planned, context_summary = _plan_context(req, ctx, _candidate_blocks(cands))
         if not planned:
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",

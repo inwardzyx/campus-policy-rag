@@ -144,6 +144,70 @@ Q3 学校对考试作弊怎么处理？    hit=True  4035ms  used 1036/1840  丢
 
 v2 未做：prompt 模板化、压缩（摘句/去重）、memory/tool 层真正注入、预算敏感性实验。
 
+## 评测自进化层 v1（2026-10-25）
+
+三个文件：`kb/attribution.py`（归因）、`kb/eval_metrics.py`（指标）、
+`scripts/run_scenario_eval.py`（按场景跑）+ `scripts/check_eval_gold.py`（gold 联动检查）。
+
+### 为什么先做"归因"，而不是先加功能
+
+只报"答对 14/15"没有任何方向：同样是答错，可能是检索没捞到、捞到了被预算裁掉、
+排在第 4 名、或答了没标引用——修法完全不同（换切块 / 调预算 / 改排序 / 改模板）。
+所以每个失败样本必须落进**一个**桶：
+
+| 桶 | 判据 | 该改哪层 |
+|---|---|---|
+| `retrieval_miss` | gold 不在 trace 的候选里 | 数据层（切块）或检索 |
+| `rank_shift` | gold 在候选里，但没进 included | 精排 / 权威序 |
+| `budget_cut` | gold 进了 excluded，reason=`budget`/`oversize` | Runtime 预算或压缩 |
+| `gen_uncited` | gold 进了 included，但答案没标引用（**等批 2**） | 模板 |
+| `acl_leak` | 越权题却命中块（红线） | ACL 双道 |
+| `stale_version` | gold 因版本过滤被排除（**等 as-of**） | 数据层 |
+
+★ 为此 trace 新增了 `candidates`（`source/clause/rank`，不带正文也不带分数）：
+**没有它，`retrieval_miss` 和 `rank_shift` 长得一模一样**，归因会系统性偏错。
+
+### 指标与口径（不重复造轮子）
+
+- `context_recall` / `context_precision`：gold 是否进了这一轮**真正喂给模型**的块（自算，只有 trace 知道）；
+- `nDCG@3`：用 `ir-measures`（TREC 口径）+ `pytrec-eval-terrier`，**没有自己写**；
+- Wilson 区间：复用 `kb/eval_runner.wilson_interval`；
+- `p95_ms`、`budget_cut_rate`：从响应/trace 现算。
+
+**缺失 ≠ 零**（三处都显式返回 `None`）：没有 trace 时 `context_recall=None`；
+`ir_measures` 没装时 `nDCG=None` 并附说明；引用字段还没有时 `citation_precision=None`。
+
+### campus 基线（n=20，2026-10-25）
+
+```text
+应答 14/15 = 93.3%  Wilson [0.7018, 0.9881]
+拒答  5/5  = 100%   Wilson [0.5655, 1.0]
+context_recall 0.9333 / context_precision 0.9333 / nDCG@3 0.9333
+budget_cut_rate 0 / p95 4794ms
+归因：{"ok": 14, "refuse_ok": 5, "retrieval_miss": 1}
+```
+
+产物 `evalset/report-scenario-campus.json`。唯一失败 q2 是**释义问法**检索遗漏
+（"违纪了的话，学校都有哪些处分等级啊？" → 实际捞到第二十四条/第五条，gold 是第四条），
+`budget_cut_rate=0` 说明这批题上 1840 的额度没裁块 —— 问题在检索/改写，不在预算。
+
+### 已知缺口（别当成"CI 覆盖了"）
+
+`pytrec-eval-terrier` **没有 Linux / cp314 的 wheel**（实测），所以 CI 不装
+`requirements-eval.txt`，`tests/test_eval_attribution.py` 里那条 nDCG 真值用例在 CI 是
+**skip**、只在本地/评测机跑。另有一条不依赖它的用例守着"缺依赖时必须是 `None` 而不是 0"。
+
+### 复现
+
+```powershell
+# 服务在跑时：把 docs/kb 灌进一个 namespace（只有带 namespace 的请求才有 trace）
+D:\Python-project\.venv\Scripts\python.exe scripts\run_scenario_eval.py `
+    --scenario campus --namespace campus_eval --bootstrap-docs docs/kb `
+    --base-url http://127.0.0.1:8020 --out evalset/report-scenario-campus.json
+# ★ 跑完请删掉 kb_data/campus_eval：残留 namespace 会被启动时一起索引，
+#   test_guard 的语料计数断言会因此变红（那是环境残留，不是回归）。
+```
+
 ## 飞书 wiki 连接器（2026-10-23）
 
 文件：[`kb/feishu.py`](kb/feishu.py)、CLI [`scripts/feishu_sync.py`](scripts/feishu_sync.py)。

@@ -1,0 +1,403 @@
+{
+  "scenario": "campus",
+  "mode": "http",
+  "cases": "evalset/questions.json",
+  "namespace": "campus_eval",
+  "n_cases": 20,
+  "missing_responses": 0,
+  "aggregate": {
+    "n_cases": 20,
+    "answer": {
+      "passed": 14,
+      "total": 15,
+      "rate": 0.9333,
+      "wilson_95": [
+        0.7018,
+        0.9881
+      ]
+    },
+    "refuse": {
+      "passed": 5,
+      "total": 5,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5655,
+        1.0
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "buckets": {
+      "ok": 14,
+      "refuse_ok": 5,
+      "retrieval_miss": 1
+    },
+    "failure_buckets": {
+      "retrieval_miss": 1,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0
+    },
+    "context_recall": 0.9333,
+    "context_precision": 0.9333,
+    "ndcg@3": 0.9333,
+    "budget_cut_rate": 0.0,
+    "citation_precision": null,
+    "p95_ms": 4794,
+    "notes": [
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "q1",
+      "type": "answer",
+      "question": "学校对学生的处分有哪几种？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 5740,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第四条"
+      ]
+    },
+    {
+      "id": "q2",
+      "type": "answer",
+      "question": "违纪了的话，学校都有哪些处分等级啊？",
+      "bucket": "retrieval_miss",
+      "reason": "gold 不在候选里（切块/检索问题）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3972,
+      "context_recall": false,
+      "context_precision": 0.0,
+      "citation_precision": null,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第四章-第二十六条",
+        "学生纪律处分管理规定.md｜第二章-第五条",
+        "学生纪律处分管理规定.md｜第四章-第二十七条"
+      ]
+    },
+    {
+      "id": "q3",
+      "type": "answer",
+      "question": "什么情形可以从轻处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3446,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第六条"
+      ]
+    },
+    {
+      "id": "q4",
+      "type": "answer",
+      "question": "我主动承认错误还检举了别人，处分能不能轻一点？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4153,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 2,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第六条",
+        "学生纪律处分管理规定.md｜第一章-第三条"
+      ]
+    },
+    {
+      "id": "q5",
+      "type": "answer",
+      "question": "哪些情况要从重处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3558,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第七条"
+      ]
+    },
+    {
+      "id": "q6",
+      "type": "answer",
+      "question": "跟同学串供、还威胁举报人，会不会加重处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4072,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第七条"
+      ]
+    },
+    {
+      "id": "q7",
+      "type": "answer",
+      "question": "触犯刑法构成刑事犯罪会被开除学籍吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3431,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第九条",
+        "学生纪律处分管理规定.md｜第三章-第十三条",
+        "学生纪律处分管理规定.md｜第三章-第二十五条"
+      ]
+    },
+    {
+      "id": "q8",
+      "type": "answer",
+      "question": "吸食毒品学校会怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3174,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 2,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第十一条",
+        "学生纪律处分管理规定.md｜第二章-第四条"
+      ]
+    },
+    {
+      "id": "q9",
+      "type": "answer",
+      "question": "考试作弊要受什么处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4794,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第二十四条",
+        "学生纪律处分管理规定.md｜第三章-第二十五条",
+        "学生纪律处分管理规定.md｜第三章-第二十三条"
+      ]
+    },
+    {
+      "id": "q10",
+      "type": "answer",
+      "question": "第二次考试作弊会被开除学籍吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3187,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 2,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第二十四条",
+        "学生纪律处分管理规定.md｜第三章-第二十五条"
+      ]
+    },
+    {
+      "id": "q11",
+      "type": "answer",
+      "question": "请假一天以内由谁审批？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3047,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 1,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条"
+      ]
+    },
+    {
+      "id": "q12",
+      "type": "answer",
+      "question": "我要请一个礼拜的假，需要哪一级批准？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3095,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 2,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条",
+        "学生请销假制度.md｜总则-第二条"
+      ]
+    },
+    {
+      "id": "q13",
+      "type": "answer",
+      "question": "假期结束不销假会有什么后果？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2897,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 2,
+      "sources": [
+        "学生请销假制度.md｜总则-第四条",
+        "学生请销假制度.md｜总则-第三条"
+      ]
+    },
+    {
+      "id": "q14",
+      "type": "answer",
+      "question": "用欺骗手段请假被发现了怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3374,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 2,
+      "sources": [
+        "学生请销假制度.md｜总则-第六条",
+        "学生纪律处分管理规定.md｜第三章-第十条（九）"
+      ]
+    },
+    {
+      "id": "q15",
+      "type": "refuse",
+      "question": "图书馆几点关门？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2059,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_precision": null,
+      "included": 0,
+      "sources": []
+    },
+    {
+      "id": "q16",
+      "type": "refuse",
+      "question": "学费一年多少钱？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2187,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_precision": null,
+      "included": 0,
+      "sources": []
+    },
+    {
+      "id": "q17",
+      "type": "refuse",
+      "question": "食堂几点开饭？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2321,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_precision": null,
+      "included": 0,
+      "sources": []
+    },
+    {
+      "id": "q18",
+      "type": "answer",
+      "question": "怎么申请助学贷款？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3371,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_precision": null,
+      "included": 1,
+      "sources": [
+        "学生资助工作实施办法.md｜第十五条"
+      ]
+    },
+    {
+      "id": "q19",
+      "type": "refuse",
+      "question": "宿舍晚上几点熄灯？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2576,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_precision": null,
+      "included": 0,
+      "sources": []
+    },
+    {
+      "id": "q20",
+      "type": "refuse",
+      "question": "学生证丢了怎么补办？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2343,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_precision": null,
+      "included": 0,
+      "sources": []
+    }
+  ],
+  "generated_at": "2026-10-25T20:42:05+0800",
+  "wall_clock_ms": 3339
+}

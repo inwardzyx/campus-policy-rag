@@ -1,0 +1,111 @@
+# -*- coding: utf-8 -*-
+"""失败归因：把一次评测结果落进**一个**桶，否则"调优"就没有方向。
+
+## 为什么需要它
+评测只报"答对 8/12"没用——同样是答错，可能是检索没捞到、可能是捞到了被预算裁掉、
+可能是排在第 4 名没进 top3、也可能是答了却没标引用。这四类失败要改的地方完全不同：
+换切块 / 调预算 / 改排序 / 改模板。不归因就去"调优"，等于随机改参数。
+
+## 桶的定义（只有 6 个失败桶，其余是"正常结果"）
+| 桶 | 判据 | 该改哪层 |
+|---|---|---|
+| `retrieval_miss` | gold 既不在 trace 的候选里、也不在 included/excluded 里 | 数据层（切块）或检索 |
+| `rank_shift` | gold 在候选里，但没进 included（被挤出 top3 或精排分低） | 精排 / 权威序 |
+| `budget_cut` | gold 进了 excluded，reason 是 `budget` / `oversize` | Runtime 预算或压缩 |
+| `gen_uncited` | gold 进了 included，但答案一句引用都没有（**batch 2 才有 citation 字段**） | 模板 |
+| `acl_leak` | 越权题却命中了块（红线） | ACL 双道 |
+| `stale_version` | gold 因版本过滤被排除（**batch 4 才有 as-of**） | 数据层 as-of |
+
+正常结果：`ok`（应答/越权按预期）、`refuse_ok`（拒答题正确拒答）、
+`answered_unexpectedly`（拒答题却答了）。
+
+★ 缺失不伪装：没有 `context`（`docs/` 旧路径没有 trace）时，`context_available=False`
+  会如实报出来，此时"答错但不知道原因"不会被硬塞进 `retrieval_miss`。
+"""
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+#: 6 个失败桶（可行动的那些）。`ok` / `refuse_ok` / `answered_unexpectedly` 是结果，不算桶。
+FAILURE_BUCKETS: tuple[str, ...] = (
+    "retrieval_miss", "rank_shift", "budget_cut", "gen_uncited", "acl_leak", "stale_version",
+)
+
+_BUDGET_REASONS = ("budget", "oversize")
+
+
+def gold_of(case: Mapping[str, Any]) -> tuple[str, str] | None:
+    """从题面取 gold：`[doc, clause]`。
+
+    ★ 两种题集格式都认：老题集 `gold`、企业模板 `expected_sources`。
+      少写一种就会在另一套题集上静默变成"没有 gold"，而归因会把它算成 retrieval_miss。
+    """
+    raw = case.get("gold") or case.get("expected_sources")
+    if not raw or len(raw) < 2:
+        return None
+    return str(raw[0]), str(raw[1])
+
+
+def _trace(response: Mapping[str, Any]) -> dict[str, Any] | None:
+    ctx = response.get("context")
+    return ctx if isinstance(ctx, dict) else None
+
+
+def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, Any]:
+    """返回 `{bucket, reason, gold, context_available}` —— 可直接写进报告逐条展示。"""
+    typ = str(case.get("type", "answer"))
+    hit = bool(response.get("knowledge_hit", False))
+    gold = gold_of(case)
+    ctx = _trace(response)
+
+    out: dict[str, Any] = {"gold": list(gold) if gold else None,
+                           "context_available": ctx is not None}
+
+    if typ == "deny":
+        out.update(bucket="acl_leak" if hit else "ok",
+                   reason="越权题却命中了块" if hit else "越权题被正确拒答")
+        return out
+    if typ == "refuse":
+        out.update(bucket="answered_unexpectedly" if hit else "refuse_ok",
+                   reason="库外题却答了" if hit else "库外题被正确拒答")
+        return out
+
+    # ---- 以下都是 answer 题 ----
+    if ctx is None:
+        # 没有 trace 就**不猜**原因（docs/ 旧路径）：命中与否是唯一能说的事实。
+        out.update(bucket="ok" if hit else "retrieval_miss",
+                   reason="没有 context（旧路径）⇒ 只能按是否命中判；原因未知")
+        return out
+
+    included = {(str(b.get("source")), str(b.get("clause"))) for b in (ctx.get("blocks") or [])}
+    excluded = {(str(b.get("source")), str(b.get("clause"))): str(b.get("reason"))
+                for b in (ctx.get("excluded") or [])}
+    cands = {(str(c.get("source")), str(c.get("clause"))) for c in (ctx.get("candidates") or [])}
+
+    if gold and gold in included:
+        citation = ctx.get("citation") or {}
+        if citation and not (citation.get("used_ids") or []):
+            out.update(bucket="gen_uncited", reason="答案没有任何引用标记")
+            return out
+        out.update(bucket="ok", reason="gold 在喂给模型的块里")
+        return out
+
+    if gold and gold in excluded:
+        why = excluded[gold]
+        if why in _BUDGET_REASONS:
+            out.update(bucket="budget_cut", reason=f"gold 被预算裁掉（{why}）")
+        elif why == "stale":
+            out.update(bucket="stale_version", reason="gold 因版本过滤被排除")
+        elif why == "low_score":
+            out.update(bucket="rank_shift", reason="gold 在候选里但精排分低，整体拒答")
+        else:
+            out.update(bucket="retrieval_miss", reason=f"gold 被排除（{why}）")
+        return out
+
+    if gold and gold in cands:
+        out.update(bucket="rank_shift",
+                   reason="gold 在候选里但没进 included（被 top3 或精排分挡住）")
+        return out
+
+    out.update(bucket="retrieval_miss", reason="gold 不在候选里（切块/检索问题）")
+    return out
