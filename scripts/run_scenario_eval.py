@@ -136,7 +136,8 @@ def main() -> int:
                          "reason": "没有收到该题的响应", "context_available": False,
                          "knowledge_hit": False, "took_ms": None,
                          "context_recall": None, "context_precision": None,
-                         "citation_precision": None, "included": 0, "sources": []})
+                         "citation_validity": None, "uncited_count": None,
+                         "included": 0, "sources": []})
         else:
             rows.append(eval_metrics.score_row(case, resp))
 
@@ -168,6 +169,8 @@ def main() -> int:
     print(f"  context_recall={agg['context_recall']} precision={agg['context_precision']}"
           f" ndcg@3={agg['ndcg@3']} budget_cut_rate={agg['budget_cut_rate']}"
           f" p95={agg['p95_ms']}ms")
+    print(f"  引用：validity={agg['citation_validity']}"
+          f" 未标注段落/答案={agg['uncited_paragraphs_per_answer']}")
     print(f"  归因：{agg['buckets']}")
     if agg["notes"]:
         for n in agg["notes"]:

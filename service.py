@@ -71,6 +71,7 @@ from kb.store import KnowledgeStore                 # noqa: E402  企业语料�
 from kb.source import UnsupportedFormat, ParseError     # noqa: E402  格式不支持/解析失败给明确状态码
 from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke 质检
 import kb.context as context_mod                    # noqa: E402  上下文层：八层/预算/trace
+import kb.citation as citation_mod                  # noqa: E402  引用校验（答案里的 [n] 指没指对块）
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
@@ -1098,6 +1099,17 @@ class RAG:
           就成了靠注释承诺的话（本仓库为这种"两处各写一份"栽过好几次）。
           抽出来之后，测试可以直接比两边的 prompt 字符串。
         """
+        if chunks and "cite_id" in chunks[0]:
+            # ★ v2 模板：块带编号 ⇒ 要求逐句标注来源。
+            #   为什么用"数据触发"而不是给 `answer()` 加参数：那两个方法（同步/流式）的签名
+            #   被十几个测试桩依赖；加参数要连带改桩，而且**两条路必须喂同一份 prompt**。
+            #   让"带不带编号"由数据决定 ⇒ 两条路天然同源，docs/ 旧路径的 prompt 一字不变。
+            ctx = "\n".join(f"[{c['cite_id']}] {c.get('text_full', c['text'])}"
+                             for c in chunks)
+            return ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
+                    "引用要求：每条结论后用方括号标出依据的资料编号（例如「……[2]」）；"
+                    "没有资料支撑的话不要写；资料不足以下结论时直接说不知道。\n"
+                    f"资料：\n{ctx}\n\n问题：{question}")
         ctx = "\n".join(f"- {c.get('text_full', c['text'])}" for c in chunks)
         return ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
                 f"资料：\n{ctx}\n\n问题：{question}")
@@ -1287,6 +1299,9 @@ class ContextSummary(BaseModel):
     # ★ 候选清单（source/clause/rank，无数值分数）：评测归因靠它区分
     #   「检索没捞到」和「捞到了但排在第 4 名」—— 只看 included/excluded 这两种长得一样。
     candidates: list[dict] = []
+    # ★ 2026-10-25 加：引用校验报告（只在 namespace 路径、且真的生成过答案时存在）。
+    #   写进响应而不是只写日志："这句话出自第几条"是合规场景要发给审计的东西。
+    citation: Optional[dict] = None
 
     @classmethod
     def from_trace(cls, trace) -> "ContextSummary":
@@ -1582,9 +1597,20 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         out.put(("sources", payload))
 
         n_delta = 0
-        for piece in rag.answer_stream(req.question, [c for c, _, _, _ in picked]):
+        _picked_chunks = [c for c, _, _, _ in picked]
+        fed_blocks = (_numbered(_picked_chunks) if getattr(req, "namespace", None)
+                      else _picked_chunks)
+        pieces: list[str] = []
+        for piece in rag.answer_stream(req.question, fed_blocks):
+            pieces.append(piece)
             out.put(("delta", {"text": piece}))
             n_delta += 1
+        # ★ 引用只能在答案收完之后判 ⇒ 单独一个 `citation` 事件（**只有 namespace**）。
+        #   docs/ 旧流式的帧序列不变（旧测试断言 kinds 里没有多余事件）。
+        if context_summary is not None:
+            report = _attach_citation(context_summary, "".join(pieces), fed_blocks)
+            out.put(("citation", {"trace_id": context_summary.trace_id,
+                                   "citation": report}))
         out.put(("__ok__", {"n_delta": n_delta}))
     except LLMCallError as e:
         out.put(("error", {"message": f"模型调用失败：{e}"}))
@@ -1888,6 +1914,27 @@ def _search_for_request(req, query, roles=None):
     return rag.search(query, k=req.top_k)
 
 
+def _numbered(chunks):
+    """给喂进 prompt 的块加 `cite_id`（1 起），返回**副本**。
+
+    ★ 必须 copy：`sources` 与 trace 用的是同一批 dict，原地加字段会让响应里凭空多一个
+      `cite_id`；而编号只对"喂进 prompt 的那一份"有意义。
+    """
+    return [{**c, "cite_id": i} for i, c in enumerate(chunks, start=1)]
+
+
+def _attach_citation(context_summary, answer, fed_blocks):
+    """校验引用并挂到 context 上；越界编号写进 degraded（**降级要可见**）。"""
+    if context_summary is None:
+        return None
+    report = citation_mod.check(answer, fed_blocks)
+    context_summary.citation = report
+    if report.get("unknown_ids"):
+        context_summary.degraded["citation"] = "unknown_id"
+    logger.info("引用校验：%s", citation_mod.summarize(report))
+    return report
+
+
 def _candidate_blocks(items, limit: int = 10):
     """把候选压成 trace 里的定位信息（source/clause/rank），**不带正文、不带分数**。
 
@@ -2084,8 +2131,10 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
         # 关掉 rerank 时用的是粗捞的向量分，比精排分粗（"意思接近但答非所问"更容易漏进来），
         # 所以默认还是开着 rerank —— 关掉只是留一个对比开关，不是关闭防线。
 
+    # ★ 只有 namespace 路径带编号（docs/ 旧路径的 prompt 必须逐字节不变）
+    fed_blocks = _numbered(ctx) if getattr(req, "namespace", None) else ctx
     try:
-        answer = rag.answer(req.question, ctx)
+        answer = rag.answer(req.question, fed_blocks)
     except LLMCallError as e:
         # 资料命中了，但生成这一步挂了 —— 如实告诉调用方"是模型的问题"，
         # 不能伪装成拒答（knowledge_hit 仍是 True，因为资料确实命中了）。
@@ -2099,6 +2148,7 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
     # ★ 2026-09-27：这里【显式】写上 knowledge_hit=True，不再靠上面的默认值。
     #   之前靠 ChatResponse 的字段默认值躺赢 —— 一旦有人改动那个默认值，
     #   成功路径的语义会悄悄跟着变，而且看这段代码的人根本看不出来它依赖了默认值。
+    _attach_citation(context_summary, answer, fed_blocks)
     return ChatResponse(answer=answer, sources=sources, took_ms=took(),
                         rerank_used=use_rerank, knowledge_hit=True,
                         usage=_usage_for_response(led), session_used=session_used,

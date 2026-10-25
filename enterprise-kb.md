@@ -144,6 +144,44 @@ Q3 学校对考试作弊怎么处理？    hit=True  4035ms  used 1036/1840  丢
 
 v2 未做：prompt 模板化、压缩（摘句/去重）、memory/tool 层真正注入、预算敏感性实验。
 
+## 引用锚点与校验（2026-10-25，批 2）
+
+文件：[`kb/citation.py`](kb/citation.py)。**只对带 namespace 的请求生效**：`docs/` 旧路径的 prompt
+逐字节不变（`tests/test_context.py` 的 golden 用例继续守着），响应里也没有 `context`。
+
+### 做法
+
+1. **模板双轨**：喂给模型的块带 `cite_id` 时走 v2 模板 —— 块前缀 `[1] [2] …`，
+   要求"每条结论后标依据编号；没资料支撑的话不要写；不足以下结论就说不知道"。
+   ★ 用**数据触发**而不是给 `answer()` 加参数：那两条方法（同步/流式）的签名被十几个测试桩依赖，
+   加参数要连带改桩，而且两条路必须喂同一份 prompt。
+2. **校验（纯规则，不调模型）**：`used_ids` / `unknown_ids` / `validity` / `uncited_count` /
+   `clause_numbers_in_answer`；越界编号写进 `context.degraded["citation"]="unknown_id"`。
+3. **流式**：引用只能等答案收完才判 ⇒ 多发一个 `citation` 事件（只有 namespace 有，
+   `sources → delta* → citation` 顺序不变，docs/ 旧流式帧序列完全不变）。
+
+### 指标口径：叫 validity，不叫 precision
+
+ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**被所引段落支持**"，
+需要 NLI/人判。我们只做可机械判定的部分：编号是否合法、条款编号是否出现。
+所以指标叫 `citation_validity`（合法引用 / 全部引用），**不冒充** ALCE 的 precision；
+语义级抽样 judge 留给批 5（用现有 DeepSeek 通道，10% 抽样、离线）。
+
+### 实测（campus 同 20 题，配对对照）
+
+```text
+改前（无引用）：应答 14/15、p95 4794ms
+改后（v2 模板）：应答 14/15、citation_validity 1.0、未标注段落/答案 0.2、p95 4683ms
+```
+
+★ 结论只能写到"**没变差**"：每臂 1 次、n=20，Wilson [0.70, 0.99] 很宽。
+★ 两个度量 bug 都是这一轮实测暴露并修掉的（都有用例守着）：
+① 按句子数"未标注"⇒ 模型段末标 `[1]`，假高 3~5 倍；
+② 拒答白名单漏变体（"无法完整回答"不含"无法回答"）。
+
+判据的变异体：[`scripts/mutate_citation.py`](scripts/mutate_citation.py) —— 编号从 0 开始 /
+越界不标记，**2/2 变红**，并按字节还原（sha256 一致）。
+
 ## 评测自进化层 v1（2026-10-25）
 
 三个文件：`kb/attribution.py`（归因）、`kb/eval_metrics.py`（指标）、

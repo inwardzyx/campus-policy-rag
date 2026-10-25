@@ -155,7 +155,7 @@ def test_aggregate_rates_and_budget_cut_rate() -> None:
     assert agg["failure_buckets"]["rank_shift"] == 1
     assert agg["budget_cut_rate"] == 0.3333
     assert agg["context_recall"] == 0.3333          # 只有第一题 gold 进了 included
-    assert agg["citation_precision"] is None        # batch 2 之前恒为缺失
+    assert agg["citation_validity"] is None       # 没有 citation 字段时是缺失，不是 0
 
 
 def test_ndcg_matches_ir_measures_ground_truth() -> None:

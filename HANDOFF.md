@@ -70,13 +70,15 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 场景评测 runner + campus 基线 | ✅ campus（20 题）/ ⏳ hr·compliance·support 待真实语料 | `scripts/run_scenario_eval.py`、`evalset/report-scenario-campus.json`、`evalset/scenarios/README.md` |
 | gold ↔ 语料联动检查（扫 0 条报红） | ✅ | `scripts/check_eval_gold.py` |
 | 评测依赖单列（不污染 runtime） | ✅ | `requirements-eval.txt`（`ir-measures` + `pytrec-eval-terrier`；**CI 不装**：Linux 无 cp314 wheel） |
+| 引用锚点 + 校验（题号编号 / validity / 未标注段落） | ✅ 只对 namespace 路径 | `kb/citation.py`、`service.py::build_answer_prompt`（双模板）+ `_attach_citation`；流式在 `citation` 事件里 |
+| 引用判据的变异体 | ✅ | `scripts/mutate_citation.py`：编号错位 / 越界不标记，**2/2 变红 + 字节还原** |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-233 passed, 27 skipped
+247 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -98,6 +100,20 @@ budget_cut_rate 0 / p95 4794ms
 第二章-第四条，实际捞到的是第二十四条/第五条 —— **释义问法的检索遗漏**，与预算无关
 （`budget_cut_rate=0`，说明 1840 的额度在这批题上没裁块）。
 
+**引用锚点（批 2，同一批 20 题，配对对照）**：
+
+```text
+改前（无引用，evalset/report-scenario-campus.json）：应答 14/15、p95 4794ms
+改后（v2 模板 + [n] 编号，evalset/report-scenario-campus-citation.json）：
+  应答 14/15、citation_validity 1.0（0 条越界编号）、未标注段落/答案 0.2、p95 4683ms
+```
+
+★ 这不是"提升"，是"没变差"：每臂只跑 1 次、n=20，Wilson 区间很宽（[0.70, 0.99]），
+  只能说明新模板没把应答率打下去，同时答案开始带可校验的编号。
+★ 度量本身踩过两次坑（都已修 + 有用例守着）：
+  ① 按**句子**数"未标注"⇒ 模型是段末标 `[1]`，把同段已被覆盖的句子全算成没标，假高 3~5 倍；
+  ② 拒答白名单漏了变体（"无法**完整**回答"不含"无法回答"）⇒ 又把说明性段落算成没出处。
+
 **Docling 容器**：
 
 - 镜像 `docling-runner:2.142.1`，**2.86 GB**（CPU-only torch；PyPI 默认 torch 会拖 CUDA 包）；
@@ -118,7 +134,8 @@ budget_cut_rate 0 / p95 4794ms
   压缩（摘句/去重）、memory/tool 层真正注入、未用完额度不借用（v1 是固定 cap）。
 - **评测层只有 v1**：场景 runner + 六桶归因 + 指标（recall/precision/nDCG/budget_cut/p95）
   已接，但 **hr/compliance/support 三个场景没有语料也没有题集**（不编数据）；
-  `citation_precision` 恒为 `None`（等批 2 的引用锚点）；`stale_version` 桶是空钩子（等 as-of）。
+  `citation_validity` 只判"编号合法"，ALCE 口径的"是否被所引段落支持"要 NLI，**没做**；
+  `stale_version` 桶是空钩子（等 as-of）。
 - **版本/as-of、审计日志没做**：`DocumentMeta.version` 有字段，但没有按版本查询；
   没有审计表/审计事件。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
@@ -205,8 +222,12 @@ budget_cut_rate 0 / p95 4794ms
 - `evalset/scenarios/README.md`：场景题集格式与出题纪律；campus 直接复用老题集（不复制 data）。
 - 基线见 §2.3；campus 唯一失败是 q2 的**释义问法检索遗漏**（不是预算）。
 
-**下一步（批 2，按选型矩阵修订版）**：引用校验模块（批 2 新增）+ 模板开关（v2 仅 namespace），
-把 `citation_precision` 从 `None` 变成真数字；语义抽样用现有 DeepSeek，不装 NLI。
+**批 2（引用锚点）✅ 已完成（2026-10-25）**：v2 模板只对 namespace 生效（docs/ 的 golden
+prompt 逐字节不变），答案带 `[n]`，`context.citation` 报 validity/未标注段落/越界编号；
+流式新增 `citation` 事件（只有 namespace 才有）。
+
+**下一步（批 3）**：块级规则压缩（邻块去重 / 噪声行 / 句子抽取，clause 头永不删）
++ 用同一批 20 题做**配对对照**（压缩前后各跑一次）。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -251,6 +272,10 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\eval_metrics.py` | 上下文/检索指标：recall/precision/nDCG@3/budget_cut_rate/p95；缺失一律 `None`，不补 0 |
 | `D:\_review_rag-cs\scripts\run_scenario_eval.py` | 场景评测 runner：HTTP 跑题集或 `--responses` 离线复算 → 指标 + 逐题归因 JSON |
 | `D:\_review_rag-cs\scripts\check_eval_gold.py` | gold ↔ 语料联动检查（`## <clause>` 必须存在；扫 0 条报红） |
+| `D:\_review_rag-cs\kb\citation.py` | 引用校验（纯规则）：编号合法性、未标注段落、条款编号信号；不冒充 ALCE 的 NLI 口径 |
+| `D:\_review_rag-cs\tests\test_citation.py` | 引用 14 条：编号/越界/段落级覆盖/拒答变体/流式事件/旧路径无引用 |
+| `D:\_review_rag-cs\scripts\mutate_citation.py` | 引用判据变异体（编号错位、越界不标记），2/2 变红 + 字节还原 |
+| `D:\_review_rag-cs\evalset\report-scenario-campus-citation.json` | 带引用的 campus 基线（validity 1.0、未标注段落 0.2） |
 | `D:\_review_rag-cs\requirements-eval.txt` | 评测专用依赖（ir-measures + pytrec-eval-terrier）；**不进** runtime，CI 不装（Linux 无 cp314 wheel） |
 | `D:\_review_rag-cs\evalset\scenarios\README.md` | 场景题集格式/出题纪律/campus 现状（hr·compliance·support 待语料，不编数据） |
 | `D:\_review_rag-cs\evalset\report-scenario-campus.json` | campus 基线报告（n=20：14/15 答、5/5 拒、recall 0.9333、nDCG@3 0.9333、1 个 retrieval_miss） |
