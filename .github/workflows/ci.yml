@@ -159,8 +159,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: 跑把关 + 评测门禁 + 模型故障守门
-      # 质量门是【零容忍】的：慢 job 跑的三个文件全部注入假模型（tests/conftest.py），
+      - name: 跑全量测试（fast job 之外的所有文件）
+      # 质量门是【零容忍】的：慢 job 跑的文件全部注入假模型（tests/conftest.py），
       #   一次都不真调生成模型 ⇒ 结果是确定性的，数字一变就是真的变了
       #   （Recall / 漏答率的断言见 tests/test_eval_set.py）。
       # ★ 2026-09-27 改真话：这里原来写的是「离线层不调 LLM，所以结果是确定性的」——
@@ -176,7 +176,13 @@ jobs:
         #   那 5 条「超时 / 返回垃圾 / 幻觉 id / 超长输入」的守门测试【在 CI 里根本没跑】——
         #   同样是"测试写了但没人跑"的摆设。已验证它们不依赖 DEEPSEEK_API_KEY，
         #   能在干净的 CI 环境里跑（删掉 key 实测 5 passed）。
-        run: python -m pytest tests/test_guard.py tests/test_eval_set.py tests/test_llm_resilience.py tests/test_usage_ledger.py tests/test_chat_stream.py tests/test_session_multi_turn.py tests/test_context.py -v
+        #
+        # ★★ 2026-10-25 补齐 9 个企业层测试文件（auth / kb_* / parsers / layout /
+        #   feishu_sync / eval_runner）：它们**从来没进过 CI**，`scripts/check_test_counts.py`
+        #   因此一直红着 —— 而 README 那句「不存在只在本地跑过的测试」当时就是假话。
+        #   本地实测：这 9 个文件 49 passed / 17 秒，全部只用 requirements.txt 里的包
+        #   （Docling/飞书/Docker 都被 mock 掉，不联网、不装重依赖）。
+        run: python -m pytest tests/test_guard.py tests/test_eval_set.py tests/test_llm_resilience.py tests/test_usage_ledger.py tests/test_chat_stream.py tests/test_session_multi_turn.py tests/test_context.py tests/test_auth.py tests/test_auth_endpoint.py tests/test_kb_store.py tests/test_kb_api.py tests/test_parsers.py tests/test_layout.py tests/test_feishu_sync.py tests/test_eval_runner.py tests/test_kb_eval.py -v
 
   # ----------------------------------------------------------------
   # 容器 job：证明「镜像里真的跑得起来」
