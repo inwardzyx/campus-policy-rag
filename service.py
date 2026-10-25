@@ -70,6 +70,7 @@ from kb.loader import load_documents                # noqa: E402  知识库从 d
 from kb.store import KnowledgeStore                 # noqa: E402  企业语料：namespace + 上传 + 软删除
 from kb.source import UnsupportedFormat, ParseError     # noqa: E402  格式不支持/解析失败给明确状态码
 from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke 质检
+import kb.context as context_mod                    # noqa: E402  上下文层：八层/预算/trace
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
@@ -222,6 +223,11 @@ VEC_REJECT_THRESHOLD = 0.55
 #   意味着你传了不会报错，但会被【静默忽略】：看着像加了超时，其实一秒都没生效。
 #   所以只能在调用点自己兜（见下面的 _invoke_llm）。
 LLM_TIMEOUT_SEC = float(os.environ.get("LLM_TIMEOUT_SEC", "30"))
+
+# ★ 2026-10-25 上下文层预算（只对带 namespace 的请求生效；docs/ 旧路径根本不看它）。
+#   为什么在 import 时就定死：预算必须在**同一进程内稳定**，否则两次请求的 trace 没法比。
+#   要改走 env（见 kb/context.py 的 Budget.from_env），别在运行期改这个对象。
+CONTEXT_BUDGET = context_mod.Budget.from_env()
 
 
 class LLMCallError(Exception):
@@ -1255,6 +1261,36 @@ class Source(BaseModel):
     reason: Optional[str] = None
 
 
+class ContextBlock(BaseModel):
+    """trace 里的一个块。**只放定位信息**：正文在 `sources` 里，不复制第二份。"""
+
+    source: str
+    clause: str
+    chars: int
+    included: bool
+    reason: str
+
+
+class ContextSummary(BaseModel):
+    """`/chat` 的 `context` 字段：这次上下文用了哪几块、丢了哪几块、为什么。
+
+    ★ 默认 `None`：语义是"这次没启用上下文层"（docs/ 路径），
+      而不是"启用了但一块都没有"——后者会以 `degraded` 报出来。
+    """
+
+    trace_id: str
+    namespace: str
+    blocks: list[ContextBlock]
+    excluded: list[ContextBlock]
+    degraded: dict[str, str] = {}
+    budget: dict = {}
+
+    @classmethod
+    def from_trace(cls, trace) -> "ContextSummary":
+        """把 `kb/context.py` 的 dataclass 转成响应模型（那一层不依赖 pydantic）。"""
+        return cls(**trace.to_dict())
+
+
 class ChatResponse(BaseModel):
     answer: str
     sources: list[Source]
@@ -1272,6 +1308,10 @@ class ChatResponse(BaseModel):
     #     `session_id`，都必须**明说**，别让"降级成单轮"静默成"正常单轮"。
     #   ⚠️ 默认 None ⇒ `response_model` 的字段集对旧调用方不变（有 A/B 判据依赖这点）。
     session_used: Optional[bool] = None
+    # ★ 2026-10-25 加：上下文层摘要。**只在带 namespace 的请求上出现**；
+    #   docs/ 默认路径恒为 None（“没启用” ≠ “启用但为空”——后者用 degraded 报）。
+    #   ⚠️ 默认 None ⇒ 旧调用方只是多看到一个 null，与 `session_used` 同款。
+    context: Optional[ContextSummary] = None
 
 
 class SearchRequest(BaseModel):
@@ -1492,13 +1532,35 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         # ★★ 拒答短路原样保留：精排最高分 < 5 ⇒ 推 refusal，**一个 delta 都不推**，
         #    也压根不调生成模型。这条设计不能因为"流式"就被绕过。
         if not ranked or ranked[0][2] < 5:
-            out.put(("refusal", {
+            refusal = {
                 "answer": "知识库里没有能回答这个问题的资料，我不编。",
                 "sources": [], "rerank_used": bool(ranked),
-                "session_used": session_used}))          # ★ 降级不静默
+                "session_used": session_used}            # ★ 降级不静默
+            # ★ 拒答流**没有 sources 事件**，trace 只能挂在这里 ——
+            #   否则“最该看 trace 的场景”（没答出来）恰好什么都看不到。
+            summary = _exclusion_summary(req, [c for c, _, _, _ in (ranked or [])],
+                                         context_mod.REASON_LOW_SCORE)
+            if summary is not None:
+                refusal["context"] = summary.model_dump()
+            out.put(("refusal", refusal))
             return
 
         picked = [x for x in ranked if x[2] >= 5][:3]
+        # ★ 与 /chat 共用同一份 `_plan_context`：预算裁掉的块不能只从 trace 里消失，
+        #   还要真的不进 `answer_stream`。
+        fed, context_summary = _plan_context(req, [c for c, _, _, _ in picked])
+        if not fed:
+            refusal = {
+                "answer": "知识库里没有能回答这个问题的资料，我不编。",
+                "sources": [], "rerank_used": True,
+                "session_used": session_used}
+            if context_summary is not None:
+                refusal["context"] = context_summary.model_dump()
+            out.put(("refusal", refusal))
+            return
+        if context_summary is not None:
+            _kept = {id(c) for c in fed}
+            picked = [x for x in picked if id(x[0]) in _kept]
         sources = [{"doc": f"{c['doc']}｜{c['clause']}",
                     "text": c.get("text_full", c["text"]),
                     "score": round(v, 3), "rerank_score": s, "reason": r}
@@ -1507,8 +1569,12 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         #   精排给了几分"，不用等整段答案生成完（而这正是 `/chat` 现在做不到的）。
         #   ★ `session_used` 与 `rerank_used` 并列报出去：两者都是"这次到底走了哪条路"
         #     的可见标记，缺了任何一个都会让降级静默成正常。
-        out.put(("sources", {"sources": sources, "rerank_used": True,
-                             "session_used": session_used}))
+        payload = {"sources": sources, "rerank_used": True, "session_used": session_used}
+        # ★ 只在 namespace 请求上**加这个键**：docs/ 的旧 payload 逐字节不变
+        #   （多一个 "context": null 就已经改了对端看到的东西）。
+        if context_summary is not None:
+            payload["context"] = context_summary.model_dump()
+        out.put(("sources", payload))
 
         n_delta = 0
         for piece in rag.answer_stream(req.question, [c for c, _, _, _ in picked]):
@@ -1817,6 +1883,32 @@ def _search_for_request(req, query, roles=None):
     return rag.search(query, k=req.top_k)
 
 
+def _plan_context(req, chunks):
+    """算出这次**真正喂给生成模型**的块 + context 摘要（docs/ 路径原样返回、摘要 None）。
+
+    ★ 两件事必须一起做：预算裁掉的块不能只从摘要里消失、却还留在喂给模型的那份里。
+      分开写（先算摘要、再自己截）就会出现"trace 说丢了、其实喂了"——那种错在测试里
+      几乎看不出来，只能靠 trace 的诚实性，所以这里把两者绑成同一个返回值。
+
+    ★ 走 docs/ 默认语料时**连预算都不算**，返回 None 而不是空 trace：
+      "没启用"和"启用了但一块没有"是两件事，混在一起就没法验证旧路径不变。
+    """
+    if not getattr(req, "namespace", None):
+        return list(chunks), None
+    kept, trace = context_mod.select_retrieved(chunks, budget=CONTEXT_BUDGET,
+                                               namespace=req.namespace)
+    return list(kept), ContextSummary.from_trace(trace)
+
+
+def _exclusion_summary(req, chunks, reason):
+    """没走到"选块"那一步的请求（低分拒答 / 模型没就绪）也留一份 trace。"""
+    if not getattr(req, "namespace", None):
+        return None
+    trace = context_mod.exclusion_trace(chunks, budget=CONTEXT_BUDGET,
+                                        namespace=req.namespace, reason=reason)
+    return ContextSummary.from_trace(trace)
+
+
 def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
     """问答主体：**不含 HTTP 那道限流闸门**（HTTP 入口是上面的 `chat()`）。
 
@@ -1831,8 +1923,14 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
     effective_acl = roles if roles is not None else req.acl
     t0 = time.time()
     if not rag.ready:
-        return {"answer": "服务还在加载模型，请稍等几秒再试", "sources": [],
-                "took_ms": 0, "rerank_used": False}
+        payload = {"answer": "服务还在加载模型，请稍等几秒再试", "sources": [],
+                   "took_ms": 0, "rerank_used": False}
+        # ★ namespace 请求连「没建起来」也要报，否则调用方看到的是
+        #   "接口正常、就是没有 context" —— 降级被伪装成了正常。
+        not_ready = _exclusion_summary(req, [], context_mod.DEGRADED_NOT_READY)
+        if not_ready is not None:
+            payload["context"] = not_ready.model_dump()
+        return payload
 
     # ★ 查询改写：把"学生怎么说"翻译成"制度怎么写"，**只用于检索**。
     #   精排与生成看到的仍是 req.question（用户原话）—— 答的是他真正问的问题。
@@ -1899,15 +1997,28 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False,
-                usage=_usage_for_response(led),
-                session_used=session_used)
+                usage=_usage_for_response(led), session_used=session_used,
+                context=_exclusion_summary(req, [c for c, _, _, _ in (ranked or [])],
+                                           context_mod.REASON_LOW_SCORE))
 
         picked = [x for x in ranked if x[2] >= 5][:3]     # 只留 5 分以上的，最多 3 条
+        # ★ 2026-10-25：namespace 请求先过字符预算。裁掉的块**必须真的不喂**，
+        #   否则 context trace 说的就是假话（“丢了”其实喂了）。
+        ctx, context_summary = _plan_context(req, [c for c, _, _, _ in picked])
+        if not ctx:
+            # 候选有、却一块都放不进额度 ⇒ 走现有拒答，绝不零上下文硬生成。
+            return ChatResponse(
+                answer="知识库里没有能回答这个问题的资料，我不编。",
+                sources=[], took_ms=took(), rerank_used=True, knowledge_hit=False,
+                usage=_usage_for_response(led), session_used=session_used,
+                context=context_summary)
+        if context_summary is not None:
+            _kept = {id(c) for c in ctx}
+            picked = [x for x in picked if id(x[0]) in _kept]
         sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
                           text=c.get("text_full", c["text"]),
                           score=round(v, 3), rerank_score=s, reason=r)
                    for c, v, s, r in picked]
-        ctx = [c for c, _, _, _ in picked]
     else:
         # ★★ 关掉 rerank 时【照样要拒答】。
         #    之前的写法是"没有分数可判断，只能照常生成" —— 那等于网页上取消勾选一下，
@@ -1925,10 +2036,24 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",
                 sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
-                usage=_usage_for_response(led),
-                session_used=session_used)
+                usage=_usage_for_response(led), session_used=session_used,
+                context=_exclusion_summary(req, [c for c, _ in cands],
+                                           context_mod.REASON_LOW_SCORE))
 
         sources, ctx = _vec_sources(cands)
+        # ★ 同上：预算外的块要从 ctx 与 sources 里**一起**消失（`_vec_sources` 的契约是
+        #   两者一一对应；只改一边就会出现“出处列了没喂的块”）。
+        planned, context_summary = _plan_context(req, ctx)
+        if not planned:
+            return ChatResponse(
+                answer="知识库里没有能回答这个问题的资料，我不编。",
+                sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
+                usage=_usage_for_response(led), session_used=session_used,
+                context=context_summary)
+        if context_summary is not None and len(planned) != len(ctx):
+            _kept = {id(c) for c in planned}
+            sources = [s for c, s in zip(ctx, sources) if id(c) in _kept]
+        ctx = planned
         # 关掉 rerank 时用的是粗捞的向量分，比精排分粗（"意思接近但答非所问"更容易漏进来），
         # 所以默认还是开着 rerank —— 关掉只是留一个对比开关，不是关闭防线。
 
@@ -1941,16 +2066,16 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
         return ChatResponse(
             answer="⚠️ 已找到相关资料，但模型调用失败（超时或限流），请稍后重试。",
             sources=sources, took_ms=took(), rerank_used=use_rerank, knowledge_hit=True,
-            usage=_usage_for_response(led),
-                session_used=session_used)
+            usage=_usage_for_response(led), session_used=session_used,
+            context=context_summary)
 
     # ★ 2026-09-27：这里【显式】写上 knowledge_hit=True，不再靠上面的默认值。
     #   之前靠 ChatResponse 的字段默认值躺赢 —— 一旦有人改动那个默认值，
     #   成功路径的语义会悄悄跟着变，而且看这段代码的人根本看不出来它依赖了默认值。
     return ChatResponse(answer=answer, sources=sources, took_ms=took(),
                         rerank_used=use_rerank, knowledge_hit=True,
-                        usage=_usage_for_response(led),
-                session_used=session_used)
+                        usage=_usage_for_response(led), session_used=session_used,
+                        context=context_summary)
 
 
 def _zero_usage() -> dict:

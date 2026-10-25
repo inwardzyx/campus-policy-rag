@@ -189,7 +189,7 @@ def test_append_failure_does_not_break_the_answer(store, rag, monkeypatch) -> No
 # ---------------------------------------------------------------- ⑤ 单轮不被碰坏
 
 def test_single_turn_response_shape_unchanged(rag, monkeypatch) -> None:
-    """⑤ 不传 session_id 时，响应里除了新增的 `session_used` 之外字段集不变。
+    """⑤ 不传 session_id 时，响应里除了新增的 `session_used`/`context` 之外字段集不变。
 
     ★ 为什么在意：`/chat` 的字段集被 A/B 脚本与评测依赖
       （`/search` vs `/chat?use_rerank=False` 那条对照就是逐字段比的）。
@@ -202,5 +202,5 @@ def test_single_turn_response_shape_unchanged(rag, monkeypatch) -> None:
     r = svc.handle_chat(svc.ChatRequest(question="问题", use_rerank=True))
     got = set(r.model_dump().keys())
     expect = {"answer", "sources", "took_ms", "rerank_used", "knowledge_hit",
-              "usage", "session_used"}
+              "usage", "session_used", "context"}
     assert got == expect, f"字段集变了：多 {got - expect}，少 {expect - got}"

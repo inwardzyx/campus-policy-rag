@@ -1,0 +1,185 @@
+{
+  "note": "Context Layer v1 真实验收：namespace /chat 的 context trace（正文不入 trace）",
+  "port": 8019,
+  "namespace": "accept_ctx",
+  "corpus": "sisu-handbook-2025.pdf",
+  "questions": [
+    {
+      "question": "本科生转专业需要什么条件？",
+      "status": 200,
+      "knowledge_hit": true,
+      "answer": "根据资料，我只能回答退役复学学生转专业的条件，资料中未提供普通本科生转专业的一般条件。\n\n退役复学学生转专业应当符合下列条件（第十九条）：\n1. 已完成退役复学手续；\n2. 自入学起至服兵役前不超过2年；\n3. 外语类保送生应符合本办法第三条第4款。\n\n此外，有下列情形之一的，不适用于退役复学学生转专业（第二十条）：\n1. 本办法第四条第3、4、5、6款情形的；\n2. 在服役期间受到处分的，或者未按规定服役期完成服役的；\n3. 其他由学校认定不适合转专业的。\n\n关于普通本科生转专业的一般条件，资料中没有相关内容，我不知道。",
+      "took_ms": 5629,
+      "sources": [
+        {
+          "doc": "sisu-handbook-2025｜第53段",
+          "chars": 306,
+          "rerank_score": 8,
+          "reason": "列出不得转专业的情形（特殊招生、处分未解除等），直接回答转专业限制条件。"
+        },
+        {
+          "doc": "sisu-handbook-2025｜第52段",
+          "chars": 881,
+          "rerank_score": 6,
+          "reason": "涉及转专业流程、名额比例和退役复学条件，部分内容与转专业条件相关。"
+        }
+      ],
+      "context": {
+        "trace_id": "e730c3f1de7a4d0097f88527c9834633",
+        "namespace": "accept_ctx",
+        "blocks": [
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第53段",
+            "chars": 306,
+            "included": true,
+            "reason": "fits"
+          },
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第52段",
+            "chars": 881,
+            "included": true,
+            "reason": "fits"
+          }
+        ],
+        "excluded": [
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第50段",
+            "chars": 681,
+            "included": false,
+            "reason": "budget"
+          }
+        ],
+        "degraded": {
+          "retrieval": "budget_truncated"
+        },
+        "budget": {
+          "total_chars": 4000,
+          "retrieved_cap": 1840,
+          "output_reserve_chars": 400,
+          "retrieved_used": 1187,
+          "retrieved_unused": 653,
+          "enabled_layers": [
+            "retrieved"
+          ]
+        }
+      }
+    },
+    {
+      "question": "学生宿舍可以用电热毯吗？",
+      "status": 200,
+      "knowledge_hit": true,
+      "answer": "不可以。根据资料第二十二条，学生公寓（宿舍）严禁存放和使用电热毯等电热类电器。",
+      "took_ms": 2628,
+      "sources": [
+        {
+          "doc": "sisu-handbook-2025｜第407段",
+          "chars": 979,
+          "rerank_score": 10,
+          "reason": "第二十二条明确列出电热毯为严禁存放和使用的电热器具，直接回答了问题。"
+        }
+      ],
+      "context": {
+        "trace_id": "61df09afd55a4d13ac0ca2398ca66e7e",
+        "namespace": "accept_ctx",
+        "blocks": [
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第407段",
+            "chars": 979,
+            "included": true,
+            "reason": "fits"
+          }
+        ],
+        "excluded": [
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第408段",
+            "chars": 1017,
+            "included": false,
+            "reason": "budget"
+          },
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第404段",
+            "chars": 898,
+            "included": false,
+            "reason": "budget"
+          }
+        ],
+        "degraded": {
+          "retrieval": "budget_truncated"
+        },
+        "budget": {
+          "total_chars": 4000,
+          "retrieved_cap": 1840,
+          "output_reserve_chars": 400,
+          "retrieved_used": 979,
+          "retrieved_unused": 861,
+          "enabled_layers": [
+            "retrieved"
+          ]
+        }
+      }
+    },
+    {
+      "question": "学校对考试作弊怎么处理？",
+      "status": 200,
+      "knowledge_hit": true,
+      "answer": "根据资料，学生考试作弊的处理是：**视为作弊，给予留校察看处分，该门课程考试成绩记为无效，考试作弊情况据实记载**。",
+      "took_ms": 4035,
+      "sources": [
+        {
+          "doc": "sisu-handbook-2025｜第333段",
+          "chars": 1036,
+          "rerank_score": 10,
+          "reason": "明确区分违反考试纪律、严重违纪、作弊及严重作弊，并给出警告、严重警告、记过、留校察看、开除学籍等具体处分，最直接回答处理方式。"
+        }
+      ],
+      "context": {
+        "trace_id": "c60611aa87b742bd8a2238f889f963de",
+        "namespace": "accept_ctx",
+        "blocks": [
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第333段",
+            "chars": 1036,
+            "included": true,
+            "reason": "fits"
+          }
+        ],
+        "excluded": [
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第334段",
+            "chars": 1033,
+            "included": false,
+            "reason": "budget"
+          },
+          {
+            "source": "sisu-handbook-2025",
+            "clause": "第60段",
+            "chars": 971,
+            "included": false,
+            "reason": "budget"
+          }
+        ],
+        "degraded": {
+          "retrieval": "budget_truncated"
+        },
+        "budget": {
+          "total_chars": 4000,
+          "retrieved_cap": 1840,
+          "output_reserve_chars": 400,
+          "retrieved_used": 1036,
+          "retrieved_unused": 804,
+          "enabled_layers": [
+            "retrieved"
+          ]
+        }
+      }
+    }
+  ]
+}

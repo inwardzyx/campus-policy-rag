@@ -105,6 +105,45 @@ $py='D:\Python-project\.venv\Scripts\python.exe'
 出题纪律：出题人**不看检索代码/结果**；题目来自真实工单/角色走查；冻结后跑，不用它调参。
 `answer` 判“source 命中”，不是“答案完全正确”；后者要人工 rubric。
 
+## 上下文层 v1（2026-10-25）
+
+文件：[`kb/context.py`](kb/context.py)。**只对带 `namespace` 的 `/chat` 与 `/chat/stream` 生效**；
+`docs/` 默认语料那条 105 题旧路径完全不进入这段逻辑（`context` 为 `None`，流式 payload 里
+连这个键都不出现 —— 用 golden prompt 逐字节对照守着）。
+
+1. **八层声明**：`system / policy / history / task / memory / retrieved / tool / output`。
+   v1 **只有 retrieved 真的占预算**，其余层 `used_chars=0`，trace 里用
+   `budget.enabled_layers=["retrieved"]` 明说 —— 不把"声明了"伪装成"注入了"。
+2. **预算按 chars，不按 token**：默认 `CONTEXT_BUDGET_CHARS=4000`、
+   `CONTEXT_RETRIEVED_RATIO=0.46`（检索额度 **1840**）、`CONTEXT_OUTPUT_RESERVE_CHARS=400`
+   （给回答留位）。八层额度之和**恒等于**总预算（改 ratio 后按剩余额度重分，否则会出现
+   2080 > 2000 的自相矛盾预算表）。env 坏值退回默认并记进 `budget.env_ignored`。
+3. **超预算整块丢**：按精排顺序贪心，放不下的块 `reason=budget`；单块本来就超 1840 的
+   `reason=oversize`；**不截半块**（截一半的条款比少一条更容易读反）。
+   一块都放不下 ⇒ `degraded.retrieval=no_block_fits`、`sources=[]`、`knowledge_hit=false`，
+   走既有拒答，**不零上下文硬生成**。
+4. **ContextTrace**：`trace_id`（uuid4）、`blocks`（source/clause/chars/included/reason）、
+   `excluded`、`degraded`、`budget`。**只存定位信息、不存正文**（正文在 `sources` 里）。
+   拒答/未就绪也留 trace（`low_score` / `not_ready`）—— 那是最需要"为什么"的场景。
+5. **不借用未用额度**：固定 cap 才可复现；未用额度记在 `budget.retrieved_unused`，不参与分配。
+
+实测（`experiments/_context-v1-acceptance.json`，3 个真实问题打 `/chat?namespace=accept_ctx`）：
+
+```text
+Q1 本科生转专业需要什么条件？  hit=True  5629ms  used 1187/1840  第 3 块 681 chars 放不下 → 整块丢
+Q2 学生宿舍可以用电热毯吗？    hit=True  2628ms  used  979/1840  丢 2 块（budget）
+Q3 学校对考试作弊怎么处理？    hit=True  4035ms  used 1036/1840  丢 2 块（budget）
+三题 degraded 均为 {"retrieval": "budget_truncated"}
+```
+
+判据与变异：`tests/test_context.py`（20 条）；`scripts/mutate_context_layer.py` 把
+"旧路径 gating"与"trace/ctx 同源"各打坏一次，**2/2 变红**并按字节还原（sha256 一致）。
+
+复现上面那份产物：服务在跑时执行 `D:\Python-project\.venv\Scripts\python.exe scripts\ctx_acceptance.py`
+（默认打 8019、传 `samples/sisu-handbook-2025.pdf` 进 `accept_ctx`；可用 `--url/--namespace/--pdf/--out`）。
+
+v2 未做：prompt 模板化、压缩（摘句/去重）、memory/tool 层真正注入、预算敏感性实验。
+
 ## 飞书 wiki 连接器（2026-10-23）
 
 文件：[`kb/feishu.py`](kb/feishu.py)、CLI [`scripts/feishu_sync.py`](scripts/feishu_sync.py)。

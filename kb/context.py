@@ -1,0 +1,323 @@
+# -*- coding: utf-8 -*-
+"""上下文层 v1：八层声明 + 字符预算 + ContextTrace。
+
+## 为什么按 chars 估，而不是 token
+本机没有可信的 tokenizer（DeepSeek 的 tokenizer 不在客户端里），写 token 数就等于**编**。
+`len(str)` 是可复现的；对外字段一律叫 `chars`，别让它看起来像 token。
+
+## v1 只让 retrieved 层真正占预算
+八层（system/policy/history/task/memory/retrieved/tool/output）先把结构立起来，
+但除 `retrieved` 外的层 `used_chars=0`，并在 budget 里报
+`enabled_layers=["retrieved"]` —— 让"声明了"和"真的注入了"在 trace 里一眼分开，
+而不是把八层都填上好看的数字。v1 不改答案 prompt 的措辞，只决定**喂哪几块**。
+
+## 超预算：整块丢，不截半块
+制度问答里"截一半的条款"比"少一条"更危险（半句常常能反读原意）。
+所以只在块边界裁剪：放不下的整块进 excluded（reason=budget），
+单块本身就超过 cap 的进 excluded（reason=oversize）——**不截断、不拼半块**。
+
+## 为什么没用完的预算不借给别的层
+固定 cap 才可复现。自动借用会让同一问题在不同候选集下预算行为不一致，trace 也就没法比。
+未用额度记在 `budget.retrieved_unused` 里：看得到，但不参与分配。
+
+## 边界
+不 import pydantic / 不 import service / 不碰 LLM —— 这样它能在没有模型、没有 key 的
+环境里被单测（与 `limits.py`、`session.py` 同款的分层理由）。
+"""
+from __future__ import annotations
+
+import os
+import uuid
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
+
+#: 八层的**固定顺序**（稳定层在前、变化层在后，见设计稿 §3.3 第 4 条）。
+#: 顺序是元组而不是 set：trace 里层的排列要稳定，否则每次 diff 都在抖动。
+LAYERS: tuple[str, ...] = (
+    "system", "policy", "history", "task",
+    "memory", "retrieved", "tool", "output",
+)
+
+#: 设计稿 §3.1 的层间占比（合计 1.00）。v1 只有 retrieved 那一条真的生效。
+LAYER_RATIOS: dict[str, float] = {
+    "system": 0.06,
+    "policy": 0.04,
+    "history": 0.10,
+    "task": 0.06,
+    "memory": 0.08,
+    "retrieved": 0.46,
+    "tool": 0.10,
+    "output": 0.10,
+}
+
+DEFAULT_BUDGET_CHARS = 4000
+DEFAULT_RETRIEVED_RATIO = 0.46
+DEFAULT_OUTPUT_RESERVE_CHARS = 400
+
+#: 块的去向。只有 `fits` 会真的喂给生成模型 —— 其余三个都意味着"没进上下文"。
+REASON_FITS = "fits"
+REASON_BUDGET = "budget"
+REASON_OVERSIZE = "oversize"
+REASON_LOW_SCORE = "low_score"
+
+#: degraded 的取值（`degraded["retrieval"]`）。
+DEGRADED_NO_BLOCK_FITS = "no_block_fits"
+DEGRADED_BUDGET_TRUNCATED = "budget_truncated"
+DEGRADED_NOT_READY = "not_ready"
+
+
+def new_trace_id() -> str:
+    """给一次请求一个 trace_id。用 uuid4 而不是自增号：多进程/多机也不会撞。"""
+    return uuid.uuid4().hex
+
+
+@dataclass(frozen=True)
+class Block:
+    """trace 里的一个块 —— **只放定位信息，不放正文**。
+
+    ★ 为什么不放正文：trace 会出现在响应里、将来还会进日志；副本越多泄漏面越大。
+      而 `sources` 里已经有全文了，再抄一遍纯属浪费。
+    """
+
+    source: str
+    clause: str
+    chars: int
+    included: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"source": self.source, "clause": self.clause, "chars": self.chars,
+                "included": self.included, "reason": self.reason}
+
+
+@dataclass(frozen=True)
+class Budget:
+    """字符预算。三个数都能用环境变量覆盖，默认值见上面的常量。
+
+    ★ 非法值**不静默**：`from_env()` 会退回默认值，并把"哪个 env 被忽略了"记进
+      `ignored_env`，最终出现在 trace 的 `budget.env_ignored` 里 —— 配错误了要看得见，
+      而不是安静地按另一套预算跑。
+    """
+
+    total_chars: int = DEFAULT_BUDGET_CHARS
+    retrieved_ratio: float = DEFAULT_RETRIEVED_RATIO
+    output_reserve_chars: int = DEFAULT_OUTPUT_RESERVE_CHARS
+    ignored_env: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.total_chars <= 0:
+            raise ValueError(f"total_chars 必须 > 0，收到 {self.total_chars}")
+        if not (0 < self.retrieved_ratio <= 1):
+            raise ValueError(f"retrieved_ratio 必须在 (0, 1]，收到 {self.retrieved_ratio}")
+        if self.output_reserve_chars < 0:
+            raise ValueError(f"output_reserve_chars 不能为负，收到 {self.output_reserve_chars}")
+        if self.retrieved_cap <= 0:
+            raise ValueError(
+                f"预算切出来的检索额度是 {self.retrieved_cap} chars —— "
+                f"total={self.total_chars} × ratio={self.retrieved_ratio}")
+
+    @property
+    def retrieved_cap(self) -> int:
+        """retrieved 层的硬上限（chars）。**固定值，不从别层借额度。**"""
+        return max(1, int(round(self.total_chars * self.retrieved_ratio)))
+
+    def layer_caps(self) -> dict[str, int]:
+        """每层声明的额度。v1 里只有 retrieved / output 这两个数会真的被用到。
+
+        ★ 不变式：**八层加起来恒等于 total_chars**（默认配置下恰好与设计稿 §3.1 一致）。
+          为什么不直接拿 `total × 设计稿占比`：`retrieved_ratio` 和预留都能被 env 改，
+          照抄占比的话八层之和会超过总预算（实测 ratio=0.5 时是 2080 > 2000）——
+          一份自相矛盾的预算表比没有预算表更糟。
+          ⇒ retrieved / output 先扣掉，剩下的额度再按设计稿比例**重新分配**给其余六层。
+        """
+        caps: dict[str, int] = {"retrieved": self.retrieved_cap,
+                                "output": self.output_reserve_chars}
+        others = [name for name in LAYERS if name not in caps]
+        remaining = max(0, self.total_chars - self.retrieved_cap - self.output_reserve_chars)
+        weight = sum(LAYER_RATIOS[name] for name in others) or 1.0
+        for name in others:
+            caps[name] = int(remaining * LAYER_RATIOS[name] / weight)
+        # 取整的零头补给占比最大的那层，让求和**正好**等于总预算（不是"约等于"）。
+        biggest = max(others, key=lambda n: LAYER_RATIOS[n])
+        caps[biggest] += remaining - sum(caps[n] for n in others)
+        return {name: caps[name] for name in LAYERS}      # 顺序固定 = LAYERS
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "Budget":
+        e = os.environ if env is None else env
+        ignored: list[str] = []
+        total = _env_int(e, "CONTEXT_BUDGET_CHARS", DEFAULT_BUDGET_CHARS, ignored)
+        ratio = _env_ratio(e, "CONTEXT_RETRIEVED_RATIO", DEFAULT_RETRIEVED_RATIO, ignored)
+        reserve = _env_int(e, "CONTEXT_OUTPUT_RESERVE_CHARS",
+                           DEFAULT_OUTPUT_RESERVE_CHARS, ignored, allow_zero=True)
+        if reserve >= total:
+            # 预留比总预算还大 ⇒ 检索永远没额度。这不是"小问题"，是配置错：
+            # 按 0 处理并记下来（trace 里 output 层的 budget_chars 会是 0，看得见）。
+            ignored.append(f"CONTEXT_OUTPUT_RESERVE_CHARS={reserve}（≥ 总预算 {total}）")
+            reserve = 0
+        return cls(total_chars=total, retrieved_ratio=ratio,
+                   output_reserve_chars=reserve, ignored_env=tuple(ignored))
+
+
+@dataclass
+class ContextTrace:
+    """一次请求的上下文账本：用了哪几块、丢了哪几块、为什么。
+
+    `degraded` 是**空 dict = 没降级**；非空则 `{"retrieval": 原因}`。
+    用 dict 而不是 bool：只报"降级了"等于让人去翻日志找原因。
+    """
+
+    trace_id: str
+    namespace: str
+    blocks: list[Block]
+    excluded: list[Block]
+    degraded: dict[str, str]
+    budget: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "trace_id": self.trace_id,
+            "namespace": self.namespace,
+            "blocks": [b.to_dict() for b in self.blocks],
+            "excluded": [b.to_dict() for b in self.excluded],
+            "degraded": dict(self.degraded),
+            "budget": dict(self.budget),
+        }
+
+
+# ==================================================================
+# 选块
+# ==================================================================
+
+def _chunk_text(chunk: Mapping[str, Any]) -> str:
+    """块真正被喂进 prompt 的那段文本（`build_answer_prompt` 用 text_full 优先）。"""
+    return str(chunk.get("text_full") or chunk.get("text") or "")
+
+
+def _chunk_ids(chunk: Mapping[str, Any]) -> tuple[str, str]:
+    return str(chunk.get("doc") or ""), str(chunk.get("clause") or "")
+
+
+def _budget_dict(budget: Budget, used: int) -> dict[str, Any]:
+    caps = budget.layer_caps()
+    layers = {
+        name: {"budget_chars": caps[name],
+               "used_chars": (used if name == "retrieved" else 0)}
+        for name in LAYERS
+    }
+    return {
+        "total_chars": budget.total_chars,
+        "retrieved_cap": budget.retrieved_cap,
+        "output_reserve_chars": budget.output_reserve_chars,
+        "retrieved_used": used,
+        "retrieved_unused": max(0, budget.retrieved_cap - used),
+        # ★ 把"哪些层真的有内容"单独列出来：v1 只有 retrieved，
+        #   免得有人看着八层的 budget 以为 system/policy 也注入了。
+        "enabled_layers": ["retrieved"],
+        "layers": layers,
+        "env_ignored": list(budget.ignored_env),
+    }
+
+
+def select_retrieved(
+    chunks: Sequence[Mapping[str, Any]],
+    *,
+    budget: Budget,
+    namespace: str,
+    trace_id: str | None = None,
+) -> tuple[list[Mapping[str, Any]], ContextTrace]:
+    """按**给定顺序**贪心放入，返回 `(真正喂给模型的块, trace)`。
+
+    ★ 两个返回值必须一起用：预算裁掉的块**不能还留在**喂给生成模型的那份里，
+      否则 trace 说的就是假话（"丢了一块"但其实喂了）。调用方拿到 kept 要原样替换 ctx。
+
+    ★ 顺序即优先级：调用方传进来的是精排后的顺序（高分在前），本函数不再排序 ——
+      排序规则属于检索层，放在这里会变成"两处各写一份"。
+    """
+    tid = trace_id or new_trace_id()
+    cap = budget.retrieved_cap
+    kept: list[Mapping[str, Any]] = []
+    blocks: list[Block] = []
+    excluded: list[Block] = []
+    used = 0
+    for chunk in chunks:
+        text = _chunk_text(chunk)
+        n = len(text)
+        source, clause = _chunk_ids(chunk)
+        if n > cap:
+            # 单块就超上限：整块丢。截一半会把条款读反，比少一条危险。
+            excluded.append(Block(source, clause, n, False, REASON_OVERSIZE))
+            continue
+        if used + n > cap:
+            excluded.append(Block(source, clause, n, False, REASON_BUDGET))
+            continue
+        kept.append(chunk)
+        used += n
+        blocks.append(Block(source, clause, n, True, REASON_FITS))
+
+    degraded: dict[str, str] = {}
+    if chunks and not kept:
+        # 候选不为空、却一块都放不下 ⇒ 必须是"拒答"，不允许零上下文硬生成。
+        degraded["retrieval"] = DEGRADED_NO_BLOCK_FITS
+    elif excluded:
+        degraded["retrieval"] = DEGRADED_BUDGET_TRUNCATED
+
+    trace = ContextTrace(trace_id=tid, namespace=namespace, blocks=blocks,
+                         excluded=excluded, degraded=degraded,
+                         budget=_budget_dict(budget, used))
+    return kept, trace
+
+
+def exclusion_trace(
+    chunks: Sequence[Mapping[str, Any]],
+    *,
+    budget: Budget,
+    namespace: str,
+    reason: str,
+    trace_id: str | None = None,
+) -> ContextTrace:
+    """没走到"选块"那一步的请求（低分拒答 / 模型没就绪）：块全部记 excluded，预算一个没花。
+
+    ★ 为什么拒答也要 trace：拒答是最需要"为什么"的场景。只回一个 `sources=[]`，
+      事后完全看不出"当时捞到过什么、为什么一块都没用"。
+    """
+    tid = trace_id or new_trace_id()
+    excluded = [Block(*_chunk_ids(c), len(_chunk_text(c)), False, reason) for c in chunks]
+    return ContextTrace(trace_id=tid, namespace=namespace, blocks=[], excluded=excluded,
+                        degraded={"retrieval": reason},
+                        budget=_budget_dict(budget, 0))
+
+
+# ==================================================================
+# env 解析（坏值一律"退回默认 + 记账"，不抛、也不静默）
+# ==================================================================
+
+def _env_int(env: Mapping[str, str], name: str, default: int, ignored: list[str],
+             *, allow_zero: bool = False) -> int:
+    raw = (env.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        ignored.append(f"{name}={raw}（不是整数）")
+        return default
+    if value < 0 or (value == 0 and not allow_zero):
+        ignored.append(f"{name}={raw}（超出取值范围）")
+        return default
+    return value
+
+
+def _env_ratio(env: Mapping[str, str], name: str, default: float, ignored: list[str]) -> float:
+    raw = (env.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        ignored.append(f"{name}={raw}（不是数字）")
+        return default
+    if not (0 < value <= 1):
+        ignored.append(f"{name}={raw}（必须在 (0, 1]）")
+        return default
+    return value

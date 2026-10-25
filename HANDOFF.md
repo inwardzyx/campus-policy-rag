@@ -64,16 +64,20 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | PDF/DOCX 解析 | ✅ | `kb/source.py`：PDF 用 pypdf；DOCX 用标准库 zip+XML |
 | Docling OCR（扫描件/复杂 PDF） | ✅ | `kb/layout.py::DoclingDockerBackend`、`Dockerfile.docling`、`docker/docling_worker.py` |
 | MinerU 外部命令后端 | ✅ 代码 / 未实测 | `kb/layout.py::MinerUBackend` |
+| 上下文层 v1（八层/字符预算/ContextTrace） | ✅ 只对带 namespace 的 `/chat`·`/chat/stream` | `kb/context.py`、`service.py::_plan_context`；实测见 `experiments/_context-v1-acceptance.json` |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-196 passed, 27 skipped
+216 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
+（2026-10-25 加 Context Layer 前是 196 passed；新增的 20 条在 `tests/test_context.py`。
+其中 2 条的关键判据已被变异体证明会响：`scripts/mutate_context_layer.py` 跑完是
+`2/2 变红 + service.py 字节还原一致` —— 那个脚本会先存原字节、再还原、再比 sha256。）
 
 **Docling 容器**：
 
@@ -90,8 +94,9 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 
 ### 2.4 停在哪
 
-- **上下文层没做**：没有 `kb/context.py`，没有分层/预算/Trace/降级；`/chat` 仍是
-  “检索 → 拼 prompt → 生成”，上下文不可解释。
+- **上下文层只有 v1**：`kb/context.py` + `service.py::_plan_context` 已接（八层声明、
+  chars 预算、ContextTrace、整块丢弃、拒答也带 trace）。**v2 没做**：prompt 模板化、
+  压缩（摘句/去重）、memory/tool 层真正注入、未用完额度不借用（v1 是固定 cap）。
 - **版本/as-of、审计日志没做**：`DocumentMeta.version` 有字段，但没有按版本查询；
   没有审计表/审计事件。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
@@ -142,18 +147,26 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 
 ## 5. 下次从哪接（按优先级）
 
-### P0：Context Layer v1（最该做，1–3 天）
+### P0：Context Layer v1 —— ✅ 已完成（2026-10-25）
 
-新增 `kb/context.py`，先做**不破坏旧路径**的最小版：
+`kb/context.py` + `service.py::_plan_context`，**不破坏旧路径**的最小版：
 
-- 分层：System / Policy / History / Task / Memory / Retrieved / Tool / Output；
-- 预算：按 chars 估算（不要假装是 token），记录每层占用、截断/压缩；
-- `ContextTrace`：`trace_id`、blocks（source/clause/chars/included/reason）、excluded、degraded；
-- 只对**带 namespace 的 `/chat` / `/chat/stream`** 启用；`docs/` 的 105 题旧路径不动；
-- 第一版可以先“选块 + 预算 + Trace”，不改答案 prompt；v2 再做模板化/压缩；
-- 验收：3 个真实问题返回 trace，能看到用了哪几块、丢了什么、为什么；全量测试仍 196+。
+- 分层：System / Policy / History / Task / Memory / Retrieved / Tool / Output（八层都在 trace 里，
+  v1 只有 retrieved 真的占预算，`budget.enabled_layers` 明说这一点）；
+- 预算：按 chars 估算（不假装是 token）。默认 `CONTEXT_BUDGET_CHARS=4000`、
+  `CONTEXT_RETRIEVED_RATIO=0.46`（⇒ 检索额度 1840）、`CONTEXT_OUTPUT_RESERVE_CHARS=400`；
+  八层额度之和恒等于总预算；env 坏值退回默认并记进 `budget.env_ignored`；
+- `ContextTrace`：`trace_id`、blocks（source/clause/chars/included/reason）、excluded、degraded、budget；
+- 只对**带 namespace 的 `/chat` / `/chat/stream`** 启用；`docs/` 旧路径 `context=None`
+  （流式连 `context` 这个键都不出现），prompt 用 golden 字面量逐字节对照；
+- 超预算**整块丢**（reason=budget）/ 单块超上限丢（reason=oversize）；全放不下 ⇒
+  `degraded.retrieval=no_block_fits`、`sources=[]`、`knowledge_hit=false`，**不零上下文硬生成**；
+- 验收：3 个真实问题返回 trace，产物 `experiments/_context-v1-acceptance.json`
+  （第 1 题实测 `used=1187/1840`，第 3 块 681 chars 因放不下被整块丢弃）。
+  复现：服务在跑的前提下 `D:\Python-project\.venv\Scripts\python.exe scripts\ctx_acceptance.py`。
 
-设计稿在 `D:\dsh-work\_上下文工程-清单-20261023-v2.md`，路线图在
+**v2 还没做**（别当成顺手活）：prompt 模板化、压缩（摘句/去重）、memory/tool 层真正注入、
+预算敏感性实验。设计稿在 `D:\dsh-work\_上下文工程-清单-20261023-v2.md`，路线图在
 `D:\dsh-work\_企业知识库-落地清单-20261023.md`。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
@@ -192,6 +205,10 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\store.py` | namespace manifest、上传/列表/软删除、`load_chunks`、`last_errors` |
 | `D:\_review_rag-cs\kb\feishu.py` | 飞书 tenant token、wiki 树分页、docx raw_content、递归同步/哈希/tombstone |
 | `D:\_review_rag-cs\kb\layout.py` | Docling Docker / Docling local / MinerU 三个后端，`PDF_BACKEND` 选择与回退 |
+| `D:\_review_rag-cs\kb\context.py` | 上下文层 v1：八层声明、chars 预算（1840 检索额度）、整块丢弃、`ContextTrace` |
+| `D:\_review_rag-cs\tests\test_context.py` | 上下文层 20 条：预算/整块丢/旧路径 golden prompt/trace 不存正文/流式 payload |
+| `D:\_review_rag-cs\scripts\mutate_context_layer.py` | 变异体：证明"旧路径不变""裁掉的块不喂"两条判据会响，并核对字节还原 |
+| `D:\_review_rag-cs\experiments\_context-v1-acceptance.json` | 3 个真实问题的 `/chat?namespace=` 响应 + trace（第 1 题 used=1187/1840） |
 | `D:\_review_rag-cs\Dockerfile.docling` | Docling 容器镜像（CPU torch、pip/HF 镜像、worker） |
 | `D:\_review_rag-cs\docker\docling_worker.py` | 容器入口：PDF → `DocumentConverter` + OCR → Markdown |
 | `D:\_review_rag-cs\kb\eval.py` | 每语料 smoke 质检：self-hit、拒答探针、ACL 泄漏、延迟 |
