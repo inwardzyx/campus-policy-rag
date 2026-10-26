@@ -22,6 +22,10 @@
 
 ## 上线前必查清单（**逐条都要过，缺一条就别公开**）
 
+> ★ 2026-10-26 起，其中能自动化的几项（key / kb_data 可写 / 审计 / 租户表 / 模型缓存）
+> 已经做成一条命令：`python scripts/preflight.py`（容器里 `docker compose run --rm preflight`）。
+> 它**先查再起**：这些项坏了的表现是「服务起来了、`/chat` 全 500」，事后排查很贵。
+
 ### 1. 钱包有没有兜住
 
 ```powershell
@@ -194,3 +198,87 @@ cloudflared tunnel --url http://127.0.0.1:8000
 1. 我半夜点开它还活着吗？
 2. 被刷满额度时，它会不会安静地拒绝而不是报错？（会：429 + `Retry-After`）
 3. 有没有任何东西是我**不希望被看到**的？（`/guard-report` 的语料原文先自查）
+
+---
+
+# 附：私有化单机部署（compose，2026-10-26）
+
+> 上面那节讲的是"要不要公开、怎么公开"；这一节讲**内网私有化**：单机 compose、少量租户、
+> 数据不出内网。适用形态与不适用形态见文末「已知边界」。
+
+## A1. 前置条件
+
+| 项 | 要求 | 说明 |
+|---|---|---|
+| Docker | 24+ / compose v2 | 老版本把 `docker compose` 换成 `docker-compose` |
+| 机器 | 4 核 / 8 GB / 5 GB 磁盘 | 无 GPU 也能跑（embedding 在 CPU，模型约 91 MB） |
+| 出网/离线 | 首次拉镜像 + 下模型 | 离线：先 `docker save` 镜像 + 预热 `model-cache` 卷 |
+| 模型 key | `DEEPSEEK_API_KEY` | 不配则 `/chat` 全 500（`preflight` 会拦） |
+
+## A2. 五步上线
+
+```bash
+cp .env.example .env                       # 至少填 DEEPSEEK_API_KEY / KB_ADMIN_TOKEN
+docker compose run --rm preflight          # ① 自检（不占端口、不写数据）
+docker compose up -d --build               # ② 起服务（redis → rag）
+curl -s http://127.0.0.1:8000/health       # ③ 等就绪（首次会先返回 loading）
+# ④ 浏览器打开 http://<机器IP>:8000/console ，顶部填 KB_ADMIN_TOKEN
+curl -s -X POST http://127.0.0.1:8000/chat -H 'Content-Type: application/json' \
+  -d '{"question":"一线城市出差住宿费上限是多少？","namespace":"demo"}'
+```
+
+## A3. 关键新变量（S2 之后）
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `KB_ADMIN_TOKEN` | 空 | 管理接口/控制台凭证；**不设只允许容器内回环** |
+| `MULTI_TENANT` | `0` | `1` 时 `/chat`、`/search`、写接口都要 `X-Api-Key` |
+| `TENANTS_PATH` | `/app/kb_data/tenants.json` | 租户表（只存 key 的 sha256） |
+| `AUDIT_LOG_PATH` | `/app/kb_data/audit.jsonl` | 审计落盘位置 |
+
+## A4. 数据持久化（**最容易踩的一处**）
+
+语料、审计、租户表都在 `/app/kb_data`，已挂到 `kb-data` 卷。**不挂卷的话 `down` 一次全丢**。
+
+```bash
+docker run --rm -v rag-cs_kb-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/kb-data-$(date +%F).tgz -C /data .
+```
+
+审计保留期（先 `--dry-run`）：
+
+```bash
+docker compose exec rag python scripts/prune_audit.py --days 180 --dry-run
+```
+
+## A5. 开通租户
+
+```bash
+docker compose exec rag python scripts/create_tenant.py \
+  --id hr --name "人力资源部" --namespaces hr,hr/policy     # key 只打印一次
+# .env 里设 MULTI_TENANT=1 后 docker compose up -d
+```
+
+## A6. 扫描件（可选，含安全提醒）
+
+默认 `pypdf` 只抽文本层；扫描件走 `PDF_BACKEND=docling`（`Dockerfile.docling`）。
+⚠️ 该后端是"容器内再 `docker run`"，需要挂 `/var/run/docker.sock`（≈ 给容器宿主 root）。
+很多企业安全策略不接受 —— 这类环境请让安全团队评估，或把 OCR 后的 Markdown 再上传
+（`POST /kb/{ns}/documents` 支持 `.md`）。
+
+## A7. 资源与容量（实测 / 外部参考分开标）
+
+| 指标 | 数值 | 来源 |
+|---|---|---|
+| 每问 LLM 调用 | **3 次**（改写 + 精排 + 生成） | 本仓库实测 `usage.n_calls` |
+| p95 延迟（20 题） | **≈ 3.8 s** | `evalset/report-scenario-policy.json` |
+| embedding 缓存 | 约 **91 MB** | 本仓库实测 |
+| 14B INT4 显存 / 单卡并发 6–7 | 约 10 GB | **外部从业者复盘**，非本仓库实测 |
+
+## A8. 已知边界
+
+1. 单机编排：无副本、无 TLS、无负载均衡（公网见本文上半部分）；
+2. Redis 无密码，只在 compose 内网可达；
+3. 审计是单文件 JSONL：多副本共享同一文件不安全；
+4. **没有计费**：租户配额是"防刷"级别；
+5. 配额数值不分租户自定义（所有租户共用 `DAILY_REQ_QUOTA`）。

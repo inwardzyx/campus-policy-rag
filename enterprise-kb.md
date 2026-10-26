@@ -248,7 +248,11 @@ key 只落 sha256（create 只返回一次明文）；/admin/tenants 对外展�
 纯 vanilla、不引框架；页面只调已有 API，渲染只用 `textContent`；
 两条判据（只用已知端点、禁 `.innerHTML`）各配一条变异体。
 
-**仍没做（别当已完成）**：配额数值不分租户自定义、计费、私有化打包。
+**S2-4 补上**：私有化单机部署 —— `kb-data` 卷持久化（语料/审计/租户表）、
+S2 环境变量进 compose、`preflight` profile、`DEPLOY.md` 私有化章节、`create_tenant.py`；
+`scripts/preflight.py` 把「起来了但 /chat 全 500」这类问题挡在部署前（判据有变异体守着）。
+
+**仍没做（别当已完成）**：配额数值不分租户自定义、计费。
 
 **为什么默认关闭**：`MULTI_TENANT` 不设时一切走 `default` 租户（namespace 不限）——
 既有部署、脚本、测试一行不改就能跑。加功能不能把默认路径搞挂。

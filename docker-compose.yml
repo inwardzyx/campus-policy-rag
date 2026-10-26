@@ -87,10 +87,23 @@ services:
       #   X-Client-Id 更是调用方自己填的。放在这里是为了"要开的时候知道在哪儿开"。
       TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-0}"
       ALLOW_CLIENT_ID_HEADER: "${ALLOW_CLIENT_ID_HEADER:-0}"
+
+      # ---- 审计与多租户（S2）----
+      # ★ 审计默认开：合规场景「没有留痕」等于没上线；关掉要显式 AUDIT_ENABLED=0
+      AUDIT_ENABLED: "${AUDIT_ENABLED:-1}"
+      AUDIT_LOG_PATH: "/app/kb_data/audit.jsonl"
+      # ★ 多租户默认关（= 既有单租户行为）；开了就必须给租户表，否则 /chat 全 401
+      MULTI_TENANT: "${MULTI_TENANT:-0}"
+      TENANTS_PATH: "/app/kb_data/tenants.json"
+      # ★ 容器外要打开 /console 与 /admin/*，必须给这个 token（不给只允许容器内回环）
+      KB_ADMIN_TOKEN: "${KB_ADMIN_TOKEN:-}"
     volumes:
       # ★ 模型缓存挂出来（约 91MB）：不然每次重建容器都要重下一遍。
       #   第一次 `up` 会看到 /health 返回 loading，属于正常。
       - model-cache:/root/.cache/fastembed
+      # ★ 语料 / 审计 / 租户表都在 /app/kb_data：不挂卷的话 `down` 一次全丢。
+      #   这是私有化部署最容易被忽略的一处 —— 容器是临时的，数据不是。
+      - kb-data:/app/kb_data
     healthcheck:
       # ★ 为什么用 python 而不是 curl：python:3.14-slim 里**没有 curl**
       #   （要装就得再加一层 apt），而 python 一定在。
@@ -105,6 +118,25 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # 部署前自检（不占端口、不写数据）：docker compose run --rm preflight
+  # 只查「会不会起来就全 500」的那几项（key / kb_data 可写 / 审计 / 租户表 / 模型缓存）
+  preflight:
+    build: .
+    image: rag-cs:local
+    profiles: ["tools"]
+    environment:
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      AUDIT_ENABLED: "${AUDIT_ENABLED:-1}"
+      AUDIT_LOG_PATH: "/app/kb_data/audit.jsonl"
+      MULTI_TENANT: "${MULTI_TENANT:-0}"
+      TENANTS_PATH: "/app/kb_data/tenants.json"
+      KB_ADMIN_TOKEN: "${KB_ADMIN_TOKEN:-}"
+    volumes:
+      - kb-data:/app/kb_data
+      - model-cache:/root/.cache/fastembed
+    command: ["python", "scripts/preflight.py"]
+
 volumes:
   model-cache:
   redis-data:
+  kb-data:

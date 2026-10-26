@@ -206,3 +206,33 @@ def test_single_tenant_mode_keeps_loopback_write(client, tmp_path, monkeypatch) 
     monkeypatch.setattr(svc.rag, "reload_enterprise", lambda: None)
     assert _upload(client, "demo").status_code == 200, "单租户模式行为必须不变"
 
+# ---------------------------------------------------------------- 开通租户 CLI
+
+def _run_tenant_cli(tmp_path, *args):
+    import subprocess
+
+    return subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "create_tenant.py"),
+         "--path", str(tmp_path / "tenants.json"), *args],
+        cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+
+
+def test_create_tenant_cli_prints_key_once(tmp_path) -> None:
+    r = _run_tenant_cli(tmp_path, "--id", "hr", "--name", "人力资源部",
+                        "--namespaces", "hr,hr/policy")
+    assert r.returncode == 0, r.stdout + r.stderr
+    keys = [ln for ln in r.stdout.splitlines() if ln.startswith("KEY=tk_")]
+    assert len(keys) == 1, "明文 key 只能打印一次"
+
+    raw = (tmp_path / "tenants.json").read_text(encoding="utf-8")
+    assert keys[0][4:] not in raw, "明文 key 不许落盘"
+    assert "hr" in raw
+
+
+def test_create_tenant_cli_rejects_duplicate(tmp_path) -> None:
+    assert _run_tenant_cli(tmp_path, "--id", "hr", "--namespaces", "hr").returncode == 0
+    again = _run_tenant_cli(tmp_path, "--id", "hr", "--namespaces", "hr")
+    assert again.returncode == 1
+    assert "已存在" in again.stdout
+
