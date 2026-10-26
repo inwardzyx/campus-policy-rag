@@ -182,7 +182,7 @@ jobs:
         #   因此一直红着 —— 而 README 那句「不存在只在本地跑过的测试」当时就是假话。
         #   本地实测：这 9 个文件 49 passed / 17 秒，全部只用 requirements.txt 里的包
         #   （Docling/飞书/Docker 都被 mock 掉，不联网、不装重依赖）。
-        run: python -m pytest tests/test_guard.py tests/test_eval_set.py tests/test_llm_resilience.py tests/test_usage_ledger.py tests/test_chat_stream.py tests/test_session_multi_turn.py tests/test_context.py tests/test_citation.py tests/test_compress.py tests/test_versioning.py tests/test_audit.py tests/test_eval_kit.py tests/test_session_eval.py tests/test_eval_attribution.py tests/test_auth.py tests/test_auth_endpoint.py tests/test_kb_store.py tests/test_kb_api.py tests/test_parsers.py tests/test_layout.py tests/test_feishu_sync.py tests/test_eval_runner.py tests/test_kb_eval.py -v
+        run: python -m pytest tests/test_guard.py tests/test_eval_set.py tests/test_llm_resilience.py tests/test_usage_ledger.py tests/test_chat_stream.py tests/test_session_multi_turn.py tests/test_context.py tests/test_citation.py tests/test_compress.py tests/test_versioning.py tests/test_audit.py tests/test_eval_kit.py tests/test_session_eval.py tests/test_connectors.py tests/test_eval_attribution.py tests/test_auth.py tests/test_auth_endpoint.py tests/test_kb_store.py tests/test_kb_api.py tests/test_parsers.py tests/test_layout.py tests/test_feishu_sync.py tests/test_eval_runner.py tests/test_kb_eval.py -v
 
   # ----------------------------------------------------------------
   # 容器 job：证明「镜像里真的跑得起来」

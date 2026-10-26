@@ -87,6 +87,8 @@ class KnowledgeStore:
         source: str | None = None,
         version: str | None = None,
         acl: list[str] | None = None,
+        effective_date: str | None = None,
+        status: str | None = None,
     ) -> dict:
         """上传/覆盖一篇文档，返回 manifest 记录。
 
@@ -112,8 +114,12 @@ class KnowledgeStore:
         doc_source = source or fm.get("source") or (old or {}).get("source") or f"upload:{safe_name}"
         doc_version = version or fm.get("version") or (old or {}).get("version") or "1"
         # ★ 时间维：frontmatter 里没写就是"未知/现行"，**不猜**。
-        doc_effective = str(fm.get("effective_date") or (old or {}).get("effective_date") or "")
-        doc_status = str(fm.get("status") or (old or {}).get("status") or "active").lower()
+        # ★ 连接器同步时可以显式给（有些系统的元数据不在正文 frontmatter 里）；
+        #   显式值优先，其次 frontmatter，最后沿用旧记录/默认。
+        doc_effective = str(effective_date if effective_date is not None
+                            else (fm.get("effective_date") or (old or {}).get("effective_date") or ""))
+        doc_status = str(status if status is not None
+                         else (fm.get("status") or (old or {}).get("status") or "active")).lower()
         doc_acl = list(acl) if acl is not None else list((old or {}).get("acl") or ["public"])
 
         file_path = ns_dir / "files" / f"{doc_id}{suffix}"

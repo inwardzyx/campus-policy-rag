@@ -73,4 +73,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # ★ 飞书报错一律翻译成"下一步点哪里"，而不是丢一个 99991672 让人去搜。
+    from kb.feishu import FeishuError, explain_error
+
+    try:
+        raise SystemExit(main())
+    except FeishuError as exc:
+        print(explain_error(exc))
+        raise SystemExit(2)

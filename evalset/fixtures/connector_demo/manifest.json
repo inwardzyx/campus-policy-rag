@@ -1,0 +1,6 @@
+{
+  "docs": [
+    {"key": "expense", "title": "差旅报销制度", "acl": ["public"], "version": "2026-01-01", "effective_date": "2026-01-01"},
+    {"key": "salary", "title": "薪酬保密规定", "acl": ["hr"], "version": "2026-01-01", "effective_date": "2026-01-01"}
+  ]
+}

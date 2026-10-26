@@ -85,13 +85,18 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 会话轨迹的键（A） | ✅ | trace / 审计带 `session_id` + `turn_index`；`rewritten_query` 只进 trace（审计保持无原文） |
 | 会话级评测（B） | ✅ 最小版（只测改写这条跨轮链路） | `kb/evalkit/session.py`、`scripts/run_session_eval.py`、`evalset/scenarios/sessions/campus-followups.jsonl`（10 会话 / 22 轮） |
 | 会话判据的变异体 | ✅ | `scripts/mutate_session.py`：指代补全恒 False / 拿掉 session_id，**2/2 变红** |
+| 连接器内核（S1） | ✅ | `kb/connectors/`：`Connector` 协议 + **增量同步引擎**（哈希∪ACL∪元数据比较）；删除只作用于 `owns()` 的文档 |
+| fixture 连接器（离线验收） | ✅ | `kb/connectors/fixture.py`；`evalset/fixtures/connector_demo/` 可直接跑 |
+| 飞书连接器适配 | ✅ 代码 / ⏳ 真实同步等 scope | `kb/connectors/feishu.py`；`FeishuWikiSource.sync` 已**委托**同一引擎（不再两套实现） |
+| 飞书报错 → 可操作清单 | ✅ | `kb/feishu.py::explain_error`：列出缺的 scope + 发版 + 加入知识空间；CLI 失败时直接打印 |
+| S1 判据的变异体 | ✅ | `scripts/mutate_connectors.py`：忽略 ACL 变化 / 清单删“发版”，**2/2 变红 + 字节还原** |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-306 passed, 27 skipped
+314 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -157,6 +162,19 @@ budget_cut_rate 0 / p95 4794ms
 ★ 修法是**数据触发**的：只有块带 `effective_date` 才把两块当"版本兄弟"（去重放行、入库不裁决），
   没有生效日的 docs/ 校规走原逻辑 ⇒ 263 留 / 23 拦那些数字一个没变（老守卫测试全绿）。
 ★ 也就是说：**as-of 能不能用，取决于语料有没有写生效日**。没写就诚实地按现行处理，不猜。
+
+**S1 连接器与增量同步（2026-10-26）** —— 离线验收（fixture，`evalset/fixtures/connector_demo/`）
+
+```text
+首次同步：added=2；第二次：unchanged=2（只比哈希，不重复写）
+改正文：updated=1（只动那一篇）；改 ACL：updated=1 且 changed_reasons 含 acl
+改 ACL 后**不重建索引**：chunk.acl 已是 [hr]，_acl_allows(acl, None) = False
+删一行 manifest：deleted=1，但**同 namespace 的人工上传语料仍在**（owns() 保护）
+dry-run：added=1 但库里 0 条
+```
+★ 关键设计：变更判据 = **内容哈希 ∪ ACL ∪ 元数据**（不是时间戳）；
+  删除只看 `owns()`（按 source 前缀）—— 否则连接器一轮同步会把同 namespace 的人工语料清掉。
+★ 兼容：`FeishuWikiSource.sync` 改为**委托**同一引擎，老测试 6 条全绿（skipped 语义按老字段映射）。
 
 **会话级评测（批 7，A+B，2026-10-26）** —— 产物 `evalset/report-sessions-campus-followups.json`
 
@@ -249,7 +267,7 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
 | 文档放错目录 | 把 `enterprise-kb.md` 放进 `docs/`，被当成 KB 语料，loader 测试计数变了 | 移到仓库根；`docs/` 只放语料 | ✅ 已解决 |
 | README 端点数过期 | 新增 `/kb` 路由后 README 仍写 7/10 个，pre-commit 报错 | 更新为 **11**；`scripts/check_readme_numbers.py` 强制校验 | ✅ 已解决 |
 | 飞书 token 取错层级 | 以为 `tenant_access_token` 在 `data` 下，实际在顶层 | `_request(..., raw=True)` 取顶层 | ✅ 已解决 |
-| 飞书 wiki 无权限 | `99991672 Access denied ... [wiki:wiki, wiki:wiki:readonly, wiki:space:retrieve]` | 需在开发者后台加 scope、发布版本、把应用加入知识空间 | **未解决（需用户操作）** |
+| 飞书 wiki 无权限 | `99991672 Access denied ...` | 已把报错翻译成清单（缺哪些 scope + **发版** + 加入知识空间），CLI 失败直接打印；scope 仍需你在后台开 | **未解决（需用户操作，但不再靠猜）** |
 | Docling 进程内被 WDAC 拦 | `_pava_pybind` DLL load failed，应用程序控制策略阻止 | 改用 Docker 容器；`docling-local` 仅留给无 WDAC 机器 | ✅ 绕过（非根治） |
 | Docker 拉取慢 / 镜像过大 | Docker Hub 慢；PyPI torch 拉 CUDA 依赖数 GB | base 用镜像源；CPU-only torch；镜像 2.86GB | ✅ 已解决 |
 | 容器访问 HF 失败 | 直连 HF connection refused；hf-mirror 的 xet CAS 401 | 传 `HF_ENDPOINT=https://hf-mirror.com` + `HF_HUB_DISABLE_XET=1` | ✅ 已解决 |
@@ -325,14 +343,13 @@ as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异
 **批 7（会话轨迹 A+B）✅ 已完成（2026-10-26）**：会话键进 trace/审计；
 会话级套件 + runner 复用 evalkit；指标 6 个（含 `rewrite_resolved_rate`）。
 
-**什么时候才做「完整轨迹评测」**：① 历史开始喂生成或检索；② 出现 ≥2 个工具的编排；
-③ 客户明确要会话级质检报告。在那之前不做（系统一步就结束，没有轨迹）。
+**S1（连接器与增量同步）✅ 已完成（2026-10-26）**；`FeishuWikiSource` 已并入同一引擎。
 
-**下一步（按 ROI）**：
-1. **P1 真实语料 20 题**（等你给 HR/合规文档，最好带生效日）；
-2. memory 层：要么实现、要么从报告里删掉（现在 `used_chars` 恒 0 = 假指标）；
-3. 成本/延迟（每问 3 次 LLM 调用、p95 ≈ 4s）；
-4. 部署硬化（鉴权/限流/审计保留期）。
+**S2（平台化）待你确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
+**S3（运营闭环）**：反馈→归因→候选题集 + 健康度周报。
+
+**仍按 ROI 排的其它项**：真实语料 20 题（等你给文档）；memory 层“恒 0”假指标要修；
+成本/延迟；部署硬化。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -385,6 +402,12 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\evalkit\` | 请求级评测内核：cases/metrics/report/transport（可复用，脚本只组装） |
 | `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
 | `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |
+| `D:\_review_rag-cs\kb\connectors\core.py` | 连接器协议 + 增量同步引擎（哈希∪ACL∪元数据；删除只碰 owns()） |
+| `D:\_review_rag-cs\kb\connectors\fixture.py` | 本地 fixture 连接器（离线验收增量与权限变更） |
+| `D:\_review_rag-cs\kb\connectors\feishu.py` | 飞书 wiki 适配层（遍历/取正文/ACL 来源） |
+| `D:\_review_rag-cs\scripts\connector_sync.py` | 统一同步 CLI（fixture/feishu，--dry-run/--no-delete） |
+| `D:\_review_rag-cs\evalset\fixtures\connector_demo\` | 可直接跑的 fixture（2 篇 + manifest，含 hr 权限） |
+| `D:\_review_rag-cs\scripts\mutate_connectors.py` | S1 变异体（忽略 ACL 变化 / 删“发版”步骤），2/2 变红 |
 | `D:\_review_rag-cs\kb\audit.py` | 审计落盘：决策/定位/trace 摘要 → JSONL；问题只存 sha256，块只存 doc/clause |
 | `D:\_review_rag-cs\scripts\prune_audit.py` | 审计保留期清理（独立入口，支持 `--dry-run`） |
 | `D:\_review_rag-cs\tests\test_audit.py` | 审计 9 条：不落原文/只对 namespace/写失败不炸/清理保脏行/版本措辞 |

@@ -228,6 +228,53 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 判据：`tests/test_session_eval.py` 10 条；`scripts/mutate_session.py` 把
 "补全判定"与"session_id 唯一来源"各打坏一次 —— **2/2 变红**，三个文件按字节还原。
 
+## 连接器与增量同步（S1，2026-10-26）
+
+文件：[`kb/connectors/`](kb/connectors/)。把"外部系统"收敛成两个动作（**列文档 / 取正文**），
+同步逻辑只有一份 —— 飞书、Confluence、共享盘都只是连接器实现。
+
+### 变更判据：哈希 ∪ ACL ∪ 元数据
+
+```text
+变更 = content_hash 不同  OR  acl 不同  OR  title/version 不同
+```
+
+★ 为什么不只看 `updated_at`：外部系统的时间戳可能滞后/时区不一致；而 **ACL 变化不会改内容**，
+只看内容哈希就会漏掉"权限已经收回、库里还能看到"这种最危险的漂移。
+
+### 删除只碰"自己拥有"的文档
+
+`Connector.owns(record)`（默认按 `source` 前缀）。否则一个 namespace 里同时有连接器同步的文档
+和人工上传的语料时，连接器一轮同步就会把后者清掉。
+
+### 权限变更如何"下一次检索就生效"
+
+ACL 存在 chunk 上；检索层每次都用**请求时的角色**比对（`_acl_allows`）。
+所以同步更新 ACL 之后，**不需要重建索引**，下一次检索就会被挡住。验收用例直接断言这一点。
+
+### 离线验收（不需要飞书 scope）
+
+```powershell
+D:\Python-project\.venv\Scripts\python.exe scripts/connector_sync.py `
+    --connector fixture --source evalset/fixtures/connector_demo --namespace demo
+```
+
+实测（fixture 2 篇，其中 1 篇 `acl=["hr"]`）：首次 `added=2`；二次 `unchanged=2`；
+改正文 `updated=1`；改 ACL `updated=1` 且 `changed_reasons` 含 `acl`；
+删一条 manifest `deleted=1` 且**人工上传的语料仍在**；`--dry-run` 不写库。
+
+### 飞书报错不再靠猜
+
+`kb/feishu.py::explain_error` 把 `99991672` 翻译成清单：
+**缺哪些 scope**（从 msg 里正则提取）+ ①加权限 ②**发版**（不发版不生效）
+③管理员审批 ④**把应用加入知识空间**（scope ≠ 空间成员）⑤重跑命令。
+CLI 失败时直接打印这份清单（`scripts/feishu_sync.py` 已接）。
+
+### 判据
+
+`tests/test_connectors.py` 8 条 + `tests/test_feishu_sync.py` 6 条（老测试，改造后仍绿）；
+`scripts/mutate_connectors.py`：忽略 ACL 变化 / 清单删掉"发版"，**2/2 变红** + 字节还原。
+
 ## 审计落盘（2026-10-26，批 5）
 
 文件：[`kb/audit.py`](kb/audit.py)、[`scripts/prune_audit.py`](scripts/prune_audit.py)。

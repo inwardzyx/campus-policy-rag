@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -147,6 +148,41 @@ class FeishuClient:
         return str(data.get("content") or "")
 
 
+_SCOPE_RE = re.compile(r"[a-z][a-z0-9_]*(?::[a-z0-9_]+)+")
+
+
+def explain_error(exc: "FeishuError") -> str:
+    """把飞书的报错翻译成"下一步点哪里"的清单。
+
+    ★ 为什么值得单独写：`99991672 Access denied` 是最常见的拦路虎，而它的 msg 里其实
+      **已经列出缺哪些权限**；真正卡人的是"加了权限还必须发版本 + 把应用加进知识空间"
+      这两步（scope ≠ 空间成员）。把这两句写进报错旁边，比写进文档有效得多。
+    """
+    code = str(getattr(exc, "code", ""))
+    msg = str(getattr(exc, "msg", exc))
+    scopes = sorted(set(_SCOPE_RE.findall(msg)))
+    lines = [f"飞书接口报错：code={code} msg={msg}"]
+    if scopes:
+        lines.append("飞书提示缺少/涉及的权限：" + ", ".join(scopes))
+    if code == "99991672" or "Access denied" in msg:
+        lines += [
+            "按顺序处理（少一步都不生效）：",
+            "1) 开发者后台 → 自建应用 → 权限管理：添加上面列出的只读权限；",
+            "2) 版本管理与发布 → 创建版本 → 申请发布（**不发版，权限不生效**）；",
+            "3) 管理后台 → 应用管理 → 审批通过（企业自建应用要管理员批）；",
+            "4) 目标知识空间 → 设置 → 成员管理 → 添加你的应用（可阅读）"
+            "—— scope 不等于空间权限；",
+            "5) 重跑：python scripts/feishu_sync.py --list-spaces",
+        ]
+    elif code == "no_token":
+        lines += ["检查 App ID / App Secret 是否抄错，以及应用是否已发布。" ]
+    elif code == "131006":
+        lines += ["应用对目标文档/空间没有读权限：把应用加入空间成员，或让文档所有者授予阅读。" ]
+    elif code in ("network", "bad_json"):
+        lines += ["网络/响应异常：先确认能访问 open.feishu.cn，再重试。" ]
+    return "\n".join(lines)
+
+
 def _edit_date(node: dict) -> str:
     """把 obj_edit_time（秒级时间戳字符串）转 YYYY-MM-DD；失败返回 '1'。"""
     raw = node.get("obj_edit_time")
@@ -168,74 +204,25 @@ class FeishuWikiSource:
 
     def sync(self, store: KnowledgeStore, *, delete_missing: bool = True,
              dry_run: bool = False, max_depth: int = 20) -> dict:
-        stats = {"space_id": self.space_id, "namespace": self.namespace,
-                 "added": 0, "updated": 0, "unchanged": 0,
-                 "skipped": 0, "deleted": 0, "errors": [], "dry_run": dry_run}
-        existing = {r["doc_id"]: r for r in store.list_documents(self.namespace)}
-        seen_ids: set[str] = set()
+        """委托给通用同步引擎（`kb/connectors/core.py`），这里只做字段映射。
 
-        def walk(parent: str | None, depth: int) -> None:
-            if depth > max_depth:
-                stats["errors"].append({"node": parent, "error": "超过 max_depth，疑似环"})
-                return
-            try:
-                nodes = self.client.list_nodes(self.space_id, parent)
-            except FeishuError as exc:
-                stats["errors"].append({"node": parent, "error": str(exc)})
-                return
-            for node in nodes:
-                node_token = node.get("node_token") or ""
-                title = node.get("title") or node_token
-                if not node_token:
-                    stats["skipped"] += 1
-                    continue
-                if node.get("node_type") == "shortcut":
-                    # 快捷方式：节点自身没有正文，指向实体；用 origin_node_token 去重
-                    node_token = node.get("origin_node_token") or node_token
-                obj_type = node.get("obj_type")
-                if obj_type != "docx":
-                    stats["skipped"] += 1
-                    continue
+        ★ 为什么保留这个方法：CLI 与老测试都在用它。但它**不再自己实现**
+          哈希/删除逻辑 —— 否则就变成两套实现，改一处忘一处（本仓库的老病）。
+        """
+        from kb.connectors.core import sync_connector
+        from kb.connectors.feishu import FeishuConnector
 
-                doc_id = doc_id_for(self.namespace, f"{node_token}.md")
-                if doc_id in seen_ids:
-                    continue
-                seen_ids.add(doc_id)
-                try:
-                    content = self.client.raw_docx(str(node.get("obj_token") or ""))
-                except FeishuError as exc:
-                    stats["skipped"] += 1
-                    stats["errors"].append({"node": node_token, "title": title, "error": str(exc)})
-                    continue
-                if not content.strip():
-                    stats["skipped"] += 1
-                    continue
-
-                h = content_hash(content)
-                old = existing.get(doc_id)
-                if old and old.get("content_hash") == h and not old.get("tombstone"):
-                    stats["unchanged"] += 1
-                else:
-                    if not dry_run:
-                        store.upload(
-                            self.namespace, f"{node_token}.md", content.encode("utf-8"),
-                            title=title,
-                            source=f"feishu://{self.space_id}/{node_token}",
-                            version=_edit_date(node),
-                            acl=self.acl,
-                        )
-                    stats["updated" if old else "added"] += 1
-                if self.sleep_sec:
-                    time.sleep(self.sleep_sec)
-                if node.get("has_child"):
-                    walk(node_token, depth + 1)
-
-        walk(None, 0)
-
-        if delete_missing and not dry_run:
-            prefix = f"feishu://{self.space_id}/"
-            for rec in store.list_documents(self.namespace):
-                if str(rec.get("source", "")).startswith(prefix) and rec["doc_id"] not in seen_ids:
-                    store.delete(self.namespace, rec["doc_id"])
-                    stats["deleted"] += 1
-        return stats
+        conn = FeishuConnector(self.client, self.space_id, acl=self.acl,
+                               sleep_sec=self.sleep_sec, max_depth=max_depth)
+        rep = sync_connector(conn, store, namespace=self.namespace,
+                             dry_run=dry_run, delete_missing=delete_missing)
+        errors = list(conn.walk_errors)
+        for item in rep.errors:
+            key, _, rest = item.partition(":")
+            errors.append({"node": key, "error": rest.strip() or item})
+        return {"space_id": self.space_id, "namespace": self.namespace,
+                "added": rep.added, "updated": rep.updated, "unchanged": rep.unchanged,
+                # ★ 三部分都要算：连接器遍历时跳过的（非 docx/空节点）+ 引擎跳过（空正文）
+                #   + 拉正文失败的（老字段语义里它们也算 skipped，同时进 errors）。
+                "skipped": conn.skipped + rep.skipped + len(rep.errors),
+                "deleted": rep.deleted, "errors": errors, "dry_run": dry_run}
