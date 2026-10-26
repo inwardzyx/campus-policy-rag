@@ -684,7 +684,9 @@ def test_real_corpus_gate_coverage_is_documented(rag):
     """
     from collections import Counter
 
-    counts = Counter(r for _, r in rag.rejected)
+    # ★ 只看 `docs/**` 的语料：`kb_data/` 里的运行时语料（评测/演示上传）不该影响本断言。
+    #   2026-10-26 实测：上传一份手册后这里变红，原因是 reject 原因分布被运行时数据改了。
+    counts = Counter(r for _, r in _real_only(rag.rejected, key=lambda x: x[0]))
     # ★ 2026-10-10：语料扩容后真实语料首次触发了「完全重复」「近似重复」
     #   和新增的「废止声明」三关（详见 test_rejected_count_is_23 的 docstring）。
     #   这正是这条断言要抓的变化 —— 之前真实语料只触发「太短碎屑」，

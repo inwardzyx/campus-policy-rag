@@ -1,0 +1,202 @@
+{
+  "namespace": "sisu_demo",
+  "docs": [
+    {
+      "file": "sisu-handbook-2025.pdf",
+      "uploaded": true,
+      "n_chunks": 1655,
+      "server": {
+        "doc_id": null,
+        "chunks": null,
+        "added": null
+      }
+    }
+  ],
+  "probes": [
+    {
+      "question": "《sisu-handbook-2025》第四十一条 里「学校秉承“中国立场、世界眼光、全…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第四十一条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 3969,
+      "sources": [
+        "sisu-handbook-2025｜第四十一条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第十九条 里「学校根据相关规定和工作需要设置招…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第十九条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 3644,
+      "sources": [
+        "sisu-handbook-2025｜第十九条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第五十条 里「学校尊重和维护教职员工的合法权益…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第五十条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 4070,
+      "sources": [
+        "sisu-handbook-2025｜第五十条",
+        "sisu-handbook-2025｜第四十九条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第八十二条 里「课程认定和学分转换的范围（一）国…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第八十二条"
+      ],
+      "hit": false,
+      "refused": true,
+      "validity": null,
+      "took_ms": 2429,
+      "sources": []
+    },
+    {
+      "question": "《sisu-handbook-2025》第六条 里「学校以立德树人为根本任务，以人才…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第六条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 4138,
+      "sources": [
+        "sisu-handbook-2025｜第六条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第九条 里「学校注册地址为上海市大连西路55…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第九条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 3153,
+      "sources": [
+        "sisu-handbook-2025｜第九条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第六十八条 里「学校积极开展与政府部门、国际组织…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第六十八条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 4101,
+      "sources": [
+        "sisu-handbook-2025｜第六十八条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第十二条 里「校党委由学校党员代表大会选举产生…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第十二条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 4498,
+      "sources": [
+        "sisu-handbook-2025｜第十二条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第四十六条 里「教职员工在人才培养、科学研究、社…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第四十六条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 3495,
+      "sources": [
+        "sisu-handbook-2025｜第四十六条"
+      ]
+    },
+    {
+      "question": "《sisu-handbook-2025》第七十四条 里「学校徽志呈正圆形，以展开的书本及…」是怎么规定的？",
+      "gold": [
+        "sisu-handbook-2025",
+        "第七十四条"
+      ],
+      "hit": true,
+      "refused": false,
+      "validity": 1.0,
+      "took_ms": 3516,
+      "sources": [
+        "sisu-handbook-2025｜第七十四条"
+      ]
+    }
+  ],
+  "refusals": [
+    {
+      "question": "公司食堂的营业时间是几点到几点？",
+      "gold": [],
+      "hit": false,
+      "refused": true,
+      "validity": null,
+      "took_ms": 2326,
+      "sources": []
+    },
+    {
+      "question": "今年年会安排在哪个酒店？",
+      "gold": [],
+      "hit": false,
+      "refused": true,
+      "validity": null,
+      "took_ms": 1844,
+      "sources": []
+    },
+    {
+      "question": "员工班车的路线表在哪里查？",
+      "gold": [],
+      "hit": false,
+      "refused": true,
+      "validity": null,
+      "took_ms": 2272,
+      "sources": []
+    },
+    {
+      "question": "公司附近哪家健身房有合作折扣？",
+      "gold": [],
+      "hit": false,
+      "refused": true,
+      "validity": null,
+      "took_ms": 1714,
+      "sources": []
+    }
+  ],
+  "summary": {
+    "n": 10,
+    "hit": 9,
+    "hit_rate": 0.9,
+    "refused": 1,
+    "citation_validity": 1.0,
+    "p95_ms": 4138
+  }
+}

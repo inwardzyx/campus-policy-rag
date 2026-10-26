@@ -37,9 +37,11 @@ def ensure_headings(text: str) -> tuple[str, int]:
             out.append(line)
             continue
         clause, rest = m.group(1).strip(), m.group(2).strip()
-        # 太长的"条款标题"、或以"所述/所指/规定…"开头的，都是正文误命中
-        #（比如"第三条所述情形包括员工严重违反……"），不提取
-        if len(rest) > 24 or rest.startswith(("所述", "所指", "规定", "明确")):
+        # ★ 只有"以指代/援引词开头"的才算正文引用（"第三条所述情形包括…"）。
+        #   不能用"长度"判：真实制度里 **"第八十条 本章程的修改由……"** 就是
+        #   "条款号 + 正文同一行"，2026-10-26 用真实手册实测时，长度挡板把这类
+        #   条款全吞掉了 —— 表现是检索块里塞了多个条款、探针命中 0/10。
+        if rest.startswith(("所述", "所指", "规定", "明确", "所称", "之下")):
             out.append(line)
             continue
         if out and out[-1].strip():

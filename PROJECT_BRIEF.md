@@ -38,7 +38,7 @@ Get-ChildItem scripts\mutate_*.py | Measure-Object
 | 项 | 值（2026-10-26 实测） |
 |---|---|
 | HTTP 端点 | 14（`/chat`、`/chat/stream`、`/search`、`/console`、`/admin/*`、`/kb/*`、`/health`、`/limits`、`/guard-report`、`/`） |
-| 测试 | 收集 373 条；全量 **350 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
+| 测试 | 收集 373 条；全量 **356 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
 | 测试文件 | 29 个，CI 全覆盖（`scripts/check_test_counts.py` 把关） |
 | 变异体脚本 | 17 个（每个关键判据都能被故意打坏、然后变红） |
 | 语料 | `docs/kb/` 10 篇（真实校规，263 块）+ `evalset/fixtures/policy_corpus/` 3 篇（合成制度，47 块） |
@@ -209,6 +209,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\mutate_tenants.py
 | 优先级 | 事项 | 触发条件 / 说明 |
 |---|---|---|
 | P0 | **真实公司制度 20 题**（现只有合成语料） | 需要一份真实制度文档（敏感信息可替换） |
+| P1 | **按条款号检索**：索引只含正文，问「第八十三条」检索命中 0；改索引文本要配对评测 | 先量再改（会动到检索） |
 | P1 | **评测闭环 v0**：失败回收 → 候选修改 → 配对评测 → 接受/回滚门禁 | 让第三层名副其实；2–3 天，不依赖外部数据 |
 | P1 | **解析质量对照**：`pypdf` vs `Docling` 的 Recall@5 | 用 `samples/` 现成 PDF，可离线做 |
 | P2 | 并发压测（p95 / 错误率 / 每题成本） | Runtime 缺规模数字 |

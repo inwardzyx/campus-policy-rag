@@ -31,7 +31,7 @@ MUTATIONS = [
      "pdf_text_without", ["test_pdf_text_without_headings_gets_clause_blocks"]),
     ("B · 去掉长尾挡板（正文误提成条款）",
      NORMALIZE,
-     '        if len(rest) > 24 or rest.startswith(("所述", "所指", "规定", "明确")):\n'
+     '        if rest.startswith(("所述", "所指", "规定", "明确", "所称", "之下")):\n'
      "            out.append(line)\n            continue\n",
      "",
      "long_tail", ["test_long_tail_is_not_treated_as_heading"]),
