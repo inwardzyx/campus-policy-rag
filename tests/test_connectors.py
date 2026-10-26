@@ -129,6 +129,12 @@ def test_missing_token_error_mentions_credentials() -> None:
     assert "App ID" in explain_error(FeishuError("no_token", "响应里没有 tenant_access_token"))
 
 
+def test_invalid_param_error_is_credential_problem() -> None:
+    """10003 最容易被误读成"参数写错"，其实是凭证不对（占位符/抄错/未发布）。"""
+    text = explain_error(FeishuError(10003, "invalid param"))
+    assert "凭证" in text and "占位符" in text
+
+
 # ---------------------------------------------------------------- CLI
 
 def test_cli_fixture_sync(tmp_path) -> None:

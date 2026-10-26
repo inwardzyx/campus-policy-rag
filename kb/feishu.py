@@ -174,6 +174,17 @@ def explain_error(exc: "FeishuError") -> str:
             "—— scope 不等于空间权限；",
             "5) 重跑：python scripts/feishu_sync.py --list-spaces",
         ]
+    elif code in ("10003", "10014"):
+        # ★ 10003 最常被误读成"参数写错"，其实是**凭证不对**（占位符 cli_xxx、抄错、
+        #   或应用还没发布）。把这条写在报错旁边，比让人去搜错误码快得多。
+        lines += [
+            "这个码多半是**凭证问题**，不是参数问题：",
+            "1) 确认 App ID 是 cli_ 开头的一整串、App Secret 是完整字符串（不是 cli_xxx/xxx 这种占位符）；",
+            "2) 在开发者后台 → 你的应用 → 凭证与基础信息 里重新复制；",
+            "3) 确认应用已发布（未发布的应用换不到 tenant_access_token）；",
+            "4) 本机可以在仓库根放一个 .env（FEISHU_APP_ID=... / FEISHU_APP_SECRET=...），"
+            "脚本现在会自动读。",
+        ]
     elif code == "no_token":
         lines += ["检查 App ID / App Secret 是否抄错，以及应用是否已发布。" ]
     elif code == "131006":

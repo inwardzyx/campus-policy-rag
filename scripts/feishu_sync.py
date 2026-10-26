@@ -26,6 +26,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# ★ 读仓库根的 .env（没有也照常跑）：省的每次开新窗口都重新 set 环境变量。
+#   只读、不打印；`.env` 已在 .gitignore 里。
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except Exception:                                 # noqa: BLE001
+    pass
+
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]

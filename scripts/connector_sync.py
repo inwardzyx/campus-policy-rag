@@ -30,6 +30,15 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# ★ 读仓库根的 .env（没有也照常跑）：省的每次开新窗口都重新 set 环境变量。
+#   只读、不打印；`.env` 已在 .gitignore 里。
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except Exception:                                 # noqa: BLE001
+    pass
+
 from kb.connectors.core import sync_connector      # noqa: E402
 from kb.connectors.fixture import FixtureConnector  # noqa: E402
 from kb.store import KnowledgeStore                 # noqa: E402
