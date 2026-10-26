@@ -40,6 +40,8 @@ IN_SCOPE = "一线城市出差住宿一晚最多报销多少？"
 #: 库外问题（演示语料里一定没有的）
 OUT_SCOPE = "公司食堂几点开饭？"
 
+#: ⚠️ 临时 Tunnel 的 URL 会随重启失效；固定链接请走 DEPLOY.md 路线 B。
+
 
 def _get(url: str, headers: dict | None = None, timeout: float = 30.0):
     req = urllib.request.Request(url, headers=headers or {}, method="GET")
@@ -84,7 +86,8 @@ def seed_docs(base: str, namespace: str, docs_dir: Path, admin_token: str = "") 
     return n
 
 
-def run_checks(base: str, namespace: str, admin_token: str = "") -> list[dict]:
+def run_checks(base: str, namespace: str, admin_token: str = "",
+               in_scope: str = IN_SCOPE, out_scope: str = OUT_SCOPE) -> list[dict]:
     checks: list[dict] = []
 
     def add(name: str, ok: bool, detail: str) -> None:
@@ -99,7 +102,7 @@ def run_checks(base: str, namespace: str, admin_token: str = "") -> list[dict]:
         add("health", False, f"{type(exc).__name__}: {exc}")
 
     try:
-        resp = _post(f"{base}/chat", {"question": IN_SCOPE, "namespace": namespace})
+        resp = _post(f"{base}/chat", {"question": in_scope, "namespace": namespace})
         pairs = [_pair(s) for s in (resp.get("sources") or [])]
         add("chat_in_scope", bool(resp.get("knowledge_hit")) and bool(pairs)
             and all(p[1] for p in pairs),
@@ -108,7 +111,7 @@ def run_checks(base: str, namespace: str, admin_token: str = "") -> list[dict]:
         add("chat_in_scope", False, f"{type(exc).__name__}: {exc}")
 
     try:
-        resp = _post(f"{base}/chat", {"question": OUT_SCOPE, "namespace": namespace})
+        resp = _post(f"{base}/chat", {"question": out_scope, "namespace": namespace})
         add("chat_out_of_scope_refused", not resp.get("knowledge_hit"),
             f"hit={resp.get('knowledge_hit')} answer={str(resp.get('answer'))[:40]!r}")
     except Exception as exc:                          # noqa: BLE001
@@ -160,6 +163,8 @@ def main() -> int:
     ap.add_argument("--namespace", default="demo")
     ap.add_argument("--seed", default="", help="演示语料目录（给了就先灌进 namespace）")
     ap.add_argument("--admin-token", default="")
+    ap.add_argument("--in-scope", default=IN_SCOPE, help="库内问题（默认是演示制度语料里的）")
+    ap.add_argument("--out-scope", default=OUT_SCOPE, help="库外问题")
     ap.add_argument("--out", default="experiments/deploy-smoke.json")
     ap.add_argument("--md", default="")
     args = ap.parse_args()
@@ -173,7 +178,8 @@ def main() -> int:
             print(f"✗ 灌语料失败：{type(exc).__name__}: {exc}")
             return 1
 
-    checks = run_checks(base, args.namespace, args.admin_token)
+    checks = run_checks(base, args.namespace, args.admin_token,
+                        in_scope=args.in_scope, out_scope=args.out_scope)
     for c in checks:
         print(f"{'✓' if c['ok'] else '✗'} {c['check']}: {c['detail']}")
     ok = sum(1 for c in checks if c["ok"])
