@@ -112,6 +112,9 @@ $py='D:\Python-project\.venv\Scripts\python.exe'
 连这个键都不出现 —— 用 golden prompt 逐字节对照守着）。
 
 1. **八层声明**：`system / policy / history / task / memory / retrieved / tool / output`。
+   ★ 2026-10-26 起：未实现的层带 `status="reserved"` + 明确理由（`reserved_layers`），
+   不再只给 `used_chars: 0` —— 后者会被读成"这轮用了 0"，和"根本没做"长得一模一样。
+   另有一条**锁定测试**：谁要真接记忆，必须显式改测试并删掉对应 reason（否则报告会悄悄多一个没人验证过的指标）。
    v1 **只有 retrieved 真的占预算**，其余层 `used_chars=0`，trace 里用
    `budget.enabled_layers=["retrieved"]` 明说 —— 不把"声明了"伪装成"注入了"。
 2. **预算按 chars，不按 token**：默认 `CONTEXT_BUDGET_CHARS=4000`、

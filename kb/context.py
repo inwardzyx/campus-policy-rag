@@ -7,8 +7,8 @@
 
 ## v1 只让 retrieved 层真正占预算
 八层（system/policy/history/task/memory/retrieved/tool/output）先把结构立起来，
-但除 `retrieved` 外的层 `used_chars=0`，并在 budget 里报
-`enabled_layers=["retrieved"]` —— 让"声明了"和"真的注入了"在 trace 里一眼分开，
+除 `retrieved` 外的层是 `status="reserved"` + 明确理由（不是 `used_chars=0` 了事），
+并在 budget 里报 `enabled_layers` / `reserved_layers` —— 让"声明了"和"真的注入了"一眼分开，
 而不是把八层都填上好看的数字。v1 不改答案 prompt 的措辞，只决定**喂哪几块**。
 
 ## 超预算：整块丢，不截半块
@@ -237,11 +237,29 @@ def _chunk_ids(chunk: Mapping[str, Any]) -> tuple[str, str]:
     return str(chunk.get("doc") or ""), str(chunk.get("clause") or "")
 
 
+#: 未实现/未注入的层：**必须给理由**。
+#: ★ 这一版之前的坑：八层都有 `budget_chars`，memory 写着 `used_chars: 0` —— 读报告的人
+#:   分不清"这轮没用记忆"和"记忆根本没做"。两种含义长得一样，就是假指标。
+#:   现在每层带 `status`（implemented / reserved）+ `reason`：
+#:   `reserved` + `used_chars=0` 只能读成"没实现"，不可能误读成"用了 0"。
+RESERVED_REASONS: dict[str, str] = {
+    "system": "未注入：system prompt 是固定的，不占上下文预算",
+    "policy": "未注入：策略文本固定，不占上下文预算",
+    "history": "未注入：历史只喂查询改写，**不进上下文**（避免靠上一轮资料绕过本轮检索）",
+    "task": "未接入：任务层没有内容来源",
+    "memory": "未实现：缺少可靠的写入/失效策略；PII 与过期事实的合规风险大于收益（见 HANDOFF §5 触发条件）",
+    "tool": "未实现：只有 search_policy 一个工具，工具输出不写回上下文",
+    "output": "未注入：输出预留额度由 output_reserve_chars 控制，该层本身不写内容",
+}
+
+
 def _budget_dict(budget: Budget, used: int) -> dict[str, Any]:
     caps = budget.layer_caps()
     layers = {
         name: {"budget_chars": caps[name],
-               "used_chars": (used if name == "retrieved" else 0)}
+               "used_chars": (used if name == "retrieved" else 0),
+               "status": ("implemented" if name == "retrieved" else "reserved"),
+               "reason": ("" if name == "retrieved" else RESERVED_REASONS[name])}
         for name in LAYERS
     }
     return {
@@ -253,6 +271,9 @@ def _budget_dict(budget: Budget, used: int) -> dict[str, Any]:
         # ★ 把"哪些层真的有内容"单独列出来：v1 只有 retrieved，
         #   免得有人看着八层的 budget 以为 system/policy 也注入了。
         "enabled_layers": ["retrieved"],
+        "implemented_layers": ["retrieved"],
+        "reserved_layers": [{"layer": n, "reason": RESERVED_REASONS[n]}
+                            for n in LAYERS if n != "retrieved"],
         "layers": layers,
         "env_ignored": list(budget.ignored_env),
     }

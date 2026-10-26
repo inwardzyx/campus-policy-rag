@@ -89,6 +89,8 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | fixture 连接器（离线验收） | ✅ | `kb/connectors/fixture.py`；`evalset/fixtures/connector_demo/` 可直接跑 |
 | 飞书连接器适配 | ✅ 代码 / ⏳ 真实同步等 scope | `kb/connectors/feishu.py`；`FeishuWikiSource.sync` 已**委托**同一引擎（不再两套实现） |
 | 飞书报错 → 可操作清单 | ✅ | `kb/feishu.py::explain_error`：列出缺的 scope + 发版 + 加入知识空间；CLI 失败时直接打印 |
+| 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
+| 「想实现记忆必须显式改测试」 | ✅ | `test_implementing_memory_requires_a_deliberate_test_change` 锁住 `implemented_layers==["retrieved"]` |
 | S1 判据的变异体 | ✅ | `scripts/mutate_connectors.py`：忽略 ACL 变化 / 清单删“发版”，**2/2 变红 + 字节还原** |
 
 ### 2.3 实测结果（可复现）
@@ -96,7 +98,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-317 passed, 27 skipped
+318 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -288,6 +290,7 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
 | README 端点数过期 | 新增 `/kb` 路由后 README 仍写 7/10 个，pre-commit 报错 | 更新为 **11**；`scripts/check_readme_numbers.py` 强制校验 | ✅ 已解决 |
 | 飞书 token 取错层级 | 以为 `tenant_access_token` 在 `data` 下，实际在顶层 | `_request(..., raw=True)` 取顶层 | ✅ 已解决 |
 | 飞书知识空间成员 | `131002 invalid member_type` / `invalid member_role` / `131101 public wiki space can't create member` | 实测有效组合是 **`member_type=appid` + `member_role=member`**；但**公开空间不能加任何成员**（先改回私有），且 tenant 身份无权给自己加成员（131006）→ 需管理员 | **未解决（租户策略）** |
+| 未实现的层写成 `used_chars: 0` | 读报告的人以为是「这轮没用记忆」，实际是「记忆没做」 | 每层加 `status`/`reason`；`reserved` 只能读成未实现 | **已修复** |
 | 改 `.env` 用记事本整体覆盖 | 服务全部 500：`DEEPSEEK_API_KEY must be set` | 改 `.env` 只**追加**、不要整篇粘贴；本次已从 Windows 用户环境变量恢复 | **已修复** |
 | 飞书 wiki 无权限 | `99991672 Access denied ...` | 已把报错翻译成清单（缺哪些 scope + **发版** + 加入知识空间），CLI 失败直接打印；scope 仍需你在后台开 | **未解决（需用户操作，但不再靠猜）** |
 | Docling 进程内被 WDAC 拦 | `_pava_pybind` DLL load failed，应用程序控制策略阻止 | 改用 Docker 容器；`docling-local` 仅留给无 WDAC 机器 | ✅ 绕过（非根治） |
@@ -372,13 +375,13 @@ as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异
 **下一步（按 ROI）**：
 1. **一份真实公司制度**（你能拿到的任何 HR/合规文件，敏感信息可替换）→ 重跑同一套 20 题；
 2. 飞书：等管理员在管理后台开通「应用访问云文档/知识库」；或改走 user_access_token 桥接（不推荐长期）；
-3. memory 层「恒 0」假指标要修（要么实现、要么从报告删掉）；
+3. ~~memory 层「恒 0」假指标~~ ✅ 已修（`status`/`reason` + 锁定测试，见 §2.2）；
 4. 成本/延迟：每问 3 次 LLM 调用、p95 ≈ 3.8s。
 
 **S2（平台化）待你确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
 **S3（运营闭环）**：反馈→归因→候选题集 + 健康度周报。
 
-**仍按 ROI 排的其它项**：真实语料 20 题（等你给文档）；memory 层“恒 0”假指标要修；
+**仍按 ROI 排的其它项**：真实语料 20 题（等你给文档）；
 成本/延迟；部署硬化。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）

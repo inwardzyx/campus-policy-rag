@@ -99,6 +99,34 @@ def test_trace_declares_eight_layers_but_only_retrieved_is_enabled() -> None:
     assert d["budget"]["layers"]["retrieved"]["used_chars"] == 100
     others = {k: v["used_chars"] for k, v in d["budget"]["layers"].items() if k != "retrieved"}
     assert sum(others.values()) == 0, f"没接的层不该有 used_chars：{others}"
+    # ★ 关键：未实现的层必须**自称未实现**，不能只给一个 0（0 会被读成"用了 0"）
+    for name, info in d["budget"]["layers"].items():
+        if name == "retrieved":
+            assert info["status"] == "implemented" and info["reason"] == ""
+        else:
+            assert info["status"] == "reserved" and info["reason"], (
+                f"{name} 层是 reserved 却没有理由 —— 报告里又会变成假指标")
+
+
+def test_implementing_memory_requires_a_deliberate_test_change() -> None:
+    """**锁定测试**：memory（以及其余 6 层）现在明确是"未实现"。
+
+    ★ 这是一道刻意的闸门：谁要真去接记忆，就必须**改这条用例**、并同步 `RESERVED_REASONS`。
+      否则"顺手把 used_chars 从 0 改成非 0"就会让报告悄悄多出一个没人验证过的指标。
+    """
+    from kb import context as ctx_mod
+
+    _, trace = ctx_mod.select_retrieved(
+        [{"doc": "d.md", "clause": "第 1 条", "text": "正文", "text_full": "正文"}],
+        budget=ctx_mod.Budget(), namespace="hr")
+    budget = trace.to_dict()["budget"]
+
+    assert budget["implemented_layers"] == ["retrieved"]
+    assert budget["enabled_layers"] == ["retrieved"]
+    assert {x["layer"] for x in budget["reserved_layers"]} == set(ctx_mod.LAYERS) - {"retrieved"}
+    memory = budget["layers"]["memory"]
+    assert memory["status"] == "reserved"
+    assert "未实现" in memory["reason"]
 
 
 # ==================================================================
