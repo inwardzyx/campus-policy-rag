@@ -90,6 +90,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 飞书连接器适配 | ✅ 代码 / ⏳ 真实同步等 scope | `kb/connectors/feishu.py`；`FeishuWikiSource.sync` 已**委托**同一引擎（不再两套实现） |
 | 飞书报错 → 可操作清单 | ✅ | `kb/feishu.py::explain_error`：列出缺的 scope + 发版 + 加入知识空间；CLI 失败时直接打印 |
 | 多租户 S2-1 | ✅ 身份 + 隔离 + 审计导出 | `tenants.py`（key 只存 sha256）；`MULTI_TENANT=1` 时 `/chat` `/search` 校验 key 与 namespace；审计带 `tenant`；`/admin/tenants`、`/admin/audit` |
+| 多租户判据的变异体 | ✅ | `scripts/mutate_tenants.py`：`allows()` 恒 True / key 不比对哈希，**2/2 变红 + 字节还原** |
 | 多租户的**未做部分** | ⏳ 明确未做 | 每租户独立配额、写接口（上传/删除）按租户鉴权、计费、控制台 |
 | 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
 | 「想实现记忆必须显式改测试」 | ✅ | `test_implementing_memory_requires_a_deliberate_test_change` 锁住 `implemented_layers==["retrieved"]` |
@@ -444,6 +445,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
 | `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |
 | `D:\_review_rag-cs\tenants.py` | 租户注册表：key 只存 sha256、namespace 前缀匹配、`create` 只返回一次明文 |
+| `D:\_review_rag-cs\scripts\mutate_tenants.py` | 租户判据变异体（隔离恒 True / key 不比对），2/2 变红 |
 | `D:\_review_rag-cs\tests\test_tenants.py` | 11 条：注册表/隔离/审计/管理接口不泄 key |
 | `D:\_review_rag-cs\evalset\fixtures\policy_corpus\` | 3 篇合成制度语料（含 2024/2026 两版，供 as-of 演示） |
 | `D:\_review_rag-cs\evalset\scenarios\policy.jsonl` | 20 题（17 应答 + 3 拒答），gold 指向条款标题 |
