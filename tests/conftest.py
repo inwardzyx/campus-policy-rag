@@ -76,6 +76,23 @@ def pytest_sessionstart(session):
 
 
 @pytest.fixture(autouse=True)
+def _clear_rag_cache():
+    """缓存默认开启后，用例之间会互相命中（比如同一个"图书馆几点关门？"）。
+
+    ★ 不隔离的话，某条"应当发生 N 次 LLM 调用"的用例会因前面的用例把结果缓存了而失败，
+      而且报错信息完全指不到原因 —— 这类跨用例污染我们踩过一次（kb_data 运行时语料）。
+    """
+    try:
+        import service as _svc
+        cache = getattr(_svc.rag, "_cache", None)
+        if cache is not None:
+            cache.clear()
+    except Exception:
+        pass
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_audit_log(tmp_path, monkeypatch):
     """审计默认写 `kb_data/audit.jsonl`；测试里指到临时目录。
 

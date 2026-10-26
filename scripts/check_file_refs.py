@@ -66,6 +66,10 @@ IGNORE_MARK = "refcheck-ignore"      # 整行跳过（用于正文引述错路�
 
 # ★ 明确要放过的不存在路径：**每一行都要经得起下一个人问"为什么"**。
 ALLOW: dict[str, str] = {
+    "evalset/report-scenario-hr.json":
+    """运行时产物：`scripts/run_scenario_eval.py --cases hr` 的输出路径（跑过才有）。""",
+    "evalset/report-scenario-hr-deny.json":
+    """运行时产物：`scripts/run_scenario_eval.py --cases hr-deny` 的输出路径（跑过才有）。""",
     "experiments/deploy-smoke.json":
     """运行时产物：`scripts/deploy_smoke.py` 的默认输出路径（部署后才生成）。
     本地验证的产物在 `experiments/deploy-smoke-local.json`。""",

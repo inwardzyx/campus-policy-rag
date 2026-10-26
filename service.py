@@ -76,6 +76,7 @@ import kb.citation as citation_mod                  # noqa: E402  引用校验�
 import kb.compress as compress_mod                  # noqa: E402  块级规则压缩（去重/噪声行）
 import kb.versioning as version_mod                 # noqa: E402  as-of 版本裁决（effective_date/status）
 import kb.audit as audit_mod                        # noqa: E402  审计落盘（只存决策与定位，不存原文）
+import cache as cache_mod                          # noqa: E402  改写/精排的 LRU 缓存
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import tenants as tenants_mod                        # noqa: E402  租户注册表（S2-1）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
@@ -354,6 +355,16 @@ class UsageLedger:
             self.n_calls += 1
         except (TypeError, ValueError):
             self.missing_calls += 1
+
+    def record_cached(self) -> None:
+        """缓存命中：没有真的调模型，但这次"调用"发生过（0 token）。
+
+        ★ 不记这一笔的话，一次全命中的请求会得到 `take() is None`，
+          被 `LIMITER.record` 记成 `usage_missing` —— 那会把"省钱"误报成"账丢了"。
+        """
+        prev = self._acc or _zero_usage()
+        self._acc = dict(prev)
+        self.n_calls += 1
 
     def mark_zero(self) -> None:
         """记一次【可证明的 0 次调用】—— 与"什么都没记"**不是一回事**。
@@ -713,6 +724,10 @@ def _final_acl_filter(items, acl, where: str):
     return kept
 
 
+#: 缓存开关：默认**开**（2026-10-26 配对实验后）；`CACHE_ENABLED=0` 可回滚。
+#: 必须在 class RAG 之前定义（类体里要用）。
+CACHE_ENABLED = (os.environ.get("CACHE_ENABLED") or "1").strip().lower() in ("1", "true", "yes", "on")
+
 class RAG:
     """把所有重家伙（模型、向量库）装在里面，全局只有一份"""
 
@@ -843,6 +858,8 @@ class RAG:
             return
         self.enterprise_chunks = self._load_enterprise()
         self.chunks = self._doc_chunks + self.enterprise_chunks
+        if self._cache is not None:
+            self._cache.clear()          # 候选变了，旧分数不能留
         self._rebuild_index()
 
     def _guard(self, docs, min_len=MIN_LEN):
@@ -1006,7 +1023,25 @@ class RAG:
         kept = kept_out
         return kept, rejected
 
+    # ★ 2026-10-26：改写/精排是"同输入⇒同输出"的纯函数（temperature=0），可以缓存；
+    #   生成**不缓**（答案必须针对本轮上下文）。默认关，按 CACHE_ENABLED 启用。
+    _cache = cache_mod.LRUCache(512) if CACHE_ENABLED else None
+
     def rewrite_query(self, q: str, prior_questions: list[str] | None = None) -> str:
+        if self._cache is not None:
+            key = cache_mod.key_of("rewrite", q, tuple(prior_questions or ())[:3])
+            cached = self._cache.get(key)
+            if cached is not None:
+                led = current_ledger()
+                if led is not None:
+                    led.record_cached()
+                return cached
+            out = self._rewrite_query_uncached(q, prior_questions)
+            self._cache.put(key, out)
+            return out
+        return self._rewrite_query_uncached(q, prior_questions)
+
+    def _rewrite_query_uncached(self, q: str, prior_questions: list[str] | None = None) -> str:
         """把口语问题改写成制度用语 —— **只用于检索**。
 
         ★ 2026-10-14 加 `prior_questions`（多轮）：把最近几轮的**问题**一起给模型，
@@ -1103,6 +1138,24 @@ class RAG:
         return [(self.chunks[idx], float(vec_scores[idx])) for idx, _ in top]
 
     def rerank(self, query, candidates):
+        if self._cache is not None:
+            fp = tuple((c.get("doc"), c.get("clause"),
+                        len(c.get("text_full") or c.get("text") or ""),
+                        (c.get("text_full") or c.get("text") or "")[:24])
+                       for c, _ in candidates)
+            key = cache_mod.key_of("rerank", query, fp)
+            cached = self._cache.get(key)
+            if cached is not None:
+                led = current_ledger()
+                if led is not None:
+                    led.record_cached()
+                return cached
+            out = self._rerank_uncached(query, candidates)
+            self._cache.put(key, out)
+            return out
+        return self._rerank_uncached(query, candidates)
+
+    def _rerank_uncached(self, query, candidates):
         """让大模型给每条候选打分，返回 [(块, 向量分, 精排分, 理由)]，按精排分从高到低
 
         为什么两个分数都要留着？
@@ -1233,10 +1286,17 @@ _BOOT_TS = time.time()
 #:   要回滚：设 `INDEX_TEXT_MODE=text` 即可，不用改代码。
 INDEX_TEXT_MODE = (os.environ.get("INDEX_TEXT_MODE") or "doc_clause_text").strip().lower()
 
+#: 缓存开关：默认关（先量再改）。开着时只缓"改写"和"精排"两处纯函数调用。
+
 #: 进程内用量合计（重启清零）。**不是账本**：只给 /admin/usage 与 /metrics 看趋势，
 #: 精确到分的成本请用 `scripts/cost_report.py` 从压测产物算。
 _USAGE_TOTALS: dict = {"requests": 0, "input_tokens": 0, "output_tokens": 0,
                        "missing_usage": 0, "by_tenant": {}}
+
+
+def _cache_stats() -> dict:
+    cache = getattr(rag, "_cache", None)
+    return cache.stats() if cache is not None else {}
 
 
 def _note_usage(tenant_id: str | None, usage: dict | None) -> None:
@@ -1992,7 +2052,8 @@ def admin_tenants(request: Request):
 def admin_usage(request: Request):
     """进程内用量合计（重启清零）。给人看趋势，精确成本用 scripts/cost_report.py。"""
     _admin_guard(request)
-    return {"uptime_seconds": round(time.time() - _BOOT_TS, 1), **_USAGE_TOTALS}
+    return {"uptime_seconds": round(time.time() - _BOOT_TS, 1),
+            "cache": _cache_stats(), **_USAGE_TOTALS}
 
 
 @app.get("/metrics")
@@ -2018,6 +2079,12 @@ def metrics():
         "# HELP rag_denied_requests_total 被限流/配额拒绝的请求数",
         "# TYPE rag_denied_requests_total counter",
         f"rag_denied_requests_total {int(stats.get('denied_rate', 0)) + int(stats.get('denied_quota', 0))}",
+        "# HELP rag_cache_hits 改写/精排缓存命中数",
+        "# TYPE rag_cache_hits counter",
+        f"rag_cache_hits {_cache_stats().get('hits', 0)}",
+        "# HELP rag_cache_items 缓存条目数",
+        "# TYPE rag_cache_items gauge",
+        f"rag_cache_items {_cache_stats().get('items', 0)}",
         "# HELP rag_uptime_seconds 进程运行秒数",
         "# TYPE rag_uptime_seconds gauge",
         f"rag_uptime_seconds {round(time.time() - _BOOT_TS, 1)}",

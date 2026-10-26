@@ -1,0 +1,27 @@
+{
+  "experiment": "rewrite_rerank_cache",
+  "off": {
+    "tag": "off",
+    "cold_p50": 3756.1,
+    "warm_p50": 6624.8,
+    "cold_p95": 5441.4,
+    "warm_p95": 8370.0,
+    "cold_tokens": 10966,
+    "warm_tokens": 11070,
+    "identical_sources": 8,
+    "n": 10
+  },
+  "on": {
+    "tag": "on",
+    "cold_p50": 3843.9,
+    "warm_p50": 2528.5,
+    "cold_p95": 6666.6,
+    "warm_p95": 4045.0,
+    "cold_tokens": 10940,
+    "warm_tokens": 2913,
+    "identical_sources": 10,
+    "n": 10
+  },
+  "decision": "默认开启缓存：热跑 sources 10/10 与冷跑一致；p95 6667→4045ms（-39%）；token 10940→2913（-73%）；回滚 CACHE_ENABLED=0",
+  "caveat": "只对重复问题有效；生成本身不缓存，答案文本一致率 4/10 属正常（控制组也是 4/10）"
+}
