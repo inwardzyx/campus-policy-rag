@@ -1,0 +1,79 @@
+{
+  "note": "as-of 端到端验收（语料 synthetic；版本感知去重之后）",
+  "namespace": "asof_demo2",
+  "question": "国内出差住宿费报销标准是多少？",
+  "guard": {
+    "kept": [
+      {
+        "doc": "差旅报销制度",
+        "clause": "第三条",
+        "text": "国内出差住宿费按每人每天 400 元标准据实报销，超标部分自理。"
+      },
+      {
+        "doc": "差旅报销制度",
+        "clause": "第三条",
+        "text": "国内出差住宿费按每人每天 600 元标准据实报销，超标部分自理。"
+      }
+    ],
+    "rejected": []
+  },
+  "search_hits": 2,
+  "runs": [
+    {
+      "label": "过去时点 2025-06-01",
+      "event_time": "2025-06-01",
+      "status": 200,
+      "answer": "国内出差住宿费按每人每天 400 元标准据实报销，超标部分自理。[1]",
+      "as_of": {
+        "event_time": "2025-06-01",
+        "groups": 1,
+        "kept": 1,
+        "dropped": 1,
+        "dropped_by_reason": {
+          "not_yet_effective": 1
+        },
+        "unknown_date_blocks": 0
+      },
+      "blocks": [
+        {
+          "clause": "第三条",
+          "chars": 32
+        }
+      ],
+      "excluded": [
+        {
+          "clause": "第三条",
+          "reason": "not_yet_effective"
+        }
+      ]
+    },
+    {
+      "label": "现行（不传 event_time）",
+      "event_time": null,
+      "status": 200,
+      "answer": "国内出差住宿费按每人每天 600 元标准据实报销，超标部分自理。[1]",
+      "as_of": {
+        "event_time": null,
+        "groups": 1,
+        "kept": 1,
+        "dropped": 1,
+        "dropped_by_reason": {
+          "superseded": 1
+        },
+        "unknown_date_blocks": 0
+      },
+      "blocks": [
+        {
+          "clause": "第三条",
+          "chars": 32
+        }
+      ],
+      "excluded": [
+        {
+          "clause": "第三条",
+          "reason": "superseded"
+        }
+      ]
+    }
+  ]
+}

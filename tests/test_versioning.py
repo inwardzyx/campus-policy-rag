@@ -98,6 +98,35 @@ def test_unknown_date_is_kept_and_counted() -> None:
     assert dropped == []
 
 
+# ---------------------------------------------------------------- ④b 版本感知去重（入库关）
+
+def test_version_siblings_are_not_duplicates() -> None:
+    """★ 同 (doc, clause)、生效日不同 ⇒ 是"版本兄弟"，入库时不能当重复丢掉。
+
+    ★ 这条守的是 as-of 的**数据前提**：入库时把旧版吃了，查询时再怎么裁决都只有一版。
+      判据是"数据触发"的：只有带 `effective_date` 才算版本兄弟，
+      docs/ 校规（没有生效日）维持原来的去重行为（263 留 / 23 拦不变）。
+    """
+    a = ch(eff="2024-01-01")
+    b = ch(eff="2026-01-01")
+    assert svc._is_version_sibling(a, b) is True
+
+
+def test_without_effective_date_duplicates_stay_duplicates() -> None:
+    """没有生效日的两块：维持旧行为（算重复），否则 docs/ 的入库数字会变。"""
+    assert svc._is_version_sibling(ch(), ch()) is False
+
+
+def test_same_version_is_still_a_duplicate() -> None:
+    """同版本同生效日 ⇒ 真重复（不是版本兄弟），别拿"版本"当免死金牌。"""
+    assert svc._is_version_sibling(ch(eff="2025-01-01"), ch(eff="2025-01-01")) is False
+
+
+def test_different_clause_is_not_a_version_sibling() -> None:
+    assert svc._is_version_sibling(ch(clause="第四条", eff="2024-01-01"),
+                                   ch(clause="第五条", eff="2026-01-01")) is False
+
+
 # ---------------------------------------------------------------- ⑤ 数据层接线
 
 def test_upload_reads_effective_date_and_status(tmp_path) -> None:

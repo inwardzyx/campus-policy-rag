@@ -199,7 +199,24 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 - 丢弃的块进 `trace.excluded`（带 chars 与原因），`context.as_of` 汇总各原因计数；
   归因里三种原因都归到 `stale_version` 桶。
 
-### 端到端限制（本轮实测发现，未修）
+### 端到端：先撞墙，再修好（2026-10-26）
+
+修法是**数据触发**的：只有块带 `effective_date` 时，才把同 `(doc, clause)` 的
+不同版本当「版本兄弟」——近似重复关放行、入库时**不裁决**，留给查询时按 `event_time` 裁决。
+没有生效日的 `docs/` 校规走原逻辑 ⇒ **263 留 / 23 拦一个没变**（老守卫全绿）。
+
+修复后证据（`experiments/_asof-acceptance-fixed.json`，语料 synthetic）：
+
+```text
+索引里该条款 2 块、被拦 0、/search 返回 2 条
+event_time=2025-06-01 → kept=1 dropped={"not_yet_effective":1} → 答案 400 元
+不传 event_time       → kept=1 dropped={"superseded":1}     → 答案 600 元
+```
+
+判据：`tests/test_versioning.py` 18 条 + `scripts/mutate_versioning.py` **3/3 变红**
+（忽略 event_time / 不丢废止版 / 版本兄弟判定失效），两次还原都按字节核对。
+
+### 当初的墙（留档）
 
 受控验收（`experiments/_asof-acceptance.json`，语料 synthetic）暴露了数据层冲突：
 

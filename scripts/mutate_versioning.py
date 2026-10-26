@@ -20,12 +20,15 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGET = ROOT / "kb" / "versioning.py"
 TESTS = "tests/test_versioning.py"
+KB_VER = ROOT / "kb" / "versioning.py"
+SERVICE = ROOT / "service.py"
 
+#: (说明, 目标文件, 变异锚点, 替换成, pytest -k, 期望变红的用例)
 MUTATIONS = [
     (
         "A · 忽略 event_time（未来条款被当现行）",
+        KB_VER,
         "            if event_time:\n",
         "            if False:\n",
         "event_time",
@@ -34,11 +37,20 @@ MUTATIONS = [
     ),
     (
         "B · 不丢废止版（旧条款回到答案里）",
+        KB_VER,
         "            elif _status(chunk) == STATUS_DEPRECATED:\n",
         "            elif False:\n",
         "deprecated",
         ["test_deprecated_is_dropped_without_event_time",
          "test_chat_without_event_time_drops_deprecated"],
+    ),
+    (
+        "C · 版本兄弟判定失效（入库去重又吃掉新版）",
+        SERVICE,
+        '    return (str(a.get("version") or ""), ea) != (str(b.get("version") or ""), eb)\n',
+        "    return False\n",
+        "version_siblings",
+        ["test_version_siblings_are_not_duplicates"],
     ),
 ]
 
@@ -58,21 +70,22 @@ def run_tests(kw: str) -> tuple[int, list[str], str]:
 
 
 def main() -> int:
-    original = TARGET.read_bytes()
-    before = hashlib.sha256(original).hexdigest()
-    text = original.decode("utf-8")
+    originals = {p: p.read_bytes() for p in (KB_VER, SERVICE)}
+    before = {p: hashlib.sha256(b).hexdigest() for p, b in originals.items()}
+    texts = {p: b.decode("utf-8") for p, b in originals.items()}
     ok = 0
 
-    for label, old, new, kw, expect_ids in MUTATIONS:
+    for label, target, old, new, kw, expect_ids in MUTATIONS:
+        text = texts[target]
         n = text.count(old)
         if n != 1:
             print(f"✗ [{label}] 变异锚点命中 {n} 处（应为 1）")
             continue
-        TARGET.write_bytes(text.replace(old, new, 1).encode("utf-8"))
+        target.write_bytes(text.replace(old, new, 1).encode("utf-8"))
         try:
             code, failed, summary = run_tests(kw)
         finally:
-            TARGET.write_bytes(original)
+            target.write_bytes(originals[target])
 
         hit = [f for f in failed if any(pid in f for pid in expect_ids)]
         if code == 0:
@@ -87,9 +100,9 @@ def main() -> int:
             if summary:
                 print(f"   {summary}")
 
-    after = hashlib.sha256(TARGET.read_bytes()).hexdigest()
+    after = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in originals}
     same = before == after
-    print(f"\nkb/versioning.py 还原核对：{'一致' if same else '不一致！'}")
+    print(f"\n还原核对：{'一致' if same else '不一致！'}（kb/versioning.py + service.py）")
     print(f"判据被证明会响：{ok}/{len(MUTATIONS)}")
     return 0 if (ok == len(MUTATIONS) and same) else 1
 

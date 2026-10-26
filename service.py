@@ -578,6 +578,25 @@ def _mask_pii(text):
     return t
 
 
+def _is_version_sibling(a: dict, b: dict) -> bool:
+    """两块是不是**同一条款的不同版本**（as-of 要保留它们，而不是当重复丢掉）。
+
+    ★ 判据刻意"数据触发"：只有**带了 effective_date** 才算版本兄弟。
+      docs/ 的校规没有生效日 ⇒ 返回 False ⇒ 去重/版本冲突关的行为与之前**逐字节一致**
+      （263 留 / 23 拦那些数字不变，老测试不用动）。
+    ★ 为什么必须区分：同一条款的新旧两版往往只差一个数字，近似重复关会把它们判成重复；
+      而入库时丢掉旧版，就等于"问去年的事"永远答不了 —— 这正是 as-of 要解决的问题。
+    """
+    if (str(a.get("doc") or ""), str(a.get("clause") or "")) != \
+       (str(b.get("doc") or ""), str(b.get("clause") or "")):
+        return False
+    ea = str(a.get("effective_date") or "")
+    eb = str(b.get("effective_date") or "")
+    if not ea and not eb:
+        return False                      # 没有生效日信息 ⇒ 维持旧行为（当重复）
+    return (str(a.get("version") or ""), ea) != (str(b.get("version") or ""), eb)
+
+
 def _version_key(v: str):
     """把 version 字符串解析成可比较的元组：'2026-09-25' → (2026, 9, 25)。解析不出来返回 None。
 
@@ -895,7 +914,10 @@ class RAG:
             #   一旦前面拦掉过东西，两套编号就错位了：
             #   新块会去比【已被拦掉的】，却漏掉【真正该比的已通过块】，于是漏拦。
             #   tests/test_guard.py::test_near_dup_after_earlier_rejection 守住这里。
-            dup = any(float(vecs[i] @ vecs[j]) > DUP_THRESHOLD for j in stage3)
+            # ★ 2026-10-26：版本兄弟（同 doc/clause、effective_date 不同）不算重复 ——
+            #   否则「只差一个数字」的新旧两版里，后上传的那版会被静默吃掉，as-of 永远只有一版。
+            dup = any(float(vecs[i] @ vecs[j]) > DUP_THRESHOLD
+                      and not _is_version_sibling(c, kept[j]) for j in stage3)
             if dup:
                 rejected.append((c, "近似重复"))
             else:
@@ -928,11 +950,21 @@ class RAG:
         # ★ 这里的 key 必须是 (文档, 条款) 两样一起，不能只用文档名！
         #   只用文档名的话，"退款政策.md"里【已发货】和【未发货】是两条完全不同的规定，
         #   会被误判成"同一条的新旧两版"，结果一条把另一条挤掉 —— 库里凭空少一条规则。
+        # ★ 2026-10-26：带 effective_date 的 (doc, clause) 视为「多版本共存」，
+        #   入库时**不裁决**，留给 kb/versioning.py 按 event_time 在查询时裁决。
+        #   没带生效日的（docs/ 校规）走原来的「只留 version 最大」逻辑，行为不变。
+        versioned_keys = {(c["doc"], c["clause"]) for c in kept
+                          if c.get("effective_date")}
+        kept_out = []
         newest = {}
         for c in kept:
             key = (c["doc"], c["clause"])          # ← 两样一起当身份证
+            if key in versioned_keys:
+                kept_out.append(c)                   # 多版本：全留
+                continue
             if key not in newest:
                 newest[key] = c
+                kept_out.append(c)
                 continue
             old = newest[key]
             # ⚠️ 将来要做「超长块切成多块」时，这里有个坑必须先看（2026-09-25 实测）：
@@ -952,10 +984,11 @@ class RAG:
                 rejected.append((c, f"版本号不是 YYYY-MM-DD，无法比较新旧：{c['version']!r}"))
             elif new_k > old_k:                     # 新来的确实更新 → 换掉旧的
                 rejected.append((old, f"旧版本，被新版取代（{old['version']} → {c['version']}）"))
+                kept_out[kept_out.index(old)] = c  # 原地替换（out 里就是那个对象）
                 newest[key] = c
             else:                                   # 旧版本 / 同版本后来者 → 新来的被拦
                 rejected.append((c, f"旧版本，库里已有更新的 {old['version']}"))
-        kept = list(newest.values())
+        kept = kept_out
         return kept, rejected
 
     def rewrite_query(self, q: str, prior_questions: list[str] | None = None) -> str:

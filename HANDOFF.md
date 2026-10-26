@@ -74,7 +74,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 引用判据的变异体 | ✅ | `scripts/mutate_citation.py`：编号错位 / 越界不标记，**2/2 变红 + 字节还原** |
 | 块级规则压缩（近重复去重 / 噪声行） | ✅ 代码，**默认 off**（`CONTEXT_COMPRESS=rule` 才开） | `kb/compress.py`；本语料实测 20 题触发 **0** 次 ⇒ 保持默认关（见 §2.3） |
 | 压缩判据的变异体 | ✅ | `scripts/mutate_compress.py`：阈值失效 / 正则吞正文，**2/2 变红 + 字节还原** |
-| as-of 运行时版本裁决（effective_date/status + event_time） | ⚠️ 代码与用例 ✅ / **端到端 ❌** | `kb/versioning.py`；字段贯通 loader·store·manifest。端到端被入库去重挡住（§2.3、§4） |
+| as-of 版本裁决（effective_date/status + event_time） | ✅ 端到端可用（语料带生效日时） | `kb/versioning.py`；字段贯通 loader·store·manifest；六道把关对「版本兄弟」放行（`service.py::_is_version_sibling`，数据触发） |
 | as-of 判据的变异体 | ✅ | `scripts/mutate_versioning.py`：忽略 event_time / 不丢废止版，**2/2 变红** |
 
 ### 2.3 实测结果（可复现）
@@ -82,7 +82,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-270 passed, 27 skipped
+274 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -133,19 +133,21 @@ budget_cut_rate 0 / p95 4794ms
 ★ **明确不做**：句子级抽取（中位 75 字的块抽完只剩半句，风险远大于收益）；
   超长块按句拆段（只有 1 块 1870 字，拆了会改变出处与引用编号语义）—— 记在 §5。
 
-**as-of 版本裁决（批 4，受控验收，语料 synthetic）** —— 产物 `experiments/_asof-acceptance.json`
+**as-of 版本裁决（批 4，受控验收，语料 synthetic）**
 
 ```text
-上传两版同条款（2024-01-01 / 2026-01-01）→ manifest 里两条都在（doc_id 不同）
-但 /search 只返回 1 条；/guard-report 里新版被拦：reason="[asof_demo] 近似重复"
-两次 /chat（event_time=2025-06-01 / 不传）→ as_of 报告都是 kept=1, dropped=0
+① 先撞墙（产物 experiments/_asof-acceptance.json）：
+   两版都进 manifest，但 /search 只返回 1 条；/guard-report 里新版被拦 reason="[asof_demo] 近似重复"
+   ⇒ 运行时过滤对，端到端拿不到两版（六道把关的近似重复关跑在版本冲突关之前）
+② 修好之后（产物 experiments/_asof-acceptance-fixed.json）：
+   索引里该条款 2 块、被拦 0、/search 返回 2 条
+   event_time=2025-06-01 → kept=1 dropped_by_reason={"not_yet_effective":1} → 答案 400 元
+   不传 event_time       → kept=1 dropped_by_reason={"superseded":1}     → 答案 600 元
 ```
 
-★ **结论：运行时过滤（`kb/versioning.py`）本身对，但端到端拿不到两个版本。**
-  原因在数据层：六道把关的**近似重复关**（余弦 > `DUP_THRESHOLD`）把新版当重复丢掉，
-  它在"版本冲突关"之前跑，所以同一 (doc, clause) 的旧/新版根本进不了同一个索引。
-  ⇒ as-of 要真正可用，前提是数据层允许"同一条款多版本共存"；那要改六道把关，
-    本轮按约束**没有动**，需要人拍板（§5）。
+★ 修法是**数据触发**的：只有块带 `effective_date` 才把两块当"版本兄弟"（去重放行、入库不裁决），
+  没有生效日的 docs/ 校规走原逻辑 ⇒ 263 留 / 23 拦那些数字一个没变（老守卫测试全绿）。
+★ 也就是说：**as-of 能不能用，取决于语料有没有写生效日**。没写就诚实地按现行处理，不猜。
 
 **Docling 容器**：
 
@@ -171,8 +173,8 @@ budget_cut_rate 0 / p95 4794ms
   `stale_version` 桶是空钩子（等 as-of）。
 - **压缩只有 v1 且默认关**：去重/噪声行已实现、变异体 2/2 变红，但本语料触发 0 次；
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
-- **版本/as-of 只做到运行时**：`effective_date/status/event_time` 字段与过滤逻辑都有、变异体会红，
-  但端到端被入库去重挡住（同一 (doc, clause) 的旧/新版进不了同一个索引，见 §2.3）。
+- **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
+  答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
 - **审计日志没做**：没有审计表/审计事件（trace 只进响应，不落盘）。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
 - **独立 70 题集没出**：只有 40+20+10 的模板和样例。
@@ -217,7 +219,7 @@ budget_cut_rate 0 / p95 4794ms
 | 真实扫描件未验 | 目前只有“文本 PDF 渲染成图片”的模拟扫描件 | 需要真实扫描仪 PDF（倾斜/噪点/盖章） | **未解决** |
 | 双栏/表格未验 | SISU 样本是单栏正文，没有表格阅读顺序测试 | 需要双栏论文/年报或带表格制度 | **未解决** |
 | OCR 速度慢 | CPU 约 58 秒/页；长文档会拖死同步上传 | 后续做批处理/常驻服务/GPU；当前仅验收 | **未解决（性能）** |
-| 多版本被"近似重复"关吃掉 | 同一条款的新旧两版文本几乎一样（只差数字），入库时新版被判近似重复；而它跑在"版本冲突"关**之前** ⇒ as-of 永远只看到一版 | 本轮**没改**（要动六道把关）；证据 `experiments/_asof-acceptance.json` + `/guard-report` | **未解决（需决策）** |
+| 多版本被"近似重复"关吃掉 | 同一条款的新旧两版文本几乎一样（只差数字），入库时新版被判近似重复；而它跑在"版本冲突"关**之前** ⇒ as-of 永远只看到一版 | 经用户拍板后改成**版本感知**：`_is_version_sibling`（带 effective_date 且版本/生效日不同 ⇒ 去重放行、入库不裁决），docs/ 无生效日 ⇒ 行为不变；证据 `_asof-acceptance-fixed.json` | ✅ 已解决 |
 | `kb_data/` 有残留 namespace ⇒ 全量测试红 | 服务启动会把企业 namespace 一起索引，`test_guard` 断言的是 `docs/` 语料条数（263/23）；我跑完 campus 评测忘了清 `campus_eval`，一下红了 4 条 | 跑完评测/验收后删掉 `kb_data/<ns>`；**这不是代码 bug**，但下次别把它误读成回归 | ✅ 已知（靠记得清） |
 
 ---
@@ -266,14 +268,12 @@ prompt 逐字节不变），答案带 `[n]`，`context.citation` 报 validity/�
 **批 3（块级压缩）✅ 已完成（2026-10-26）**，但**默认关**：本语料触发 0 次，
 打开它只是为了等真实语料（多版本制度/PDF 页眉）时能直接复测。
 
-**批 4（as-of 运行时裁决）⚠️ 部分完成（2026-10-26）**：字段与过滤逻辑到位（14 条用例、变异体 2/2），
-但端到端被入库去重挡住 —— 需要你决定走哪条路：
-(a) **让近似重复关版本感知**：`(doc, clause)` 相同但 `version`/`effective_date` 不同 ⇒ 不算重复
-    （改动小，但确实动了六道把关，需要你点头）；
-(b) **上传侧约定**：多版本用不同 `doc`（如 `差旅报销制度（2024版）`）绕开去重（不动把关，但靠人工约定）；
-(c) 暂时不做多版本，只保留"现行查询丢废止版"那半条（已可用）。
+**批 4（as-of 版本裁决）✅ 已完成（2026-10-26，走的是方案 a）**：运行时裁决 + 数据层字段
++ 六道把关版本感知（数据触发，docs/ 数字不变）；端到端证据见 §2.3。
+18 条用例、变异体 **3/3 变红**。
 
-**再往后**：审计落盘（trace → JSONL，脱敏 + 保留期）、memory 层条目化。
+**下一步（批 5）**：审计落盘（trace → JSONL，脱敏 + 保留期）或 memory 层条目化
+（二选一，审计对企业部署更刚需）；模板加"按 X 年 X 月版本"的措辞也可以顺路做。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -321,6 +321,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\versioning.py` | as-of 版本裁决：effective_date/status/event_time → 丢弃原因（stale/superseded/not_yet_effective） |
 | `D:\_review_rag-cs\tests\test_versioning.py` | 14 条：时点过滤/废止版/多版本/日期未知/上传读取/服务接线 |
 | `D:\_review_rag-cs\scripts\mutate_versioning.py` | 变异体（忽略 event_time、不丢废止版），2/2 变红 + 字节还原 |
+| `D:\_review_rag-cs\experiments\_asof-acceptance-fixed.json` | as-of 端到端证据：两版共存、2025 时点答 400 元、现行答 600 元 |
 | `D:\_review_rag-cs\experiments\_asof-acceptance.json` | as-of 受控验收（synthetic）：含"新版被近似重复关拦掉"的证据 |
 | `D:\_review_rag-cs\kb\compress.py` | 块级规则压缩（近重复去重 / 噪声行），默认 off；只做减法不重写 |
 | `D:\_review_rag-cs\tests\test_compress.py` | 压缩 9 条：去重/先到者胜/噪声只删整行/默认关/接线 |
