@@ -62,7 +62,14 @@ def test_load_documents_schema():
     for d in docs:
         # 这些字段正是 _guard / guard_report / chat 一路会用到的 schema
         # ★ 2026-10-10 加 text_full：给精排判断/生成/用户看的全文（text 是截给 embedding 的）
-        assert set(d) == {"doc", "clause", "version", "source", "text", "text_full"}
+        # ★ 2026-10-26 加 effective_date / status：as-of 版本裁决要用。
+        #   这条断言刻意写成"精确相等"而不是"至少包含"：加字段必须被看见 ——
+        #   漏写一个新键时，下游 `chunk.get(...)` 会静默拿到默认值，
+        #   问题只在某些语料上才暴露（版本裁决会静默失效）。
+        assert set(d) == {"doc", "clause", "version", "source", "text", "text_full",
+                          "effective_date", "status"}
+        assert d["effective_date"] == "" and d["status"] == "active", \
+            "docs/ 语料没有生效日：必须是'未知 + 现行'，不许编一个日期"
 
 
 def test_load_documents_no_embedding_needed():

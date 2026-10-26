@@ -94,7 +94,7 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
         why = excluded[gold]
         if why in _BUDGET_REASONS:
             out.update(bucket="budget_cut", reason=f"gold 被预算裁掉（{why}）")
-        elif why == "stale":
+        elif why in ("stale", "superseded", "not_yet_effective"):
             out.update(bucket="stale_version", reason="gold 因版本过滤被排除")
         elif why == "low_score":
             out.update(bucket="rank_shift", reason="gold 在候选里但精排分低，整体拒答")

@@ -111,6 +111,9 @@ class KnowledgeStore:
         doc_title = title or fm.get("doc") or (old or {}).get("title") or Path(safe_name).stem
         doc_source = source or fm.get("source") or (old or {}).get("source") or f"upload:{safe_name}"
         doc_version = version or fm.get("version") or (old or {}).get("version") or "1"
+        # ★ 时间维：frontmatter 里没写就是"未知/现行"，**不猜**。
+        doc_effective = str(fm.get("effective_date") or (old or {}).get("effective_date") or "")
+        doc_status = str(fm.get("status") or (old or {}).get("status") or "active").lower()
         doc_acl = list(acl) if acl is not None else list((old or {}).get("acl") or ["public"])
 
         file_path = ns_dir / "files" / f"{doc_id}{suffix}"
@@ -126,6 +129,8 @@ class KnowledgeStore:
             "created_at": (old or {}).get("created_at", now),
             "acl": doc_acl,
             "content_hash": h,
+            "effective_date": doc_effective,
+            "status": doc_status,
             "tombstone": False,
             "suffix": suffix,
             "file": file_path.name,
@@ -188,6 +193,8 @@ class KnowledgeStore:
                 acl=tuple(rec.get("acl") or ["public"]),
                 content_hash=str(rec.get("content_hash") or ""),
                 tombstone=False,
+                effective_date=str(rec.get("effective_date") or ""),
+                status=str(rec.get("status") or "active"),
             )
             raw = RawDocument(meta=meta, text=text, suffix=suffix)
             out.extend(chunk_document(raw))

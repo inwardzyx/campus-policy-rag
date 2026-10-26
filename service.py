@@ -73,6 +73,7 @@ from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke
 import kb.context as context_mod                    # noqa: E402  上下文层：八层/预算/trace
 import kb.citation as citation_mod                  # noqa: E402  引用校验（答案里的 [n] 指没指对块）
 import kb.compress as compress_mod                  # noqa: E402  块级规则压缩（去重/噪声行）
+import kb.versioning as version_mod                 # noqa: E402  as-of 版本裁决（effective_date/status）
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
@@ -1247,6 +1248,10 @@ class ChatRequest(BaseModel):
                                      max_length=64)
     # ★ 角色/部门列表；本地 demo 显式传，生产必须由 SSO/网关注入，不能信客户端。
     acl: Optional[list[str]] = Field(None, description="调用方角色/部门（生产应由 SSO 注入）")
+    # ★ 2026-10-26：as-of 版本裁决 —— "这件事发生在哪一天"。不传 = 按现行有效。
+    #   格式交给 pydantic 校验（写错直接 422），别让服务自己猜日期。
+    event_time: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+                                      description="事件发生日 YYYY-MM-DD（as-of 版本裁决）")
 
 
 class ChatStreamRequest(BaseModel):
@@ -1269,6 +1274,8 @@ class ChatStreamRequest(BaseModel):
     namespace: Optional[str] = Field(None, description="知识库 namespace（不传=docs/ 默认语料）",
                                      max_length=64)
     acl: Optional[list[str]] = Field(None, description="调用方角色/部门（生产应由 SSO 注入）")
+    event_time: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+                                      description="事件发生日 YYYY-MM-DD（as-of 版本裁决）")
 
 
 class Source(BaseModel):
@@ -1310,6 +1317,8 @@ class ContextSummary(BaseModel):
     citation: Optional[dict] = None
     # ★ 压缩报告：默认 None（未启用）；启用后含 before/after chars 与丢弃计数。
     compression: Optional[dict] = None
+    # ★ 版本裁决报告：event_time / 各原因丢弃数 / 日期未知块数。
+    as_of: Optional[dict] = None
 
     @classmethod
     def from_trace(cls, trace) -> "ContextSummary":
@@ -1540,6 +1549,17 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         cands = _search_for_request(req, search_q, roles=roles)
         # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
         cands = _final_acl_filter(cands, effective_acl, "检索后")
+        cands, dropped_ver, as_of_report = version_mod.filter_versions(
+            cands, event_time=getattr(req, "event_time", None))
+        if not cands and dropped_ver:
+            _, ver_summary = _plan_context(req, [], None, dropped_ver, as_of_report)
+            refusal = {"answer": "知识库里没有能回答这个问题的资料，我不编。",
+                       "sources": [], "rerank_used": False,
+                       "session_used": session_used}
+            if ver_summary is not None:
+                refusal["context"] = ver_summary.model_dump()
+            out.put(("refusal", refusal))
+            return
         # ★ 写会话放在**检索之后**：检索用的历史已经取到手，现在把本轮追加进去
         #   （下一轮就能看到它）。★ 存的是**问题原文** —— 口径见 session.py 顶部：
         #   "会话级临时存储 + 短 TTL，不进日志、不入持久化库"。
@@ -1576,7 +1596,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         # ★ 与 /chat 共用同一份 `_plan_context`：预算裁掉的块不能只从 trace 里消失，
         #   还要真的不进 `answer_stream`。
         fed, context_summary = _plan_context(req, [c for c, _, _, _ in picked],
-                                            _candidate_blocks(ranked or []))
+                                            _candidate_blocks(ranked or []),
+                                            dropped_ver, as_of_report)
         if not fed:
             refusal = {
                 "answer": "知识库里没有能回答这个问题的资料，我不编。",
@@ -1961,7 +1982,7 @@ def _candidate_blocks(items, limit: int = 10):
     return out
 
 
-def _plan_context(req, chunks, candidates=None):
+def _plan_context(req, chunks, candidates=None, extra_dropped=None, as_of=None):
     """算出这次**真正喂给生成模型**的块 + context 摘要（docs/ 路径原样返回、摘要 None）。
 
     ★ 两件事必须一起做：预算裁掉的块不能只从摘要里消失、却还留在喂给模型的那份里。
@@ -1979,10 +2000,16 @@ def _plan_context(req, chunks, candidates=None):
     # ★ 关闭时传 None：{} 会被读成"压了但没变化"，和"没启用"是两件事。
     trace_compression = (None if CONTEXT_COMPRESS_MODE == compress_mod.MODE_OFF
                          else compression)
+    # ★ 版本裁决丢掉的块也进 trace（它们没经过预算，但归因要能看见）
+    extra = [dict(c) for c in (extra_dropped or [])]
+    for c in extra:
+        c.setdefault("_drop_reason", "stale")
     kept, trace = context_mod.select_retrieved(chunks, budget=CONTEXT_BUDGET,
                                                namespace=req.namespace,
                                                candidates=candidates,
-                                               compression=trace_compression)
+                                               compression=trace_compression,
+                                               extra_dropped=extra,
+                                               as_of=as_of)
     return list(kept), ContextSummary.from_trace(trace)
 
 
@@ -2046,6 +2073,10 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
     cands = _search_for_request(req, search_q, roles=roles)
     # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
     cands = _final_acl_filter(cands, effective_acl, "检索后")
+    # ★ as-of 放在精排**之前**：否则旧版会白占一个 top3 名额，
+    #   而精排分高并不代表它"当时有效"。
+    cands, dropped_ver, as_of_report = version_mod.filter_versions(
+        cands, event_time=getattr(req, "event_time", None))
     # ★ 写会话放在**检索之后**：本轮要用的历史已经取到手，现在把本轮追加进去。
     #   ★ 存的是**问题原文** —— 口径见 `session.py` 顶部：
     #     "会话级临时存储 + 短 TTL；不进日志、不入持久化库"。
@@ -2056,6 +2087,16 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
                                   session_mod.DEFAULT_TTL_SEC)
 
     took = lambda: int((time.time() - t0) * 1000)          # 匿名函数，算"到现在用了多少毫秒"
+
+    # ★ 版本裁决把候选全丢了（例如问的是 2024 年的事，而库里只有 2026 版的条款）：
+    #   必须走拒答，而且 trace 要说清"是被版本裁决丢的"——否则归因会把它算成检索没捞到。
+    if not cands and dropped_ver:
+        _, ver_summary = _plan_context(req, [], None, dropped_ver, as_of_report)
+        return ChatResponse(
+            answer="知识库里没有能回答这个问题的资料，我不编。",
+            sources=[], took_ms=took(), rerank_used=False, knowledge_hit=False,
+            usage=_usage_for_response(led), session_used=session_used,
+            context=ver_summary)
 
     use_rerank = req.use_rerank
     ranked = None
@@ -2093,7 +2134,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
         # ★ 2026-10-25：namespace 请求先过字符预算。裁掉的块**必须真的不喂**，
         #   否则 context trace 说的就是假话（“丢了”其实喂了）。
         ctx, context_summary = _plan_context(req, [c for c, _, _, _ in picked],
-                                            _candidate_blocks(ranked or []))
+                                            _candidate_blocks(ranked or []),
+                                            dropped_ver, as_of_report)
         if not ctx:
             # 候选有、却一块都放不进额度 ⇒ 走现有拒答，绝不零上下文硬生成。
             return ChatResponse(
@@ -2136,7 +2178,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
         sources, ctx = _vec_sources(cands)
         # ★ 同上：预算外的块要从 ctx 与 sources 里**一起**消失（`_vec_sources` 的契约是
         #   两者一一对应；只改一边就会出现“出处列了没喂的块”）。
-        planned, context_summary = _plan_context(req, ctx, _candidate_blocks(cands))
+        planned, context_summary = _plan_context(req, ctx, _candidate_blocks(cands),
+                                                dropped_ver, as_of_report)
         if not planned:
             return ChatResponse(
                 answer="知识库里没有能回答这个问题的资料，我不编。",

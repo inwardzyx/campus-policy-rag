@@ -1,0 +1,99 @@
+{
+  "note": "as-of 受控验收（语料 synthetic：仅验证裁决逻辑，不是真实制度）",
+  "namespace": "asof_demo",
+  "uploads": [
+    "报销制度-2024.md",
+    "报销制度-2026.md"
+  ],
+  "manifest": [
+    {
+      "doc_id": "8198e01f0592",
+      "version": "2024版",
+      "effective_date": "2024-01-01",
+      "status": "active"
+    },
+    {
+      "doc_id": "3271e365e649",
+      "version": "2026版",
+      "effective_date": "2026-01-01",
+      "status": "active"
+    }
+  ],
+  "guard": {
+    "kept": [
+      {
+        "doc": "差旅报销制度",
+        "clause": "第三条",
+        "text": "国内出差住宿费按每人每天 400 元标准据实报销，超标部分自理。"
+      }
+    ],
+    "rejected": [
+      {
+        "doc": "差旅报销制度",
+        "clause": "第三条",
+        "text": "国内出差住宿费按每人每天 600 元标准据实报销，超标部分自理。",
+        "reason": "[asof_demo] 近似重复"
+      },
+      {
+        "doc": "差旅报销制度",
+        "clause": "第三条",
+        "text": "国内出差住宿费按每人每天 400 元标准据实报销，超标部分自理。",
+        "reason": "[asof_demo] 近似重复"
+      },
+      {
+        "doc": "差旅报销制度",
+        "clause": "第三条",
+        "text": "国内出差住宿费按每人每天 600 元标准据实报销，超标部分自理。",
+        "reason": "[asof_demo] 近似重复"
+      }
+    ]
+  },
+  "question": "国内出差住宿费报销标准是多少？",
+  "runs": [
+    {
+      "label": "过去时点 2025-06-01",
+      "event_time": "2025-06-01",
+      "status": 200,
+      "answer": "国内出差住宿费按每人每天 400 元标准据实报销，超标部分自理。[1]",
+      "knowledge_hit": true,
+      "as_of": {
+        "event_time": "2025-06-01",
+        "groups": 1,
+        "kept": 1,
+        "dropped": 0,
+        "dropped_by_reason": {},
+        "unknown_date_blocks": 0
+      },
+      "blocks": [
+        {
+          "clause": "第三条",
+          "chars": 32
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "label": "现行（不传 event_time）",
+      "event_time": null,
+      "status": 200,
+      "answer": "国内出差住宿费按每人每天 400 元标准据实报销，超标部分自理。[1]",
+      "knowledge_hit": true,
+      "as_of": {
+        "event_time": null,
+        "groups": 1,
+        "kept": 1,
+        "dropped": 0,
+        "dropped_by_reason": {},
+        "unknown_date_blocks": 0
+      },
+      "blocks": [
+        {
+          "clause": "第三条",
+          "chars": 32
+        }
+      ],
+      "excluded": []
+    }
+  ],
+  "conclusion": "运行时过滤（kb/versioning.py）在单测/服务级用例里是对的，但**端到端拿不到两个版本**：两版都进了 manifest（doc_id/effective_date 不同），却只有一版进了索引 —— 六道把关的『近似重复』关（余弦 > DUP_THRESHOLD）把新版按重复丢掉，理由见 guard.rejected。也就是说 as-of 要被真正用起来，前提是数据层允许『同一 (doc, clause) 多版本共存』（近似重复关需要版本感知：version/effective_date 不同就不算重复）。这属于改动六道入库把关，本轮按约束**没有动**，交给人决定。"
+}

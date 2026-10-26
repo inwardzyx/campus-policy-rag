@@ -61,6 +61,11 @@ class DocumentMeta:
     acl: tuple[str, ...] = ("public",)
     content_hash: str = ""
     tombstone: bool = False
+    # ★ 2026-10-26 加（as-of 版本裁决用）：
+    #   effective_date：生效日 YYYY-MM-DD；空串 = **日期未知**（不是 1970，别拿它排序）。
+    #   status：active / deprecated；deprecated 的块在"现行"查询里会被丢掉（reason=stale）。
+    effective_date: str = ""
+    status: str = "active"
 
 
 @dataclass
@@ -135,6 +140,8 @@ def _make_chunk(meta: DocumentMeta, clause: str, text: str) -> dict:
         "updated_at": meta.updated_at,
         "content_hash": meta.content_hash,
         "tombstone": meta.tombstone,
+        "effective_date": meta.effective_date,
+        "status": meta.status,
     }
 
 

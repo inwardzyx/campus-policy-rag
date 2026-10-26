@@ -282,6 +282,11 @@ def load_documents(root: str | Path, max_chars: int = 400) -> tuple[list[dict], 
                 #   所以不切；但"不切"不等于"只能丢"。
                 "text": content,
                 "text_full": full_text,
+                # ★ 2026-10-26：docs/ 语料没有生效日 ⇒ 空串（未知）+ active；
+                #   不写这两个键的话，版本裁决会把它们当成"日期未知"以外的东西，
+                #   也就是会静默地不参与裁决 —— 那等于漏掉一整类块。
+                "effective_date": str(meta.get("effective_date") or ""),
+                "status": str(meta.get("status") or "active"),
             })
 
     # ★ 一行汇总代替逐条 warning（逐条明细已降级到 DEBUG，见 QUIET_CLEAN_DETAIL）

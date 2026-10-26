@@ -182,6 +182,44 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 判据的变异体：[`scripts/mutate_citation.py`](scripts/mutate_citation.py) —— 编号从 0 开始 /
 越界不标记，**2/2 变红**，并按字节还原（sha256 一致）。
 
+## 版本 / as-of（2026-10-26，批 4）
+
+文件：[`kb/versioning.py`](kb/versioning.py)。回答"**这件事发生在哪一天，当时有效的是哪一版**"。
+
+### 字段与规则
+
+- 文档级：`effective_date`（`YYYY-MM-DD`，空串 = **日期未知**）、`status`（`active`/`deprecated`），
+  来自 frontmatter，贯通 loader → store manifest → chunk；
+- 请求级：`/chat`、`/chat/stream` 新增可选 `event_time`（pydantic 校验格式，写错直接 422）；
+- 裁决（运行时、检索之后精排之前）：
+  1. 带 `event_time`：只留 `effective_date <= event_time`；晚于它的丢（`not_yet_effective`）；
+     **日期未知的块保留并计数**（不假装能裁决）；
+  2. 不带 `event_time`（现行）：丢 `status=deprecated`（`stale`）；
+  3. 同一 `(doc, clause)` 多版本：留当时最新的一版，其余 `superseded`。
+- 丢弃的块进 `trace.excluded`（带 chars 与原因），`context.as_of` 汇总各原因计数；
+  归因里三种原因都归到 `stale_version` 桶。
+
+### 端到端限制（本轮实测发现，未修）
+
+受控验收（`experiments/_asof-acceptance.json`，语料 synthetic）暴露了数据层冲突：
+
+```text
+两版都进了 manifest（2024-01-01 / 2026-01-01，doc_id 不同）
+但 /search 只返回 1 条
+/guard-report: {"doc":"差旅报销制度","clause":"第三条","reason":"[asof_demo] 近似重复"}
+```
+
+⇒ **六道把关的"近似重复"关（余弦 > DUP_THRESHOLD）在"版本冲突"关之前跑**，
+  于是两版文本几乎一样（只差数字）时，新版被当重复丢掉，as-of 永远只看到一版。
+⇒ 要让 as-of 真正可用，必须让数据层允许"同一 (doc, clause) 多版本共存"，
+  也就是近似重复关要**版本感知**（`version`/`effective_date` 不同就不算重复）——
+  这属于改动六道入库把关，本轮按约束没有动，交给人决定（HANDOFF §5 有 a/b/c 三条路）。
+
+### 判据
+
+`tests/test_versioning.py` 14 条（时点/废止/多版本/日期未知/上传读取/服务接线/归因桶），
+`scripts/mutate_versioning.py`：忽略 `event_time`、不丢废止版 —— **2/2 变红**，字节还原 sha256 一致。
+
 ## 块级压缩（2026-10-26，批 3，默认关）
 
 文件：[`kb/compress.py`](kb/compress.py)。只做**块边界/行边界**的减法，绝不重写、绝不截半句

@@ -178,6 +178,9 @@ class ContextTrace:
     #   "捞到了但排在第 4 名"（rank_shift）—— 这两种失败的修法完全不同，
     #   而只看 included/excluded 时它们长得一模一样。
     candidates: list[dict[str, Any]] = field(default_factory=list)
+    # ★ 版本裁决报告（as-of）：event_time / 分组数 / 各原因丢弃数 / 日期未知块数。
+    #   没有它就看不出"这条为什么没用"到底是被预算裁的，还是被版本裁决掉的。
+    as_of: dict[str, Any] | None = None
     # ★ 2026-10-26 加：压缩报告（mode/before_chars/after_chars/dedup_dropped/...）。
     #   默认 off ⇒ 空 dict；空 dict 与"压了但没变"是两件事，前者表示没启用。
     compression: dict[str, Any] | None = None
@@ -192,6 +195,7 @@ class ContextTrace:
             "budget": dict(self.budget),
             "candidates": [dict(c) for c in self.candidates],
             "compression": dict(self.compression) if self.compression else None,
+            "as_of": dict(self.as_of) if self.as_of else None,
         }
 
 
@@ -237,6 +241,8 @@ def select_retrieved(
     trace_id: str | None = None,
     candidates: Sequence[Mapping[str, Any]] | None = None,
     compression: Mapping[str, Any] | None = None,
+    extra_dropped: Sequence[Mapping[str, Any]] | None = None,
+    as_of: Mapping[str, Any] | None = None,
 ) -> tuple[list[Mapping[str, Any]], ContextTrace]:
     """按**给定顺序**贪心放入，返回 `(真正喂给模型的块, trace)`。
 
@@ -250,7 +256,12 @@ def select_retrieved(
     cap = budget.retrieved_cap
     kept: list[Mapping[str, Any]] = []
     blocks: list[Block] = []
-    excluded: list[Block] = []
+    # ★ 版本裁决丢掉的块先落进 excluded：它们**没进过预算**，但必须能被看见，
+    #   否则归因会把"旧版被丢"误判成"检索没捞到"。
+    excluded: list[Block] = [
+        Block(*_chunk_ids(c), len(_chunk_text(c)), False, str(c.get("_drop_reason") or "stale"))
+        for c in (extra_dropped or [])
+    ]
     used = 0
     for chunk in chunks:
         text = _chunk_text(chunk)
@@ -283,7 +294,8 @@ def select_retrieved(
                          excluded=excluded, degraded=degraded,
                          budget=_budget_dict(budget, used),
                          candidates=[dict(c) for c in (candidates or [])],
-                         compression=dict(compression) if compression else None)
+                         compression=dict(compression) if compression else None,
+                         as_of=dict(as_of) if as_of else None)
     return kept, trace
 
 
