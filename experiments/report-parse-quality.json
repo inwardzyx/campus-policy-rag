@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-10-26T16:26:29+0800",
+  "pdfs": [
+    {
+      "file": "sisu-handbook-2025.pdf",
+      "kb": 3557,
+      "pypdf": {
+        "ok": true,
+        "pages": 407,
+        "secs": 5.77,
+        "chars": 339901,
+        "nonempty_lines": 11969,
+        "headings": 0,
+        "table_rows": 0,
+        "cjk_chars": 272551,
+        "cjk_ratio": 0.8019,
+        "text_head": "上海外国语大学                学 生 手 册\n（2025\n年 版 ）\n教育部直属全国重点大学\n“双一流”“211”重点建设高校\n2025 年版\n学生手册\n2025上海外国语大学学生手册4.indd   1 2025/8/27   11:20\n教育部直属全国重点大学\n“双一流”“211”重点建设高校\n2025 年版\n学生手册\n\n\nI\n目录\n第一部分  走进上外\n上海外国语大学简介. "
+      },
+      "docling": {
+        "ok": false,
+        "error": "docling 不可用：OSError: [WinError 4551] 应用程序控制策略已阻止此文件。 Error loading \"D:\\Python-project\\.venv\\Lib\\site-packages\\torch\\lib\\torch_python.dll\" or one of its dependencies."
+      }
+    },
+    {
+      "file": "sisu-handbook-scan.pdf",
+      "kb": 714,
+      "pypdf": {
+        "ok": true,
+        "pages": 3,
+        "secs": 0.0,
+        "chars": 2,
+        "nonempty_lines": 0,
+        "headings": 0,
+        "table_rows": 0,
+        "cjk_chars": 0,
+        "cjk_ratio": 0.0,
+        "text_head": ""
+      },
+      "docling": {
+        "ok": false,
+        "error": "docling 不可用：OSError: [WinError 4551] 应用程序控制策略已阻止此文件。 Error loading \"D:\\Python-project\\.venv\\Lib\\site-packages\\torch\\lib\\torch_python.dll\" or one of its dependencies."
+      }
+    }
+  ]
+}

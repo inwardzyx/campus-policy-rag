@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import Iterable, Protocol
 from xml.etree import ElementTree as ET
 
+from kb.normalize import ensure_headings  # noqa: E402
+
 
 class UnsupportedFormat(Exception):
     """文件格式暂不支持 —— 报清楚缺什么依赖，别静默返回空文本。"""
@@ -393,8 +395,15 @@ def chunk_document(raw: RawDocument) -> list[dict]:
     # DOCX 解析器会把 Heading 转成 `## `；Docling/MinerU 产出的 PDF Markdown 也有标题。
     if raw.suffix in (".md", ".markdown", ".docx"):
         return chunk_markdown(raw.text, raw.meta)
-    if raw.suffix == ".pdf" and re.search(r"(?m)^#{1,3}\s+", raw.text):
-        return chunk_markdown(raw.text, raw.meta)
+    if raw.suffix == ".pdf":
+        # ★ 2026-10-26 实测：pypdf 抽真实 PDF 只有正文、**没有任何 `##`**
+        #   （339,901 字符 / 0 标题 / 0 表格行），直接定长切块会把条款号丢掉，
+        #   引用就无法指回条款。先把 `第X条` 提成标题；提不出来才退回定长切块。
+        text, added = ensure_headings(raw.text)
+        # 已经有 `#` 标题（Docling/结构化 PDF）或刚补出条款 → 按标题切
+        if added or re.search(r"(?m)^#{1,3}\s+", text):
+            return chunk_markdown(text, raw.meta)
+        return chunk_plain_text(raw.text, raw.meta)
     if raw.suffix in (".html", ".htm"):
         return chunk_plain_text(raw.text, raw.meta)
     return chunk_plain_text(raw.text, raw.meta)

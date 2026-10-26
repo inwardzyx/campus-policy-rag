@@ -38,7 +38,7 @@ Get-ChildItem scripts\mutate_*.py | Measure-Object
 | 项 | 值（2026-10-26 实测） |
 |---|---|
 | HTTP 端点 | 14（`/chat`、`/chat/stream`、`/search`、`/console`、`/admin/*`、`/kb/*`、`/health`、`/limits`、`/guard-report`、`/`） |
-| 测试 | 收集 373 条；全量 **346 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
+| 测试 | 收集 373 条；全量 **350 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
 | 测试文件 | 29 个，CI 全覆盖（`scripts/check_test_counts.py` 把关） |
 | 变异体脚本 | 17 个（每个关键判据都能被故意打坏、然后变红） |
 | 语料 | `docs/kb/` 10 篇（真实校规，263 块）+ `evalset/fixtures/policy_corpus/` 3 篇（合成制度，47 块） |
@@ -74,6 +74,7 @@ Get-ChildItem scripts\mutate_*.py | Measure-Object
 | `kb/evalkit/` | 评测内核：cases / metrics（注册表）/ report（schema 化）/ transport（http·recorded·inproc） | 缺失值必须是 `None` + `metric_specs.missing` 说明，**不许补 0** |
 | `kb/evalkit/session.py` | 会话级打分：会话全对率 / 改写补全 / 重复提问 | 拒答题不进"改写补全"的分母 |
 | `kb/connectors/core.py` | 连接器协议 + 增量同步引擎 | 变更 = 哈希 ∪ ACL ∪ 元数据；删除只碰 `owns()` 的文档 |
+| `kb/normalize.py` | 把没有 `##` 的正文里的 `第X条` 提成标题（真实 PDF 的第一道坎） | 已有 `#` 标题时**原样返回**；长尾正文不许误提成条款 |
 | `kb/connectors/fixture.py` | 本地目录连接器（离线验收增量/权限） | 改 manifest 的 acl 等价于"外部系统收回权限" |
 | `tenants.py` | 租户注册表（key 只存 sha256） | `create()` 只返回一次明文 key；`allows()` 按前缀且不放过相似名（`hrx`） |
 | `limits.py` | 限流 + 日配额（Redis 或进程内） | 存储挂了按 `LIMIT_FAIL_MODE` 处置，默认 `closed`（宁可不服务） |
@@ -163,6 +164,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\mutate_tenants.py
 | 测试块数从 263 变 310 | 测试把 `kb_data/` 运行时语料也算进"仓库语料" | 已按 `docs/**` 文件名过滤 |
 | 飞书 `131006 tenant needs read permission` | 应用不是知识空间成员，且 tenant 无法自举 | 需管理员后台开权限；实测成员组合是 `appid`+`member` |
 | 飞书 `10003 invalid param` | 多半是凭证不对（占位符/抄错/未发布） | `explain_error` 会直说 |
+| 真实 PDF 上传后切不出条款 | `pypdf` 只抽正文、**没有 `##`**（实测 0 标题） | `kb/normalize.py` 先补 `第X条` 标题；提不出来才退回定长块 |
 | `metric_specs` 里 `null` 被当成 0 | 消费方不看 `missing` 说明 | 报告把 `metric_specs` 放在 `aggregate` 之前 |
 
 ---

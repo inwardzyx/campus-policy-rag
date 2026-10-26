@@ -4,6 +4,9 @@
 > （早期版本做的是客服知识库，后来换成校园政策场景，名字直到这天跟上）。
 > 旧地址会**自动跳转**到新地址；内容以本 README 为准。
 
+> **只想花一分钟？** 读 [`START.md`](START.md)（一页：五个数字 / 3 分钟上手 / 文档地图 / 已知窟窿）。
+> 本 README 是完整的项目故事与历史证据，**不是入口** —— 它很长，按需检索即可。
+
 > **给接手方 / 另一个 AI 的现状说明书**：[`PROJECT_BRIEF.md`](PROJECT_BRIEF.md)
 > （三层架构 / 模块地图 / 硬约束 / 已知坑 / 怎么验证本文件没吹牛）。
 > 本 README 是「故事 + 实测数字」，BRIEF 是「现状快照 + 上手路径」。
@@ -1722,7 +1725,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
 | **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_citation.py` + `tests/test_compress.py` + `tests/test_versioning.py` + `tests/test_audit.py` + `tests/test_eval_kit.py` + `tests/test_session_eval.py` + `tests/test_connectors.py` + `tests/test_tenants.py` + `tests/test_console.py` + `tests/test_preflight.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_citation.py` + `tests/test_compress.py` + `tests/test_versioning.py` + `tests/test_audit.py` + `tests/test_eval_kit.py` + `tests/test_session_eval.py` + `tests/test_connectors.py` + `tests/test_tenants.py` + `tests/test_console.py` + `tests/test_preflight.py` + `tests/test_normalize.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，
