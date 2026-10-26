@@ -119,13 +119,31 @@ def run(env: Mapping[str, str] | None = None, root: Path | None = None) -> list[
     return [check(env, root) for check in CHECKS]
 
 
+def load_env_file(path: Path) -> dict[str, str]:
+    """读 `.env` 但不覆盖已有环境变量（环境变量优先，和 service.py 的约定一致）。
+
+    ★ 为什么必须读：本地跑自检时 key 通常只写在 `.env` 里；不读就会报"没有 key"，
+      而这条假红会教人**忽略自检**——那比没有自检更坏。
+    """
+    if not path.is_file():
+        return {}
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        return {}
+    return {k: v for k, v in dotenv_values(path).items() if v is not None}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="私有化部署前自检")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--strict", action="store_true", help="warn 也算失败")
+    ap.add_argument("--env-file", default=str(ROOT / ".env"),
+                    help="从哪个 .env 读缺省值（环境变量仍优先；容器里通常不需要）")
     args = ap.parse_args(argv)
 
-    results = run()
+    env = {**load_env_file(Path(args.env_file)), **os.environ}
+    results = run(env)
     fails = [r for r in results if r.status == "fail"]
     warns = [r for r in results if r.status == "warn"]
     if args.json:

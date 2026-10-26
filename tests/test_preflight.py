@@ -95,3 +95,21 @@ def test_json_output_is_parseable() -> None:
     payload = json.loads(r.stdout)
     assert set(payload) == {"results", "fails", "warns"}
     assert all({"name", "status", "detail"} <= set(x) for x in payload["results"])
+
+def test_env_file_is_read_without_overriding_real_env(tmp_path) -> None:
+    """`.env` 里的 key 要认；但真实环境变量优先（否则线上配错看不出来）。"""
+    env_file = tmp_path / ".env"
+    env_file.write_text("DEEPSEEK_API_KEY=sk-" + "c" * 30 + "\nAUDIT_ENABLED=1\n",
+                        encoding="utf-8")
+    base = {k: v for k, v in os.environ.items() if k != "DEEPSEEK_API_KEY"}
+
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "preflight.py"),
+                        "--env-file", str(env_file), "--json"],
+                       cwd=str(ROOT), capture_output=True, text=True,
+                       encoding="utf-8", errors="replace",
+                       env={**base, "PYTHONIOENCODING": "utf-8"})
+    payload = json.loads(r.stdout)
+    key = next(x for x in payload["results"] if x["name"] == "deepseek_key")
+    assert key["status"] == "ok", key
+    assert r.returncode == 0
+
