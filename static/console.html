@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>制度助手 · 控制台</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --text:#1f2328; --muted:#6b7280; --accent:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 20px;
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  .muted { color:var(--muted); font-size:12px; }
+  main { max-width:1100px; margin:20px auto; padding:0 16px; display:grid;
+         grid-template-columns: 1fr 1fr; gap:16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  section.wide { grid-column: 1 / -1; }
+  h2 { font-size:14px; margin:0 0 10px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  input, button, select { font:inherit; }
+  input, select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button { padding:6px 12px; border:1px solid var(--accent); color:#fff; background:var(--accent);
+           border-radius:6px; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .err { color:#b91c1c; font-size:12px; white-space:pre-wrap; }
+  .pill { display:inline-block; padding:0 8px; border-radius:999px; background:#eef2ff;
+          color:#3730a3; font-size:12px; }
+  code { background:#f3f4f6; padding:0 4px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>制度助手 · 控制台</h1>
+  <span class="muted">只读 · 不引前端框架 · 数据全部来自 <code>/admin/*</code> 与 <code>/kb/*</code></span>
+</header>
+
+<main>
+  <section>
+    <h2>管理凭证</h2>
+    <div class="row">
+      <input id="token" type="password" placeholder="X-KB-Admin-Token（本机回环可留空）" size="34">
+      <button id="save">保存</button>
+      <button id="clear" class="ghost">清除</button>
+    </div>
+    <div class="muted">存在 <code>sessionStorage</code>，关掉标签页即失效；不会写进 URL 或日志。</div>
+    <div id="authState" class="muted"></div>
+  </section>
+
+  <section>
+    <h2>租户</h2>
+    <div class="row">
+      <button id="loadTenants" class="ghost">刷新租户</button>
+      <span id="tenantMeta" class="muted"></span>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>名称</th><th>命名空间</th><th>Key 数</th><th>启用</th></tr></thead>
+      <tbody id="tenantRows"></tbody>
+    </table>
+  </section>
+
+  <section class="wide">
+    <h2>语料</h2>
+    <div class="row">
+      <label class="muted">命名空间</label>
+      <select id="ns"></select>
+      <button id="loadDocs" class="ghost">刷新语料</button>
+      <span id="docMeta" class="muted"></span>
+    </div>
+    <table>
+      <thead><tr><th>文档</th><th>ACL</th><th>版本</th><th>生效日</th><th>状态</th><th>块数</th></tr></thead>
+      <tbody id="docRows"></tbody>
+    </table>
+  </section>
+
+  <section class="wide">
+    <h2>最近审计</h2>
+    <div class="row">
+      <label class="muted">租户</label><input id="fTenant" size="14" placeholder="全部">
+      <label class="muted">会话</label><input id="fSession" size="18" placeholder="全部">
+      <label class="muted">条数</label><input id="fLimit" size="4" value="50">
+      <button id="loadAudit" class="ghost">刷新审计</button>
+      <span id="auditMeta" class="muted"></span>
+    </div>
+    <table>
+      <thead><tr><th>时间</th><th>租户</th><th>会话/轮次</th><th>命名空间</th><th>决策</th><th>命中</th><th>引用</th></tr></thead>
+      <tbody id="auditRows"></tbody>
+    </table>
+    <div id="err" class="err"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// ★ 全页只用 textContent / createTextNode 渲染数据（禁 innerHTML）：
+//   审计里的字段来自服务端，但"现在不脏"不等于"以后不脏"——这条是硬规矩。
+
+const $ = (id) => document.getElementById(id);
+const tokenKey = "kb_admin_token";
+let state = { tenants: [], docs: [] };
+
+function authHeaders() {
+  const t = sessionStorage.getItem(tokenKey) || "";
+  return t ? { "x-kb-admin-token": t } : {};
+}
+
+function setErr(msg) { $("err").textContent = msg || ""; }
+
+function cell(text) {                      // 单个文本单元格：只用 textContent
+  const td = document.createElement("td");
+  td.textContent = text == null ? "" : String(text);
+  return td;
+}
+
+async function api(path) {
+  const resp = await fetch(path, { headers: authHeaders() });
+  const text = await resp.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch (e) { body = null; }
+  if (!resp.ok) {
+    const detail = (body && (body.detail || body.error)) || text || resp.status;
+    throw new Error(resp.status + " " + (typeof detail === "string" ? detail : JSON.stringify(detail)));
+  }
+  return body;
+}
+
+function renderTenants(body) {
+  const tbody = $("tenantRows");
+  tbody.replaceChildren();
+  const list = (body.tenants || []).concat(body.default_tenant ? [body.default_tenant] : []);
+  for (const t of list) {
+    const tr = document.createElement("tr");
+    const ns = t.namespaces === null ? "不受限（default）" : (t.namespaces || []).join(", ");
+    tr.append(cell(t.id), cell(t.name), cell(ns), cell(t.n_keys || 0), cell(t.enabled ? "是" : "否"));
+    tbody.appendChild(tr);
+  }
+  $("tenantMeta").textContent = "多租户：" + (body.multi_tenant ? "开" : "关")
+    + " · " + list.length + " 个租户";
+  fillNamespaces(list);
+}
+
+function fillNamespaces(list) {
+  const sel = $("ns");
+  const current = sel.value;
+  sel.replaceChildren();
+  const seen = new Set();
+  for (const t of list) {
+    for (const ns of (t.namespaces || [])) { seen.add(ns); }
+  }
+  if (seen.size === 0) { seen.add("demo"); }
+  for (const ns of Array.from(seen).sort()) {
+    const opt = document.createElement("option");
+    opt.value = ns; opt.textContent = ns;
+    sel.appendChild(opt);
+  }
+  if (current) { sel.value = current; }
+}
+
+async function loadTenants() {
+  setErr("");
+  try { renderTenants(await api("/admin/tenants")); }
+  catch (e) { setErr("租户加载失败：" + e.message); }
+}
+
+async function loadDocs() {
+  setErr("");
+  const ns = $("ns").value;
+  try {
+    const rows = await api("/kb/" + encodeURIComponent(ns) + "/documents");
+    const tbody = $("docRows");
+    tbody.replaceChildren();
+    for (const d of (rows.documents || rows || [])) {
+      const tr = document.createElement("tr");
+      tr.append(cell(d.title || d.doc || d.doc_id),
+                cell((d.acl || []).join(", ")),
+                cell(d.version), cell(d.effective_date || "—"),
+                cell(d.status || (d.tombstone ? "deleted" : "active")),
+                cell(d.n_chunks == null ? "—" : d.n_chunks));
+      tbody.appendChild(tr);
+    }
+    $("docMeta").textContent = "命名空间 " + ns + " · " + tbody.children.length + " 篇";
+  } catch (e) { setErr("语料加载失败：" + e.message); }
+}
+
+async function loadAudit() {
+  setErr("");
+  const params = new URLSearchParams();
+  if ($("fTenant").value.trim()) { params.set("tenant", $("fTenant").value.trim()); }
+  if ($("fSession").value.trim()) { params.set("session_id", $("fSession").value.trim()); }
+  params.set("limit", $("fLimit").value || "50");
+  try {
+    const body = await api("/admin/audit?" + params.toString());
+    const tbody = $("auditRows");
+    tbody.replaceChildren();
+    for (const r of (body.rows || [])) {
+      const tr = document.createElement("tr");
+      const turn = r.session_id ? (r.session_id + " / " + (r.turn_index == null ? "?" : r.turn_index)) : "—";
+      const cite = r.citation && r.citation.validity != null ? r.citation.validity : "—";
+      tr.append(cell(r.ts), cell(r.tenant || "—"), cell(turn), cell(r.namespace || "—"),
+                cell(r.decision), cell(r.knowledge_hit ? "是" : "否"), cell(cite));
+      tbody.appendChild(tr);
+    }
+    $("auditMeta").textContent = "最近 " + (body.rows || []).length + " 条（共 " + body.n + "）";
+  } catch (e) { setErr("审计加载失败：" + e.message); }
+}
+
+function syncAuthLabel() {
+  $("authState").textContent = sessionStorage.getItem(tokenKey) ? "已保存凭证" : "未保存凭证（仅本机回环可读）";
+}
+
+$("save").addEventListener("click", () => {
+  sessionStorage.setItem(tokenKey, $("token").value.trim());
+  $("token").value = "";
+  syncAuthLabel(); loadTenants(); loadAudit();
+});
+$("clear").addEventListener("click", () => {
+  sessionStorage.removeItem(tokenKey); syncAuthLabel();
+});
+$("loadTenants").addEventListener("click", loadTenants);
+$("loadDocs").addEventListener("click", loadDocs);
+$("loadAudit").addEventListener("click", loadAudit);
+$("ns").addEventListener("change", loadDocs);
+
+syncAuthLabel();
+loadTenants().then(loadDocs);
+loadAudit();
+</script>
+</body>
+</html>

@@ -2525,6 +2525,19 @@ def index():
     return HTML_PAGE
 
 
+@app.get("/console", response_class=HTMLResponse)
+def console():
+    """薄控制台：静态页，只调 `/admin/*` 与 `/kb/*`，**不引前端框架**。
+
+    ★ 页面本身不含数据（数据要靠 admin token 或本机回环才能拿到）；
+      把它做成静态文件而不是塞进 service.py，是为了改 UI 不用碰后端。
+    """
+    page = Path(__file__).resolve().parent / "static" / "console.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="static/console.html 不存在")
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
 # ==================================================================
 # ⑤ 启动（只有 python xxx.py 直接运行时才会执行；被 import 时不会）
 # ==================================================================

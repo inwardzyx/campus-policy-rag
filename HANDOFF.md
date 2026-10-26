@@ -92,7 +92,9 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 多租户 S2-1 | ✅ 身份 + 隔离 + 审计导出 | `tenants.py`（key 只存 sha256）；`MULTI_TENANT=1` 时 `/chat` `/search` 校验 key 与 namespace；审计带 `tenant`；`/admin/tenants`、`/admin/audit` |
 | 多租户判据的变异体 | ✅ | `scripts/mutate_tenants.py`：`allows()` 恒 True / key 不比对哈希，**2/2 变红 + 字节还原** |
 | 多租户 S2-2 | ✅ 配额按租户 + 写接口鉴权 | 配额键 `tenant:{id}`（A 打满不影响 B）；写接口：管理员 token 可跨租户，否则必须有该 namespace 的租户 key |
-| 多租户的**未做部分** | ⏳ 明确未做 | 计费、控制台、私有化打包；配额数值仍是全局一套（不分租户自定义） |
+| 薄控制台 S2-3 | ✅ 静态页（不引框架） | `GET /console` → `static/console.html`：租户 / 语料 / 最近审计；数据只靠 `/admin/*` + `/kb/*`，渲染只用 `textContent` |
+| 控制台判据的变异体 | ✅ | `scripts/mutate_console.py`：页面加 `.innerHTML` / 改成不存在的端点，**2/2 变红** |
+| 多租户的**未做部分** | ⏳ 明确未做 | 计费、私有化打包；配额数值仍是全局一套（不分租户自定义） |
 | 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
 | 「想实现记忆必须显式改测试」 | ✅ | `test_implementing_memory_requires_a_deliberate_test_change` 锁住 `implemented_layers==["retrieved"]` |
 | S1 判据的变异体 | ✅ | `scripts/mutate_connectors.py`：忽略 ACL 变化 / 清单删“发版”，**2/2 变红 + 字节还原** |
@@ -102,7 +104,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-332 passed, 27 skipped
+336 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -391,6 +393,9 @@ key 只存 sha256、租户限 namespace 前缀、审计带 `tenant`、两个只�
 **S2-2 ✅（2026-10-26）**：配额按租户键计（`tenant:{id}`）；写接口先试管理员 token、
 否则按租户 key 校验 namespace。变异体扩到 4 条（隔离/key/写鉴权/配额），**4/4 变红**。
 
+**S2-3 ✅（2026-10-26）**：薄控制台 `/console`（静态页，租户/语料/审计三块），
+只调已有 API；两条判据（只用已知端点、禁 `.innerHTML`）都有变异体守着。
+
 **S2 待确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
 **S3（运营闭环）**：反馈→归因→候选题集 + 健康度周报。
 
@@ -448,6 +453,9 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\evalkit\` | 请求级评测内核：cases/metrics/report/transport（可复用，脚本只组装） |
 | `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
 | `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |
+| `D:\_review_rag-cs\static\console.html` | 薄控制台（租户/语料/最近审计；纯 vanilla，数据只用 textContent） |
+| `D:\_review_rag-cs\tests\test_console.py` | 4 条：页面渲染 / 只调已知端点 / 禁 innerHTML / 页面不含数据 |
+| `D:\_review_rag-cs\scripts\mutate_console.py` | 控制台变异体（innerHTML / 错端点），2/2 变红 |
 | `D:\_review_rag-cs\tenants.py` | 租户注册表：key 只存 sha256、namespace 前缀匹配、`create` 只返回一次明文 |
 | `D:\_review_rag-cs\scripts\mutate_tenants.py` | 租户判据变异体（隔离恒 True / key 不比对），2/2 变红 |
 | `D:\_review_rag-cs\tests\test_tenants.py` | 11 条：注册表/隔离/审计/管理接口不泄 key |
