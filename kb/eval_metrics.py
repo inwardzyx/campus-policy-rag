@@ -84,6 +84,9 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
         "uncited_count": _citation_field(ctx, "uncited_count"),
         "included": len(included),
         "sources": [s.get("doc") for s in (response.get("sources") or [])],
+        # ★ 压缩报告（只在启用时出现）：让"压缩到底触发了没有"能从产物里读出来，
+        #   而不是靠"两臂数字差不多"去猜。
+        "compression": (ctx or {}).get("compression"),
         # ★ 留一段答案原文（截断）：报告要能被人逐条抽验，离线复算也要有输入。
         #   全文很长，截 500 字够看出"答了什么、引了哪句"。
         "answer": (response.get("answer") or "")[:500],
@@ -167,5 +170,9 @@ def aggregate(rows: Sequence[Mapping[str, Any]], cases: Sequence[Mapping[str, An
         "uncited_paragraphs_per_answer": _mean([r["uncited_count"] for r in rows
                                                 if r.get("uncited_count") is not None]),
         "p95_ms": p95,
+        # 压缩是否真的触发（0 = 这批题上压缩没干活；不能拿"两臂数字差不多"当结论）
+        "compression_rows_active": sum(1 for r in rows if r.get("compression")),
+        "compression_dedup_total": sum(
+            int((r.get("compression") or {}).get("dedup_dropped") or 0) for r in rows),
         "notes": notes,
     }

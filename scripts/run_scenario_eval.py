@@ -171,6 +171,8 @@ def main() -> int:
           f" p95={agg['p95_ms']}ms")
     print(f"  引用：validity={agg['citation_validity']}"
           f" 未标注段落/答案={agg['uncited_paragraphs_per_answer']}")
+    print(f"  压缩：启用题数={agg['compression_rows_active']}"
+          f" 去重丢弃={agg['compression_dedup_total']}")
     print(f"  归因：{agg['buckets']}")
     if agg["notes"]:
         for n in agg["notes"]:

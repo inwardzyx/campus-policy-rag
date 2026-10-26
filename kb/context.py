@@ -178,6 +178,9 @@ class ContextTrace:
     #   "捞到了但排在第 4 名"（rank_shift）—— 这两种失败的修法完全不同，
     #   而只看 included/excluded 时它们长得一模一样。
     candidates: list[dict[str, Any]] = field(default_factory=list)
+    # ★ 2026-10-26 加：压缩报告（mode/before_chars/after_chars/dedup_dropped/...）。
+    #   默认 off ⇒ 空 dict；空 dict 与"压了但没变"是两件事，前者表示没启用。
+    compression: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -188,6 +191,7 @@ class ContextTrace:
             "degraded": dict(self.degraded),
             "budget": dict(self.budget),
             "candidates": [dict(c) for c in self.candidates],
+            "compression": dict(self.compression) if self.compression else None,
         }
 
 
@@ -232,6 +236,7 @@ def select_retrieved(
     namespace: str,
     trace_id: str | None = None,
     candidates: Sequence[Mapping[str, Any]] | None = None,
+    compression: Mapping[str, Any] | None = None,
 ) -> tuple[list[Mapping[str, Any]], ContextTrace]:
     """按**给定顺序**贪心放入，返回 `(真正喂给模型的块, trace)`。
 
@@ -251,6 +256,11 @@ def select_retrieved(
         text = _chunk_text(chunk)
         n = len(text)
         source, clause = _chunk_ids(chunk)
+        if chunk.get("_drop_reason"):
+            # 压缩阶段判定的"整块丢"（如近重复）：照样记进 excluded，
+            # 这样 trace 里能看出丢了哪块、为什么、多大 —— 而不是凭空少一块。
+            excluded.append(Block(source, clause, n, False, str(chunk["_drop_reason"])))
+            continue
         if n > cap:
             # 单块就超上限：整块丢。截一半会把条款读反，比少一条危险。
             excluded.append(Block(source, clause, n, False, REASON_OVERSIZE))
@@ -272,7 +282,8 @@ def select_retrieved(
     trace = ContextTrace(trace_id=tid, namespace=namespace, blocks=blocks,
                          excluded=excluded, degraded=degraded,
                          budget=_budget_dict(budget, used),
-                         candidates=[dict(c) for c in (candidates or [])])
+                         candidates=[dict(c) for c in (candidates or [])],
+                         compression=dict(compression) if compression else None)
     return kept, trace
 
 

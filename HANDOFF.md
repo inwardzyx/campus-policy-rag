@@ -72,13 +72,15 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 评测依赖单列（不污染 runtime） | ✅ | `requirements-eval.txt`（`ir-measures` + `pytrec-eval-terrier`；**CI 不装**：Linux 无 cp314 wheel） |
 | 引用锚点 + 校验（题号编号 / validity / 未标注段落） | ✅ 只对 namespace 路径 | `kb/citation.py`、`service.py::build_answer_prompt`（双模板）+ `_attach_citation`；流式在 `citation` 事件里 |
 | 引用判据的变异体 | ✅ | `scripts/mutate_citation.py`：编号错位 / 越界不标记，**2/2 变红 + 字节还原** |
+| 块级规则压缩（近重复去重 / 噪声行） | ✅ 代码，**默认 off**（`CONTEXT_COMPRESS=rule` 才开） | `kb/compress.py`；本语料实测 20 题触发 **0** 次 ⇒ 保持默认关（见 §2.3） |
+| 压缩判据的变异体 | ✅ | `scripts/mutate_compress.py`：阈值失效 / 正则吞正文，**2/2 变红 + 字节还原** |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-247 passed, 27 skipped
+256 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -114,6 +116,21 @@ budget_cut_rate 0 / p95 4794ms
   ① 按**句子**数"未标注"⇒ 模型是段末标 `[1]`，把同段已被覆盖的句子全算成没标，假高 3~5 倍；
   ② 拒答白名单漏了变体（"无法**完整**回答"不含"无法回答"）⇒ 又把说明性段落算成没出处。
 
+**块级压缩（批 3，同一批 20 题，配对对照）**
+
+```text
+先量语料（271 块）：块长中位 75 字 / 均值 118 / 最大 1870；
+页眉页码噪声行 **0 处**；近重复对（3-gram Jaccard≥0.8）**5 对**；超额度(1840) **1 块**
+压前（CONTEXT_COMPRESS=off）：应答 14/15、recall 0.9333、uncited 0.2667、p95 3558ms
+压后（CONTEXT_COMPRESS=rule）：应答 14/15、recall 0.9333、uncited 0.2667、p95 3692ms
+压后报告里的触发计数：启用 15 题、**去重丢弃 0**
+```
+
+★ 结论不是"压缩没用"，而是**这套语料上没有可压的东西**：271 块里只有 5 对近重复、0 处噪声行，而这 5 对没有一对同时进过同一题的 top-k（触发 0/15）。所以默认保持 **off**；
+  等真实企业语料（同一制度的多个版本、PDF 页眉）进来再打开复测。
+★ **明确不做**：句子级抽取（中位 75 字的块抽完只剩半句，风险远大于收益）；
+  超长块按句拆段（只有 1 块 1870 字，拆了会改变出处与引用编号语义）—— 记在 §5。
+
 **Docling 容器**：
 
 - 镜像 `docling-runner:2.142.1`，**2.86 GB**（CPU-only torch；PyPI 默认 torch 会拖 CUDA 包）；
@@ -136,6 +153,8 @@ budget_cut_rate 0 / p95 4794ms
   已接，但 **hr/compliance/support 三个场景没有语料也没有题集**（不编数据）；
   `citation_validity` 只判"编号合法"，ALCE 口径的"是否被所引段落支持"要 NLI，**没做**；
   `stale_version` 桶是空钩子（等 as-of）。
+- **压缩只有 v1 且默认关**：去重/噪声行已实现、变异体 2/2 变红，但本语料触发 0 次；
+  句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of、审计日志没做**：`DocumentMeta.version` 有字段，但没有按版本查询；
   没有审计表/审计事件。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
@@ -226,8 +245,11 @@ budget_cut_rate 0 / p95 4794ms
 prompt 逐字节不变），答案带 `[n]`，`context.citation` 报 validity/未标注段落/越界编号；
 流式新增 `citation` 事件（只有 namespace 才有）。
 
-**下一步（批 3）**：块级规则压缩（邻块去重 / 噪声行 / 句子抽取，clause 头永不删）
-+ 用同一批 20 题做**配对对照**（压缩前后各跑一次）。
+**批 3（块级压缩）✅ 已完成（2026-10-26）**，但**默认关**：本语料触发 0 次，
+打开它只是为了等真实语料（多版本制度/PDF 页眉）时能直接复测。
+
+**下一步（批 4）**：数据层的时间维 —— `scenario/authority/effective_date/status`
++ as-of 过滤（`event_time`）+ `stale_version` 归因桶从空钩子变成真判据。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -272,6 +294,11 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\eval_metrics.py` | 上下文/检索指标：recall/precision/nDCG@3/budget_cut_rate/p95；缺失一律 `None`，不补 0 |
 | `D:\_review_rag-cs\scripts\run_scenario_eval.py` | 场景评测 runner：HTTP 跑题集或 `--responses` 离线复算 → 指标 + 逐题归因 JSON |
 | `D:\_review_rag-cs\scripts\check_eval_gold.py` | gold ↔ 语料联动检查（`## <clause>` 必须存在；扫 0 条报红） |
+| `D:\_review_rag-cs\kb\compress.py` | 块级规则压缩（近重复去重 / 噪声行），默认 off；只做减法不重写 |
+| `D:\_review_rag-cs\tests\test_compress.py` | 压缩 9 条：去重/先到者胜/噪声只删整行/默认关/接线 |
+| `D:\_review_rag-cs\scripts\mutate_compress.py` | 压缩变异体（阈值失效、正则吞正文），2/2 变红 + 字节还原 |
+| `D:\_review_rag-cs\evalset\report-scenario-campus-compress-off.json` | 压缩关臂（14/15、触发 0） |
+| `D:\_review_rag-cs\evalset\report-scenario-campus-compress-on.json` | 压缩开臂（14/15、启用 15 题、去重 0） |
 | `D:\_review_rag-cs\kb\citation.py` | 引用校验（纯规则）：编号合法性、未标注段落、条款编号信号；不冒充 ALCE 的 NLI 口径 |
 | `D:\_review_rag-cs\tests\test_citation.py` | 引用 14 条：编号/越界/段落级覆盖/拒答变体/流式事件/旧路径无引用 |
 | `D:\_review_rag-cs\scripts\mutate_citation.py` | 引用判据变异体（编号错位、越界不标记），2/2 变红 + 字节还原 |

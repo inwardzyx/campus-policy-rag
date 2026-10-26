@@ -72,6 +72,7 @@ from kb.source import UnsupportedFormat, ParseError     # noqa: E402  格式不�
 from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke 质检
 import kb.context as context_mod                    # noqa: E402  上下文层：八层/预算/trace
 import kb.citation as citation_mod                  # noqa: E402  引用校验（答案里的 [n] 指没指对块）
+import kb.compress as compress_mod                  # noqa: E402  块级规则压缩（去重/噪声行）
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
@@ -229,6 +230,11 @@ LLM_TIMEOUT_SEC = float(os.environ.get("LLM_TIMEOUT_SEC", "30"))
 #   为什么在 import 时就定死：预算必须在**同一进程内稳定**，否则两次请求的 trace 没法比。
 #   要改走 env（见 kb/context.py 的 Budget.from_env），别在运行期改这个对象。
 CONTEXT_BUDGET = context_mod.Budget.from_env()
+
+# ★ 压缩开关：默认 off（本轮要做"开/关"配对对照，默认打开等于不量就改）。
+#   要开就 `CONTEXT_COMPRESS=rule`。读一次定死在 import 时 —— 同进程内必须稳定，
+#   否则两个请求的 trace 没法比。
+CONTEXT_COMPRESS_MODE = compress_mod.mode_from_env()
 
 
 class LLMCallError(Exception):
@@ -1302,6 +1308,8 @@ class ContextSummary(BaseModel):
     # ★ 2026-10-25 加：引用校验报告（只在 namespace 路径、且真的生成过答案时存在）。
     #   写进响应而不是只写日志："这句话出自第几条"是合规场景要发给审计的东西。
     citation: Optional[dict] = None
+    # ★ 压缩报告：默认 None（未启用）；启用后含 before/after chars 与丢弃计数。
+    compression: Optional[dict] = None
 
     @classmethod
     def from_trace(cls, trace) -> "ContextSummary":
@@ -1579,8 +1587,9 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
             out.put(("refusal", refusal))
             return
         if context_summary is not None:
-            _kept = {id(c) for c in fed}
-            picked = [x for x in picked if id(x[0]) in _kept]
+            _kept = {(b.source, b.clause) for b in context_summary.blocks}
+            picked = [x for x in picked
+                      if (str(x[0].get("doc") or ""), str(x[0].get("clause") or "")) in _kept]
         sources = [{"doc": f"{c['doc']}｜{c['clause']}",
                     "text": c.get("text_full", c["text"]),
                     "score": round(v, 3), "rerank_score": s, "reason": r}
@@ -1964,9 +1973,16 @@ def _plan_context(req, chunks, candidates=None):
     """
     if not getattr(req, "namespace", None):
         return list(chunks), None
+    # ★ 先压缩、再进预算：否则压缩腾出来的额度用不上（顺序错了等于白压）。
+    chunks, compression = compress_mod.compress_chunks(
+        chunks, mode=CONTEXT_COMPRESS_MODE)
+    # ★ 关闭时传 None：{} 会被读成"压了但没变化"，和"没启用"是两件事。
+    trace_compression = (None if CONTEXT_COMPRESS_MODE == compress_mod.MODE_OFF
+                         else compression)
     kept, trace = context_mod.select_retrieved(chunks, budget=CONTEXT_BUDGET,
                                                namespace=req.namespace,
-                                               candidates=candidates)
+                                               candidates=candidates,
+                                               compression=trace_compression)
     return list(kept), ContextSummary.from_trace(trace)
 
 
@@ -2086,8 +2102,11 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
                 usage=_usage_for_response(led), session_used=session_used,
                 context=context_summary)
         if context_summary is not None:
-            _kept = {id(c) for c in ctx}
-            picked = [x for x in picked if id(x[0]) in _kept]
+            # ★ 按 (doc, clause) 过滤，不用 id()：压缩会返回**副本**，id 对不上，
+            #   那样 sources 会被整个过滤空（2026-10-26 实测踩到，测试当场抓住）。
+            _kept = {(b.source, b.clause) for b in context_summary.blocks}
+            picked = [x for x in picked
+                      if (str(x[0].get("doc") or ""), str(x[0].get("clause") or "")) in _kept]
         sources = [Source(doc=f"{c['doc']}｜{c['clause']}",
                           text=c.get("text_full", c["text"]),
                           score=round(v, 3), rerank_score=s, reason=r)
@@ -2125,8 +2144,9 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
                 usage=_usage_for_response(led), session_used=session_used,
                 context=context_summary)
         if context_summary is not None and len(planned) != len(ctx):
-            _kept = {id(c) for c in planned}
-            sources = [s for c, s in zip(ctx, sources) if id(c) in _kept]
+            _kept = {(b.source, b.clause) for b in context_summary.blocks}
+            sources = [s for c, s in zip(ctx, sources)
+                       if (str(c.get("doc") or ""), str(c.get("clause") or "")) in _kept]
         ctx = planned
         # 关掉 rerank 时用的是粗捞的向量分，比精排分粗（"意思接近但答非所问"更容易漏进来），
         # 所以默认还是开着 rerank —— 关掉只是留一个对比开关，不是关闭防线。
