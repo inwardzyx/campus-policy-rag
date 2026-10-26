@@ -1,0 +1,361 @@
+{
+  "base_url": "http://127.0.0.1:8050",
+  "namespace": "",
+  "generated_at": "2026-10-26T18:43:41+0800",
+  "levels": [
+    {
+      "concurrency": 1,
+      "n": 12,
+      "ok": 12,
+      "denied": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 0.391,
+      "latency": {
+        "n": 12,
+        "p50_ms": 2202.1,
+        "p95_ms": 3709.5,
+        "max_ms": 3709.5,
+        "mean_ms": 2559.2
+      },
+      "tokens": {
+        "input": 6972,
+        "output": 1813,
+        "per_query": 732.1
+      },
+      "rows": [
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3709.5,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 157
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 1883.9,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2818.4,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 157
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 1912.6,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3561.7,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2195.3,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2884.4,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2202.1,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2436.8,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 185
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2010.0,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3012.6,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2082.5,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        }
+      ]
+    },
+    {
+      "concurrency": 4,
+      "n": 12,
+      "ok": 12,
+      "denied": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 1.477,
+      "latency": {
+        "n": 12,
+        "p50_ms": 2514.2,
+        "p95_ms": 3341.6,
+        "max_ms": 3341.6,
+        "mean_ms": 2586.9
+      },
+      "tokens": {
+        "input": 6972,
+        "output": 1777,
+        "per_query": 729.1
+      },
+      "rows": [
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2902.1,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 1932.1,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2890.7,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2487.0,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3341.6,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2133.8,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3132.9,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2514.2,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2959.0,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 1940.6,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 129
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2708.8,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 2100.4,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        }
+      ]
+    },
+    {
+      "concurrency": 8,
+      "n": 12,
+      "ok": 12,
+      "denied": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 1.345,
+      "latency": {
+        "n": 12,
+        "p50_ms": 4734.8,
+        "p95_ms": 6456.9,
+        "max_ms": 6456.9,
+        "mean_ms": 4862.4
+      },
+      "tokens": {
+        "input": 6972,
+        "output": 1789,
+        "per_query": 730.1
+      },
+      "rows": [
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 5311.7,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3375.7,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 6297.5,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3484.5,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 128
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 6456.9,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 185
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 5309.5,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 6374.2,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 158
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 4734.8,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 128
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 5219.2,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 157
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 4318.3,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 4184.6,
+          "knowledge_hit": true,
+          "input_tokens": 742,
+          "output_tokens": 157
+        },
+        {
+          "ok": true,
+          "denied": false,
+          "latency_ms": 3281.4,
+          "knowledge_hit": false,
+          "input_tokens": 420,
+          "output_tokens": 140
+        }
+      ]
+    }
+  ]
+}

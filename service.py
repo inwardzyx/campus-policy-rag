@@ -81,7 +81,7 @@ import tenants as tenants_mod                        # noqa: E402  租户注册�
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import HTMLResponse, StreamingResponse   # noqa: E402
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse   # noqa: E402
 from fastembed import TextEmbedding                 # noqa: E402
 from langchain_core.messages import HumanMessage    # noqa: E402
 from langchain_deepseek import ChatDeepSeek         # noqa: E402
@@ -1224,12 +1224,37 @@ LIMITER = limits_mod.build_limiter(os.environ, log=logger)
 # ★ 多租户默认关闭（MULTI_TENANT=1 才校验）；关闭时走 default 租户 = 既有行为不变。
 TENANTS = tenants_mod.Registry.from_env(os.environ)
 
+_BOOT_TS = time.time()
+
 #: 索引文本模式：`doc_clause_text`（默认，2026-10-26 起）或 `text`（旧行为，回滚用）。
 #: ★ 改成默认的依据是**配对实验**（同一批 32 题、同一份语料）：
 #:   条款题 2/15 → 11/15，内容题 17/17 → 17/17（零退化）。
 #:   产物：`experiments/ab-index-text-A.json` / `-B.json`；脚本 `scripts/clause_recall.py`。
 #:   要回滚：设 `INDEX_TEXT_MODE=text` 即可，不用改代码。
 INDEX_TEXT_MODE = (os.environ.get("INDEX_TEXT_MODE") or "doc_clause_text").strip().lower()
+
+#: 进程内用量合计（重启清零）。**不是账本**：只给 /admin/usage 与 /metrics 看趋势，
+#: 精确到分的成本请用 `scripts/cost_report.py` 从压测产物算。
+_USAGE_TOTALS: dict = {"requests": 0, "input_tokens": 0, "output_tokens": 0,
+                       "missing_usage": 0, "by_tenant": {}}
+
+
+def _note_usage(tenant_id: str | None, usage: dict | None) -> None:
+    """把一次请求的用量累加进进程内计数。usage 为 None 记"拿不到"，不补 0。"""
+    _USAGE_TOTALS["requests"] += 1
+    bucket = _USAGE_TOTALS["by_tenant"].setdefault(tenant_id or "default",
+                                                   {"requests": 0, "input_tokens": 0,
+                                                    "output_tokens": 0})
+    bucket["requests"] += 1
+    if not usage:
+        _USAGE_TOTALS["missing_usage"] += 1
+        return
+    inp = int(usage.get("input_tokens") or 0)
+    out = int(usage.get("output_tokens") or 0)
+    _USAGE_TOTALS["input_tokens"] += inp
+    _USAGE_TOTALS["output_tokens"] += out
+    bucket["input_tokens"] += inp
+    bucket["output_tokens"] += out
 
 # ★ 2026-10-14：会话历史存储（多轮追问用）。
 #   ★ 与限流**分家**：生命周期与清理语义不同（限流按日界滚、会话按最后活动续期），
@@ -1561,7 +1586,7 @@ def chat(req: ChatRequest, request: Request):
     _assert_tenant_namespace(tenant, req.namespace)
     quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
     resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
-                  who_override=quota_key)
+                  who_override=quota_key, tenant_id=tenant.id)
     # ★ 审计在 HTTP 层做一次就够：进到这里的响应已经含 context（或拒答的 trace）。
     #   `model_dump()` 为了拿 dict；失败也只 warning，不影响这一轮答案。
     payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
@@ -1818,7 +1843,8 @@ def chat_stream(req: ChatStreamRequest, request: Request):
                                       "X-Accel-Buffering": "no"})
 
 
-def _gated(request: Request, pipeline, *, who_override: str | None = None):
+def _gated(request: Request, pipeline, *, who_override: str | None = None,
+          tenant_id: str | None = None):
     """`/chat` 与 `/search` 共用的**闸门 + 记账**：先问一次，干完再记账。
 
     ★★ 记账必须**无条件**发生（盲审 R4）：第一版把 `LIMITER.record(...)` 写在
@@ -1874,6 +1900,7 @@ def _gated(request: Request, pipeline, *, who_override: str | None = None):
         #   ⚠️ take 只调用一次：流式那边事件与记账必须共用同一份，不能各取一次（盲审 P5）。
         usage = led.take()
         _CURRENT_LEDGER.reset(token)          # 精确复原（不是 set(None) —— 那会清掉外层账本）
+        _note_usage(tenant_id, usage)
         LIMITER.record(who, usage)
 
 
@@ -1897,7 +1924,7 @@ def search(req: SearchRequest, request: Request):
     _assert_tenant_namespace(tenant, req.namespace)
     quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
     return _gated(request, lambda led: handle_search(req, led, roles=roles),
-                  who_override=quota_key)
+                  who_override=quota_key, tenant_id=tenant.id)
 
 
 def _kb_admin_guard(request: Request) -> None:
@@ -1959,6 +1986,43 @@ def admin_tenants(request: Request):
     return {"multi_tenant": TENANTS.enabled,
             "default_tenant": TENANTS.default().public(),
             "tenants": [t.public() for t in TENANTS.list()]}
+
+
+@app.get("/admin/usage")
+def admin_usage(request: Request):
+    """进程内用量合计（重启清零）。给人看趋势，精确成本用 scripts/cost_report.py。"""
+    _admin_guard(request)
+    return {"uptime_seconds": round(time.time() - _BOOT_TS, 1), **_USAGE_TOTALS}
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus 文本格式（手写，**不引依赖**）。只暴露计数与规模，无 PII。"""
+    stats = LIMITER.stats() if hasattr(LIMITER, "stats") else {}
+    lines = [
+        "# HELP rag_requests_total 已处理请求数（/chat + /search）",
+        "# TYPE rag_requests_total counter",
+        f"rag_requests_total {_USAGE_TOTALS['requests']}",
+        "# HELP rag_input_tokens_total 输入 token 合计（拿不到的请求不计入）",
+        "# TYPE rag_input_tokens_total counter",
+        f"rag_input_tokens_total {_USAGE_TOTALS['input_tokens']}",
+        "# HELP rag_output_tokens_total 输出 token 合计",
+        "# TYPE rag_output_tokens_total counter",
+        f"rag_output_tokens_total {_USAGE_TOTALS['output_tokens']}",
+        "# HELP rag_usage_missing_total 拿不到用量账的请求数（缺失≠0）",
+        "# TYPE rag_usage_missing_total counter",
+        f"rag_usage_missing_total {_USAGE_TOTALS['missing_usage']}",
+        "# HELP rag_chunks 当前索引进块数",
+        "# TYPE rag_chunks gauge",
+        f"rag_chunks {len(rag.chunks) if getattr(rag, 'chunks', None) is not None else 0}",
+        "# HELP rag_denied_requests_total 被限流/配额拒绝的请求数",
+        "# TYPE rag_denied_requests_total counter",
+        f"rag_denied_requests_total {int(stats.get('denied_rate', 0)) + int(stats.get('denied_quota', 0))}",
+        "# HELP rag_uptime_seconds 进程运行秒数",
+        "# TYPE rag_uptime_seconds gauge",
+        f"rag_uptime_seconds {round(time.time() - _BOOT_TS, 1)}",
+    ]
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 @app.get("/admin/audit")

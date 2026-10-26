@@ -37,8 +37,8 @@ Get-ChildItem scripts\mutate_*.py | Measure-Object
 
 | 项 | 值（2026-10-26 实测） |
 |---|---|
-| HTTP 端点 | 14（`/chat`、`/chat/stream`、`/search`、`/console`、`/admin/*`、`/kb/*`、`/health`、`/limits`、`/guard-report`、`/`） |
-| 测试 | 收集 373 条；全量 **362 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
+| HTTP 端点 | 16（`/chat`、`/chat/stream`、`/search`、`/console`、`/admin/*`、`/kb/*`、`/health`、`/limits`、`/guard-report`、`/`） |
+| 测试 | 收集 373 条；全量 **370 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
 | 测试文件 | 29 个，CI 全覆盖（`scripts/check_test_counts.py` 把关） |
 | 变异体脚本 | 17 个（每个关键判据都能被故意打坏、然后变红） |
 | 语料 | `docs/kb/` 10 篇（真实校规，263 块）+ `evalset/fixtures/policy_corpus/` 3 篇（合成制度，47 块） |
@@ -212,7 +212,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\mutate_tenants.py
 | ✅ | **按条款号检索**（2026-10-26 完成）：索引改为 `doc + clause + text`；配对实验 条款题 2/15→13/15、内容题 17/17 不变；回滚 `INDEX_TEXT_MODE=text` | 产物 `experiments/ab-index-text.json` |
 | P1 | **评测闭环 v0**：失败回收 → 候选修改 → 配对评测 → 接受/回滚门禁 | 让第三层名副其实；2–3 天，不依赖外部数据 |
 | P1 | **解析质量对照**：`pypdf` vs `Docling` 的 Recall@5 | 用 `samples/` 现成 PDF，可离线做 |
-| P2 | 并发压测（p95 / 错误率 / 每题成本） | Runtime 缺规模数字 |
+| ✅ | **并发压测 + 成本 + /metrics**（2026-10-26）：并发 1/4/8 → p95 3.7/3.3/6.5s、≈730 token/问；`/metrics` 无依赖 | 产物 `experiments/load-test.json` |
 | P2 | 配额数值按租户自定义 | 现在所有租户共用一套 `DAILY_REQ_QUOTA` |
 | ⏸ | 飞书真实同步 | 卡在租户策略：应用无法成为知识空间成员 |
 | ⏸ | 长期记忆 | 触发条件：历史开始喂生成/检索，或出现多工具编排（Gartner：>40% agentic 项目会被取消） |

@@ -98,6 +98,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 部署自检 | ✅ 可在坏情况下报红 | `scripts/preflight.py`：key / kb_data 可写 / 审计 / 租户表 / 模型缓存；CLI 退出码 1 |
 | 开通租户 CLI | ✅ | `scripts/create_tenant.py`：明文 key **只打印一次**，落盘只有 sha256 |
 | 自检判据的变异体 | ✅ | `scripts/mutate_preflight.py`：删 key 检查 / fail 也返回 0，**2/2 变红** |
+| 容量与成本（2026-10-26） | ✅ | 单进程部署形态：并发 1/4/8 → p95 3.7s/3.3s/6.5s，吞吐 0.39/1.48/1.35 rps，**≈730 token/问**（输入 581 / 输出 149）；产物 `experiments/load-test.json` + `cost-report.md` |
 | 按条款号检索 | ✅ 2026-10-26 | 索引文本 = `doc + clause + text`；配对实验（同 32 题）：条款题 **2/15 → 13/15**、内容题 **17/17 → 17/17**；回滚开关 `INDEX_TEXT_MODE=text` |
 | 多租户的**未做部分** | ⏳ 明确未做 | 计费；配额数值仍是全局一套（不分租户自定义） |
 | 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
@@ -109,7 +110,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-362 passed, 27 skipped
+370 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -473,6 +474,9 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\static\console.html` | 薄控制台（租户/语料/最近审计；纯 vanilla，数据只用 textContent） |
 | `D:\_review_rag-cs\tests\test_console.py` | 4 条：页面渲染 / 只调已知端点 / 禁 innerHTML / 页面不含数据 |
 | `D:\_review_rag-cs\scripts\mutate_console.py` | 控制台变异体（innerHTML / 错端点），2/2 变红 |
+| `D:\_review_rag-cs\scripts\load_test.py` | 并发压测（1/4/8 档，完整链路，denied 单列） |
+| `D:\_review_rag-cs\scripts\cost_report.py` | 从压测产物算 token/问；金额只在给了单价时算 |
+| `D:\_review_rag-cs\kb\loadstats.py` | 百分位/吞吐纯函数（最近秩法，空输入 None） |
 | `D:\_review_rag-cs\tenants.py` | 租户注册表：key 只存 sha256、namespace 前缀匹配、`create` 只返回一次明文 |
 | `D:\_review_rag-cs\scripts\mutate_tenants.py` | 租户判据变异体（隔离恒 True / key 不比对），2/2 变红 |
 | `D:\_review_rag-cs\tests\test_tenants.py` | 11 条：注册表/隔离/审计/管理接口不泄 key |

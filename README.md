@@ -230,7 +230,7 @@ Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 
 ![自动生成的接口文档：/health、/guard-report、/chat 三个端点 + 请求/响应 schema](docs/images/demo-api-docs.png)
 
-> ★ 上图是 2026-10-12 的截图（当时那张图里是三个端点）。现在一共 **14 个**：
+> ★ 上图是 2026-10-12 的截图（当时那张图里是三个端点）。现在一共 **16 个**：
 > `GET /`（网页）、`POST /chat`（检索+生成）、**`POST /chat/stream`（SSE 流式，2026-10-14 加）**、
 > `POST /search`（只检索不生成）、`GET /health`、`GET /limits`、`GET /guard-report`、
 > **`POST /kb/{namespace}/documents`（上传企业语料，2026-10-23 加）**、
@@ -238,7 +238,9 @@ Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 > **`GET /kb/{namespace}/eval`（每语料 smoke 质检）**、
 > **`GET /admin/tenants`（列租户，S2-1 加）**、
 > **`GET /admin/audit`（按租户/会话导出审计，S2-1 加）**、
-> **`GET /console`（薄控制台静态页，S2-3 加）**。
+> **`GET /console`（薄控制台静态页，S2-3 加）**、
+> **`GET /metrics`（Prometheus 文本指标，2026-10-26 加）**、
+> **`GET /admin/usage`（进程内用量合计，2026-10-26 加）**。
 > ⇒ 要最新的接口文档，起服务后看 `/docs`（FastAPI 自动生成，永远是当前代码的样子）。
 > ★ **这个数字现在有人管了**：`scripts/check_readme_numbers.py` 的 `_check_endpoints()`
 > 现扫 `service.py` 里的路由装饰器，个数与名单都对一遍（2026-10-14 补 —— 此前它是手写的，
@@ -1725,7 +1727,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
 | **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_citation.py` + `tests/test_compress.py` + `tests/test_versioning.py` + `tests/test_audit.py` + `tests/test_eval_kit.py` + `tests/test_session_eval.py` + `tests/test_connectors.py` + `tests/test_tenants.py` + `tests/test_console.py` + `tests/test_preflight.py` + `tests/test_normalize.py` + `tests/test_onboard.py` + `tests/test_index_text.py` + `tests/test_deploy_smoke.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_citation.py` + `tests/test_compress.py` + `tests/test_versioning.py` + `tests/test_audit.py` + `tests/test_eval_kit.py` + `tests/test_session_eval.py` + `tests/test_connectors.py` + `tests/test_tenants.py` + `tests/test_console.py` + `tests/test_preflight.py` + `tests/test_normalize.py` + `tests/test_onboard.py` + `tests/test_index_text.py` + `tests/test_deploy_smoke.py` + `tests/test_loadstats.py` + `tests/test_metrics_endpoints.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，
