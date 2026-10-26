@@ -236,3 +236,18 @@ def test_create_tenant_cli_rejects_duplicate(tmp_path) -> None:
     assert again.returncode == 1
     assert "已存在" in again.stdout
 
+# ---------------------------------------------------------------- 隧道/反代暴露
+
+def test_admin_guard_blocks_tunnel_when_no_token(client, monkeypatch) -> None:
+    """没配 KB_ADMIN_TOKEN 时，直连本机可以；**经过隧道/反代就不行**。
+
+    ★ 为什么必须守：cloudflared 把请求转发到 127.0.0.1，服务端看到的来源就是回环，
+      只按 host 判断等于公网无闸门（/admin/* 与上传/删除会全开）。
+    """
+    monkeypatch.delenv("KB_ADMIN_TOKEN", raising=False)
+    assert client.get("/admin/tenants").status_code == 200, "直连本机应放行"
+    assert client.get("/admin/tenants",
+                      headers={"cf-connecting-ip": "1.2.3.4"}).status_code == 403
+    assert client.get("/admin/tenants",
+                      headers={"x-forwarded-for": "1.2.3.4"}).status_code == 403
+

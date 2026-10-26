@@ -109,7 +109,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-361 passed, 27 skipped
+362 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -303,6 +303,7 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
 | README 端点数过期 | 新增 `/kb` 路由后 README 仍写 7/10 个，pre-commit 报错 | 更新为 **11**；`scripts/check_readme_numbers.py` 强制校验 | ✅ 已解决 |
 | 飞书 token 取错层级 | 以为 `tenant_access_token` 在 `data` 下，实际在顶层 | `_request(..., raw=True)` 取顶层 | ✅ 已解决 |
 | 飞书知识空间成员 | `131002 invalid member_type` / `invalid member_role` / `131101 public wiki space can't create member` | 实测有效组合是 **`member_type=appid` + `member_role=member`**；但**公开空间不能加任何成员**（先改回私有），且 tenant 身份无权给自己加成员（131006）→ 需管理员 | **未解决（租户策略）** |
+| 隧道/反代让 `/admin/*` 变成公网可访问 | cloudflared 转发到 127.0.0.1，服务端看到的来源是回环，「只允许本机」形同虚设 | 无 token 时若带 `cf-connecting-ip` / `x-forwarded-for` 一律 403；公开部署必须设 `KB_ADMIN_TOKEN` | **已修复（2026-10-26）** |
 | 评测脚本自己撞限流 → 命中率 0 | 15+17 个请求超过默认 burst=10/每分钟 20 | 实验环境把 `RATE_BURST/RATE_PER_MIN` 调大，或脚本内加 pacing；**先看是不是 429 再怀疑检索** | **已记录** |
 | 未实现的层写成 `used_chars: 0` | 读报告的人以为是「这轮没用记忆」，实际是「记忆没做」 | 每层加 `status`/`reason`；`reserved` 只能读成未实现 | **已修复** |
 | 改 `.env` 用记事本整体覆盖 | 服务全部 500：`DEEPSEEK_API_KEY must be set` | 改 `.env` 只**追加**、不要整篇粘贴；本次已从 Windows 用户环境变量恢复 | **已修复** |

@@ -1912,8 +1912,16 @@ def _kb_admin_guard(request: Request) -> None:
             raise HTTPException(status_code=403, detail="缺少或错误的 X-KB-Admin-Token")
         return
     host = request.client.host if request.client else ""
-    if host not in ("127.0.0.1", "::1", "testclient"):
-        raise HTTPException(status_code=403, detail="未配置 KB_ADMIN_TOKEN 时只允许本机访问")
+    # ★ 2026-10-26：隧道/反代会把来源变成 127.0.0.1（cloudflared → 本机 8000），
+    #   于是"只允许回环"这条在公网 tunnel 下等于**没有闸门**。
+    #   判据：带了代理/隧道头（Cloudflare 的 cf-connecting-ip、或 x-forwarded-for）
+    #   就说明不是直连本机 —— 没配 token 一律拒。
+    proxied = bool(request.headers.get("cf-connecting-ip")
+                   or request.headers.get("x-forwarded-for"))
+    if host not in ("127.0.0.1", "::1", "testclient") or proxied:
+        raise HTTPException(
+            status_code=403,
+            detail="未配置 KB_ADMIN_TOKEN 时只允许直连本机（检测到反向代理/隧道头）")
 
 
 def _write_guard(request: Request, namespace: str):

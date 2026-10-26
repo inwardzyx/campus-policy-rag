@@ -52,6 +52,14 @@ MUTATIONS = [
         ["test_tenant_can_write_only_own_namespace"],
     ),
     (
+        "E · 隧道头不拒（公网可无 token 进管理接口）",
+        SERVICE,
+        "    if host not in (\"127.0.0.1\", \"::1\", \"testclient\") or proxied:\n",
+        "    if host not in (\"127.0.0.1\", \"::1\", \"testclient\"):\n",
+        "blocks_tunnel",
+        ["test_admin_guard_blocks_tunnel_when_no_token"],
+    ),
+    (
         "D · 配额不分租户（A 打满会拖垮 B）",
         SERVICE,
         "    who = who_override or limits_mod.client_id(",

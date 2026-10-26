@@ -303,6 +303,9 @@ D:\Python-project\.venv\Scripts\python.exe -m uvicorn service:app --port 8000
 cloudflared tunnel --url http://127.0.0.1:8000
 ```
 
+⚠️ **开隧道前必须先设 `KB_ADMIN_TOKEN`**：cloudflared 转发到 `127.0.0.1`，服务端看到的来源是回环，没配 token 时 `/admin/*`、上传/删除会变成公网可访问。
+代码已加防线（无 token 且带隧道/反代头 → 403），但**公开演示请一律配 token**。
+
 然后**验收**（把 URL 换成隧道地址）：
 
 ```powershell
