@@ -155,3 +155,54 @@ def test_admin_audit_filters_by_tenant(client, tmp_path, monkeypatch) -> None:
 
     body2 = client.get("/admin/audit", params={"session_id": "s2"}).json()
     assert {r["tenant"] for r in body2["rows"]} == {"finance", "hr"}
+
+# ---------------------------------------------------------------- S2-2 配额与写鉴权
+
+def test_per_tenant_quota_does_not_leak_across_tenants(client, tmp_path, monkeypatch) -> None:
+    """A 租户打满自己的配额，不能把 B 拖下水（否则只是"多个 namespace"）。"""
+    import limits as limits_mod
+
+    reg, _hr, key_hr = make_registry(tmp_path, enabled=True)
+    _fin, key_fin = reg.create("finance", namespaces=["finance"])
+    monkeypatch.setattr(svc, "TENANTS", reg)
+    monkeypatch.setattr(svc, "LIMITER", limits_mod.build_limiter({
+        "DAILY_REQ_QUOTA": "1", "DAILY_TOKEN_QUOTA": "1000000",
+        "RATE_BURST": "100", "RATE_PER_MIN": "600",
+    }))
+
+    assert _ask(client, "hr", key_hr).status_code == 200
+    assert _ask(client, "hr", key_hr).status_code == 429, "第二个请求应打满"
+
+    # B 租户的额度是独立的
+    assert _ask(client, "finance", key_fin).status_code == 200
+
+
+def _upload(client, namespace, key=None, text="## 第 1 条\n正文。"):
+    headers = {"x-api-key": key} if key else {}
+    return client.post(f"/kb/{namespace}/documents",
+                       params={"filename": "a.md", "acl": "public"},
+                       content=text.encode("utf-8"), headers=headers)
+
+
+def test_tenant_can_write_only_own_namespace(client, tmp_path, monkeypatch) -> None:
+    from kb.store import KnowledgeStore
+
+    reg, _hr, key_hr = make_registry(tmp_path, enabled=True)
+    monkeypatch.setattr(svc, "TENANTS", reg)
+    monkeypatch.setattr(svc.rag, "store", KnowledgeStore(tmp_path / "kb"))
+    monkeypatch.setattr(svc.rag, "reload_enterprise", lambda: None)
+
+    assert _upload(client, "hr", key_hr).status_code == 200
+    assert _upload(client, "finance", key_hr).status_code == 403
+    assert _upload(client, "hr").status_code == 401, "多租户模式没有 key 不许写"
+
+
+def test_single_tenant_mode_keeps_loopback_write(client, tmp_path, monkeypatch) -> None:
+    from kb.store import KnowledgeStore
+
+    monkeypatch.setattr(svc, "TENANTS", tenants_mod.Registry(tmp_path / "none.json",
+                                                             enabled=False))
+    monkeypatch.setattr(svc.rag, "store", KnowledgeStore(tmp_path / "kb2"))
+    monkeypatch.setattr(svc.rag, "reload_enterprise", lambda: None)
+    assert _upload(client, "demo").status_code == 200, "单租户模式行为必须不变"
+

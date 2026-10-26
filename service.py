@@ -27,6 +27,7 @@ Step 6：把 RAG 整条链包成 HTTP 服务（FastAPI）
 import asyncio
 import contextvars
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -1539,7 +1540,9 @@ def chat(req: ChatRequest, request: Request):
     roles = _request_roles(request)
     tenant = _tenant(request)
     _assert_tenant_namespace(tenant, req.namespace)
-    resp = _gated(request, lambda led: handle_chat(req, led, roles=roles))
+    quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
+    resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
+                  who_override=quota_key)
     # ★ 审计在 HTTP 层做一次就够：进到这里的响应已经含 context（或拒答的 trace）。
     #   `model_dump()` 为了拿 dict；失败也只 warning，不影响这一轮答案。
     payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
@@ -1796,7 +1799,7 @@ def chat_stream(req: ChatStreamRequest, request: Request):
                                       "X-Accel-Buffering": "no"})
 
 
-def _gated(request: Request, pipeline):
+def _gated(request: Request, pipeline, *, who_override: str | None = None):
     """`/chat` 与 `/search` 共用的**闸门 + 记账**：先问一次，干完再记账。
 
     ★★ 记账必须**无条件**发生（盲审 R4）：第一版把 `LIMITER.record(...)` 写在
@@ -1821,7 +1824,10 @@ def _gated(request: Request, pipeline):
       ⚠️ 调用方必须写成 `lambda led: handle_xxx(req)` —— 账本由这里创建并传下去，
          **绝不允许哪个端点自己 new 一个**（那就会退化成"两条记账路径"，正是 R4 的病根）。
     """
-    who = limits_mod.client_id(
+    # ★ 多租户模式下配额按**租户**计（不是按 IP/自称身份）：
+    #   否则 A 租户打满会把 B 一起拖下水 —— 那就不叫多租户，只是多个 namespace。
+    #   单租户模式仍走原来的 client_id，行为不变。
+    who = who_override or limits_mod.client_id(
         request.client.host if request.client else None,
         {k.lower(): v for k, v in request.headers.items()},
         LIMITER.limits)
@@ -1870,7 +1876,9 @@ def search(req: SearchRequest, request: Request):
     roles = _request_roles(request)
     tenant = _tenant(request)
     _assert_tenant_namespace(tenant, req.namespace)
-    return _gated(request, lambda led: handle_search(req, led, roles=roles))
+    quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
+    return _gated(request, lambda led: handle_search(req, led, roles=roles),
+                  who_override=quota_key)
 
 
 def _kb_admin_guard(request: Request) -> None:
@@ -1887,6 +1895,26 @@ def _kb_admin_guard(request: Request) -> None:
     host = request.client.host if request.client else ""
     if host not in ("127.0.0.1", "::1", "testclient"):
         raise HTTPException(status_code=403, detail="未配置 KB_ADMIN_TOKEN 时只允许本机访问")
+
+
+def _write_guard(request: Request, namespace: str):
+    """写接口的闸。
+
+    - 单租户模式：保持原样（`KB_ADMIN_TOKEN` 或本机回环）；
+    - 多租户模式：管理员 token 仍可跨租户；否则必须是有该 namespace 权限的租户 key。
+      ★ 只按"有没有 admin token"不够：那样租户拿到自己的 key 也写不了，
+        而拿到 admin token 又能写别人的 —— 两种都不对。
+    """
+    if not TENANTS.enabled:
+        _kb_admin_guard(request)
+        return TENANTS.default()
+    header = request.headers.get("x-kb-admin-token") or ""
+    admin_token = os.environ.get("KB_ADMIN_TOKEN")
+    if admin_token and hmac.compare_digest(header, admin_token):
+        return TENANTS.default()
+    tenant = _tenant(request)
+    _assert_tenant_namespace(tenant, namespace)
+    return tenant
 
 
 def _admin_guard(request: Request) -> None:
@@ -1945,7 +1973,7 @@ async def kb_upload(
         curl --data-binary "@faq.md" \
           "http://127.0.0.1:8000/kb/demo/documents?filename=faq.md&acl=public"
     """
-    _kb_admin_guard(request)
+    _write_guard(request, namespace)
     if not rag.ready:
         raise HTTPException(status_code=503, detail="服务还在加载模型，请稍后再试")
     body = await request.body()
@@ -1971,7 +1999,7 @@ async def kb_upload(
 @app.get("/kb/{namespace}/documents")
 def kb_list(namespace: str, request: Request, include_deleted: bool = False):
     """列出某知识库的文档（默认不含已删除）。"""
-    _kb_admin_guard(request)
+    _write_guard(request, namespace)
     rows = rag.store.list_documents(namespace, include_deleted=include_deleted)
     return {"namespace": namespace, "documents": rows}
 
@@ -1979,7 +2007,7 @@ def kb_list(namespace: str, request: Request, include_deleted: bool = False):
 @app.delete("/kb/{namespace}/documents/{doc_id}")
 def kb_delete(namespace: str, doc_id: str, request: Request):
     """软删除一篇文档，并热更新检索索引。"""
-    _kb_admin_guard(request)
+    _write_guard(request, namespace)
     ok = rag.store.delete(namespace, doc_id)
     if ok:
         rag.reload_enterprise()
@@ -1992,7 +2020,7 @@ def kb_eval(namespace: str, request: Request, acl: str = "", top_k: int = 5, max
 
     ★ 这是自动质检，不是独立评测集；报告里会写明。
     """
-    _kb_admin_guard(request)
+    _write_guard(request, namespace)
     if not rag.ready:
         raise HTTPException(status_code=503, detail="服务还在加载模型，请稍后再试")
     acl_list = [a.strip() for a in acl.split(",") if a.strip()] or None

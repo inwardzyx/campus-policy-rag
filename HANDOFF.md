@@ -91,7 +91,8 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 飞书报错 → 可操作清单 | ✅ | `kb/feishu.py::explain_error`：列出缺的 scope + 发版 + 加入知识空间；CLI 失败时直接打印 |
 | 多租户 S2-1 | ✅ 身份 + 隔离 + 审计导出 | `tenants.py`（key 只存 sha256）；`MULTI_TENANT=1` 时 `/chat` `/search` 校验 key 与 namespace；审计带 `tenant`；`/admin/tenants`、`/admin/audit` |
 | 多租户判据的变异体 | ✅ | `scripts/mutate_tenants.py`：`allows()` 恒 True / key 不比对哈希，**2/2 变红 + 字节还原** |
-| 多租户的**未做部分** | ⏳ 明确未做 | 每租户独立配额、写接口（上传/删除）按租户鉴权、计费、控制台 |
+| 多租户 S2-2 | ✅ 配额按租户 + 写接口鉴权 | 配额键 `tenant:{id}`（A 打满不影响 B）；写接口：管理员 token 可跨租户，否则必须有该 namespace 的租户 key |
+| 多租户的**未做部分** | ⏳ 明确未做 | 计费、控制台、私有化打包；配额数值仍是全局一套（不分租户自定义） |
 | 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
 | 「想实现记忆必须显式改测试」 | ✅ | `test_implementing_memory_requires_a_deliberate_test_change` 锁住 `implemented_layers==["retrieved"]` |
 | S1 判据的变异体 | ✅ | `scripts/mutate_connectors.py`：忽略 ACL 变化 / 清单删“发版”，**2/2 变红 + 字节还原** |
@@ -101,7 +102,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-329 passed, 27 skipped
+332 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -253,8 +254,8 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
   答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
-- **多租户只到 S2-1**：有身份/隔离/审计导出，但**写接口还是 `KB_ADMIN_TOKEN` 一把钥匙**、
-  配额仍是全局的；控制台与私有化打包都还没做。
+- **多租户到 S2-2**：身份/隔离/审计导出/按租户配额/写鉴权都有；
+  但**配额数值不分租户自定义**，控制台与私有化打包还没做。
 - **真实语料**：现有语料是「校规（真实但非企业）+ 制度（合成但结构真实）」，
   **还没有一份真实公司的内部制度**；20 题验收是在合成语料上做的。
 - **飞书接入**：代码就绪（连接器/增量/ACL/报错清单），但**租户策略卡住**：
@@ -386,6 +387,9 @@ as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异
 **S2-1 多租户 ✅（2026-10-26）**：`MULTI_TENANT=1` 时 `/chat` `/search` 需要 `X-Api-Key`，
 key 只存 sha256、租户限 namespace 前缀、审计带 `tenant`、两个只读管理接口。
 默认关闭 ⇒ 既有部署/测试/脚本行为不变。
+
+**S2-2 ✅（2026-10-26）**：配额按租户键计（`tenant:{id}`）；写接口先试管理员 token、
+否则按租户 key 校验 namespace。变异体扩到 4 条（隔离/key/写鉴权/配额），**4/4 变红**。
 
 **S2 待确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
 **S3（运营闭环）**：反馈→归因→候选题集 + 健康度周报。
