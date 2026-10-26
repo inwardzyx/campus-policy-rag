@@ -71,7 +71,8 @@ def _split_source(source: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def build_event(req: Any, response: Mapping[str, Any], *, route: str,
-                roles: Sequence[str] | None = None) -> dict[str, Any]:
+                roles: Sequence[str] | None = None,
+                tenant: str | None = None) -> dict[str, Any]:
     """把一次请求压成一行审计事件（**只放决策与定位信息**）。"""
     ctx = response.get("context") if isinstance(response, Mapping) else None
     ctx = ctx if isinstance(ctx, Mapping) else None
@@ -97,6 +98,7 @@ def build_event(req: Any, response: Mapping[str, Any], *, route: str,
         "session_id": (ctx or {}).get("session_id"),
         "turn_index": (ctx or {}).get("turn_index"),
         "namespace": getattr(req, "namespace", None),
+        "tenant": tenant,
         # ★ 身份只存角色名（组织维度），问题只存哈希 —— 原文/个人标识都不进这条记录。
         "roles": list(roles or []),
         "question_sha256": question_hash(question),
@@ -138,11 +140,13 @@ def record(event: Mapping[str, Any], *, path: Path | None = None) -> bool:
 
 def record_response(req: Any, response: Mapping[str, Any], *, route: str,
                     path: Path | None = None,
-                    roles: Sequence[str] | None = None) -> bool:
+                    roles: Sequence[str] | None = None,
+                    tenant: str | None = None) -> bool:
     """为带 namespace 的请求写一行；docs/ 旧路径**不写**（不改变旧行为）。"""
     if not getattr(req, "namespace", None) or not enabled():
         return False
-    return record(build_event(req, response, route=route, roles=roles), path=path)
+    return record(build_event(req, response, route=route, roles=roles,
+                        tenant=tenant), path=path)
 
 
 def prune(path: Path, *, days: int, now: float | None = None) -> tuple[int, int]:

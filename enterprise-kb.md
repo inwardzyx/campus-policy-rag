@@ -231,6 +231,24 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 判据：`tests/test_session_eval.py` 10 条；`scripts/mutate_session.py` 把
 "补全判定"与"session_id 唯一来源"各打坏一次 —— **2/2 变红**，三个文件按字节还原。
 
+## 多租户 S2-1（2026-10-26）
+
+**做了什么**：身份（`X-Api-Key`）→ 命名空间隔离（前缀匹配）→ 审计带 `tenant` → 只读管理接口。
+
+```text
+MULTI_TENANT=1 时：无 key → 401；tenant.allows(namespace)=False → 403；匹配 → 200
+key 只落 sha256（create 只返回一次明文）；/admin/tenants 对外展示不含 key 哈希
+/admin/audit?tenant=&session_id= 按租户/会话导出（审计本来就不存原文）
+```
+
+**没做什么（别当已完成）**：每租户独立配额、写接口（上传/删除）按租户鉴权、计费、控制台、私有化打包。
+
+**为什么默认关闭**：`MULTI_TENANT` 不设时一切走 `default` 租户（namespace 不限）——
+既有部署、脚本、测试一行不改就能跑。加功能不能把默认路径搞挂。
+
+**为什么复用 `KB_ADMIN_TOKEN`**：多一套凭证就多一处会配错的地方；管理接口沿用
+"有 token 用 token、没有只允许回环"的既有闸门。
+
 ## 真实结构制度语料验收（policy，2026-10-26）
 
 语料：[`evalset/fixtures/policy_corpus/`](evalset/fixtures/policy_corpus/) —— 3 篇合成制度

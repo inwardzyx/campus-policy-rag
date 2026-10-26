@@ -89,6 +89,8 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | fixture 连接器（离线验收） | ✅ | `kb/connectors/fixture.py`；`evalset/fixtures/connector_demo/` 可直接跑 |
 | 飞书连接器适配 | ✅ 代码 / ⏳ 真实同步等 scope | `kb/connectors/feishu.py`；`FeishuWikiSource.sync` 已**委托**同一引擎（不再两套实现） |
 | 飞书报错 → 可操作清单 | ✅ | `kb/feishu.py::explain_error`：列出缺的 scope + 发版 + 加入知识空间；CLI 失败时直接打印 |
+| 多租户 S2-1 | ✅ 身份 + 隔离 + 审计导出 | `tenants.py`（key 只存 sha256）；`MULTI_TENANT=1` 时 `/chat` `/search` 校验 key 与 namespace；审计带 `tenant`；`/admin/tenants`、`/admin/audit` |
+| 多租户的**未做部分** | ⏳ 明确未做 | 每租户独立配额、写接口（上传/删除）按租户鉴权、计费、控制台 |
 | 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
 | 「想实现记忆必须显式改测试」 | ✅ | `test_implementing_memory_requires_a_deliberate_test_change` 锁住 `implemented_layers==["retrieved"]` |
 | S1 判据的变异体 | ✅ | `scripts/mutate_connectors.py`：忽略 ACL 变化 / 清单删“发版”，**2/2 变红 + 字节还原** |
@@ -98,7 +100,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-318 passed, 27 skipped
+329 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -250,6 +252,8 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
   答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
+- **多租户只到 S2-1**：有身份/隔离/审计导出，但**写接口还是 `KB_ADMIN_TOKEN` 一把钥匙**、
+  配额仍是全局的；控制台与私有化打包都还没做。
 - **真实语料**：现有语料是「校规（真实但非企业）+ 制度（合成但结构真实）」，
   **还没有一份真实公司的内部制度**；20 题验收是在合成语料上做的。
 - **飞书接入**：代码就绪（连接器/增量/ACL/报错清单），但**租户策略卡住**：
@@ -378,7 +382,11 @@ as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异
 3. ~~memory 层「恒 0」假指标~~ ✅ 已修（`status`/`reason` + 锁定测试，见 §2.2）；
 4. 成本/延迟：每问 3 次 LLM 调用、p95 ≈ 3.8s。
 
-**S2（平台化）待你确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
+**S2-1 多租户 ✅（2026-10-26）**：`MULTI_TENANT=1` 时 `/chat` `/search` 需要 `X-Api-Key`，
+key 只存 sha256、租户限 namespace 前缀、审计带 `tenant`、两个只读管理接口。
+默认关闭 ⇒ 既有部署/测试/脚本行为不变。
+
+**S2 待确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
 **S3（运营闭环）**：反馈→归因→候选题集 + 健康度周报。
 
 **仍按 ROI 排的其它项**：真实语料 20 题（等你给文档）；
@@ -435,6 +443,8 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\evalkit\` | 请求级评测内核：cases/metrics/report/transport（可复用，脚本只组装） |
 | `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
 | `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |
+| `D:\_review_rag-cs\tenants.py` | 租户注册表：key 只存 sha256、namespace 前缀匹配、`create` 只返回一次明文 |
+| `D:\_review_rag-cs\tests\test_tenants.py` | 11 条：注册表/隔离/审计/管理接口不泄 key |
 | `D:\_review_rag-cs\evalset\fixtures\policy_corpus\` | 3 篇合成制度语料（含 2024/2026 两版，供 as-of 演示） |
 | `D:\_review_rag-cs\evalset\scenarios\policy.jsonl` | 20 题（17 应答 + 3 拒答），gold 指向条款标题 |
 | `D:\_review_rag-cs\evalset\scenarios\policy-asof-2025.jsonl` | 3 题 as-of 对照（按 2025 时点应命中旧版） |

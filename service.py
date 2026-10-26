@@ -76,6 +76,7 @@ import kb.compress as compress_mod                  # noqa: E402  块级规则�
 import kb.versioning as version_mod                 # noqa: E402  as-of 版本裁决（effective_date/status）
 import kb.audit as audit_mod                        # noqa: E402  审计落盘（只存决策与定位，不存原文）
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
+import tenants as tenants_mod                        # noqa: E402  租户注册表（S2-1）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
@@ -1207,6 +1208,8 @@ rag = RAG()
 #   LIMIT_FAIL_MODE    closed（默认，存储挂了就拒绝服务=护钱包）| open（放行=保可用）
 #   TRUST_PROXY_HEADERS / ALLOW_CLIENT_ID_HEADER   身份怎么认，默认都不信（见 limits.client_id）
 LIMITER = limits_mod.build_limiter(os.environ, log=logger)
+# ★ 多租户默认关闭（MULTI_TENANT=1 才校验）；关闭时走 default 租户 = 既有行为不变。
+TENANTS = tenants_mod.Registry.from_env(os.environ)
 
 # ★ 2026-10-14：会话历史存储（多轮追问用）。
 #   ★ 与限流**分家**：生命周期与清理语义不同（限流按日界滚、会话按最后活动续期），
@@ -1489,6 +1492,24 @@ def _request_roles(request: Request):
     return ident.roles if ident else None
 
 
+def _tenant(request: Request):
+    """解析请求所属租户。多租户模式下 key 无效直接 401（在配额之前，不耗额度）。"""
+    if not TENANTS.enabled:
+        return TENANTS.default()
+    tenant = TENANTS.resolve_key(request.headers.get("x-api-key") or "")
+    if tenant is None:
+        raise HTTPException(status_code=401,
+                            detail="缺少或无效的 X-Api-Key（MULTI_TENANT=1 时必须提供）")
+    return tenant
+
+
+def _assert_tenant_namespace(tenant, namespace: str | None) -> None:
+    if not tenant.allows(namespace):
+        raise HTTPException(
+            status_code=403,
+            detail=f"租户 {tenant.id!r} 无权访问 namespace {namespace!r}")
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, request: Request):
     """核心接口：问题进来 → 粗捞 → rerank → 生成 → 带出处返回
@@ -1516,11 +1537,13 @@ def chat(req: ChatRequest, request: Request):
     #   然后在某个分支上漏掉，"配额"在那条路上就整个不存在。
     # ★ 认证在闸门之前：未认证请求不该消耗配额。
     roles = _request_roles(request)
+    tenant = _tenant(request)
+    _assert_tenant_namespace(tenant, req.namespace)
     resp = _gated(request, lambda led: handle_chat(req, led, roles=roles))
     # ★ 审计在 HTTP 层做一次就够：进到这里的响应已经含 context（或拒答的 trace）。
     #   `model_dump()` 为了拿 dict；失败也只 warning，不影响这一轮答案。
     payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
-    audit_mod.record_response(req, payload, route="/chat", roles=roles)
+    audit_mod.record_response(req, payload, route="/chat", roles=roles, tenant=tenant.id)
     return resp
 
 
@@ -1845,6 +1868,8 @@ def search(req: SearchRequest, request: Request):
       ⚠️ 但它**不烧 token**，所以记账时 token 那部分是可证明的 0（见 `handle_search`）。
     """
     roles = _request_roles(request)
+    tenant = _tenant(request)
+    _assert_tenant_namespace(tenant, req.namespace)
     return _gated(request, lambda led: handle_search(req, led, roles=roles))
 
 
@@ -1862,6 +1887,47 @@ def _kb_admin_guard(request: Request) -> None:
     host = request.client.host if request.client else ""
     if host not in ("127.0.0.1", "::1", "testclient"):
         raise HTTPException(status_code=403, detail="未配置 KB_ADMIN_TOKEN 时只允许本机访问")
+
+
+def _admin_guard(request: Request) -> None:
+    """管理接口复用语料管理那道闸（KB_ADMIN_TOKEN，或本机回环）。
+
+    ★ 不新造一套 admin token：多一套凭证就多一处会配错的地方。
+    """
+    _kb_admin_guard(request)
+
+
+@app.get("/admin/tenants")
+def admin_tenants(request: Request):
+    """列出租户（**不含 key 哈希**）与多租户开关状态。"""
+    _admin_guard(request)
+    return {"multi_tenant": TENANTS.enabled,
+            "default_tenant": TENANTS.default().public(),
+            "tenants": [t.public() for t in TENANTS.list()]}
+
+
+@app.get("/admin/audit")
+def admin_audit(request: Request, tenant: str = "", session_id: str = "",
+                limit: int = 100):
+    """按租户 / 会话导出审计事件（只读；审计本来就不存原文）。"""
+    _admin_guard(request)
+    path = audit_mod.log_path()
+    if not path.is_file():
+        return {"n": 0, "rows": []}
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if tenant and event.get("tenant") != tenant:
+            continue
+        if session_id and event.get("session_id") != session_id:
+            continue
+        rows.append(event)
+    limit = max(1, min(int(limit), 1000))
+    rows = rows[-limit:]
+    return {"n": len(rows), "rows": rows}
 
 
 @app.post("/kb/{namespace}/documents")
