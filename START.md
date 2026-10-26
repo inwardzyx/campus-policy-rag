@@ -19,7 +19,7 @@
 | 制度语料验收（20 题） | 应答 **17/17**、拒答 **3/3**、引用合法率 **1.0** | `evalset/report-scenario-policy.json` |
 | as-of 版本裁决（3 题） | **3/3**（按 2025 时点答 500 元 / 60 日 / 100 元） | `evalset/report-scenario-policy-asof-2025.json` |
 | 会话级（10 会话 / 22 轮） | 整会话全对 **8/10**、指代补全 **4/4** | `evalset/report-sessions-campus-followups.json` |
-| 工程判据 | **356 passed / 27 skipped**；**17 个变异体脚本** | `pytest` + `scripts/mutate_*.py` |
+| 工程判据 | **359 passed / 27 skipped**；**17 个变异体脚本** | `pytest` + `scripts/mutate_*.py` |
 
 ```powershell
 # 复算（任选）

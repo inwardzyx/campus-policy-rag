@@ -815,15 +815,27 @@ class RAG:
                 self.rejected.append((c, f"[{ns}] {why}"))
         return out
 
+    def _index_text(self, c: dict) -> str:
+        """索引里放什么文本。
+
+        ★ 默认 `text`（= 既有行为，一个字节没变）。
+          候选 `doc_clause_text` 把「文档名 + 条款号」也放进索引 —— 因为实测
+          「第八十三条」这种问法命中 0：条款号只在元数据里，索引里没有。
+          这个开关是给**配对实验**用的：先量，再决定要不要改默认。
+        """
+        if INDEX_TEXT_MODE == "doc_clause_text":
+            return f"{c.get('doc', '')} {c.get('clause') or ''} {c['text']}"
+        return c["text"]
+
     def _rebuild_index(self) -> None:
         """重建向量矩阵与 BM25 —— 上传/删除后必须调用，否则检索还是旧索引。"""
         if not self.chunks:
             self.vectors = np.zeros((0, 1), dtype="float32")
             self.bm25 = None
             return
-        self.vectors = np.array(
-            list(self.model.passage_embed([c["text"] for c in self.chunks])), dtype="float32")
-        self.bm25 = BM25Okapi([list(jieba.cut_for_search(c["text"])) for c in self.chunks])
+        texts = [self._index_text(c) for c in self.chunks]
+        self.vectors = np.array(list(self.model.passage_embed(texts)), dtype="float32")
+        self.bm25 = BM25Okapi([list(jieba.cut_for_search(x)) for x in texts])
 
     def reload_enterprise(self) -> None:
         """上传/删除后热更新企业语料（不重启、不重载 embedding 模型）。"""
@@ -1211,6 +1223,13 @@ rag = RAG()
 LIMITER = limits_mod.build_limiter(os.environ, log=logger)
 # ★ 多租户默认关闭（MULTI_TENANT=1 才校验）；关闭时走 default 租户 = 既有行为不变。
 TENANTS = tenants_mod.Registry.from_env(os.environ)
+
+#: 索引文本模式：`doc_clause_text`（默认，2026-10-26 起）或 `text`（旧行为，回滚用）。
+#: ★ 改成默认的依据是**配对实验**（同一批 32 题、同一份语料）：
+#:   条款题 2/15 → 11/15，内容题 17/17 → 17/17（零退化）。
+#:   产物：`experiments/ab-index-text-A.json` / `-B.json`；脚本 `scripts/clause_recall.py`。
+#:   要回滚：设 `INDEX_TEXT_MODE=text` 即可，不用改代码。
+INDEX_TEXT_MODE = (os.environ.get("INDEX_TEXT_MODE") or "doc_clause_text").strip().lower()
 
 # ★ 2026-10-14：会话历史存储（多轮追问用）。
 #   ★ 与限流**分家**：生命周期与清理语义不同（限流按日界滚、会话按最后活动续期），

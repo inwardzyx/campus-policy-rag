@@ -3,13 +3,13 @@
   "suite": "policy",
   "mode": "http",
   "n_cases": 20,
-  "generated_at": "2026-10-26T13:09:28+0800",
+  "generated_at": "2026-10-26T18:03:26+0800",
   "meta": {
     "cases_file": "evalset\\scenarios\\policy.jsonl",
     "namespace": "policy_eval",
     "event_time": "2026-06-01",
     "limit": null,
-    "wall_clock_ms": 62811,
+    "wall_clock_ms": 67332,
     "missing_responses": []
   },
   "metric_specs": {
@@ -106,7 +106,7 @@
     "budget_cut_rate": 0.0,
     "citation_validity": 1.0,
     "uncited_paragraphs_per_answer": 0.0,
-    "p95_ms": 3837,
+    "p95_ms": 4199,
     "compression_rows_active": 0,
     "compression_dedup_total": 0,
     "buckets": {
@@ -135,7 +135,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3605,
+      "took_ms": 5067,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -153,7 +153,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本，资料中“一线城市”对应一类城市（北京、上海、深圳、广州）。但两份资料对一类城市的住宿费限额不一致：[1] 为 600 元/人·晚，[2] 为 500 元/人·晚。因此仅凭现有资料无法确定唯一上限，不知道应以哪份为准。"
+      "answer": "按 2026-06-01 时点有效的版本，资料中“一线城市”对应的举例为北京、上海、深圳、广州，但两份资料给出的住宿费限额不一致：[1] 为一类 600 元/人·晚，[2] 为一类 500 元/人·晚。因此仅凭现有资料无法确定唯一上限，不知道应以哪份为准。"
     },
     {
       "id": "p02",
@@ -164,7 +164,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3332,
+      "took_ms": 4199,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -182,7 +182,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本，资料中关于报销提交期限存在不一致：一处规定出差结束后 30 日内提交，超过 30 日须附书面说明并经部门负责人与财务部双重审批，超过 90 日原则上不予受理[1]；另一处规定出差结束后 60 日内提交，逾期须说明原因[2]。因此仅凭现有资料无法确定唯一期限，具体以哪条为准不知道。"
+      "answer": "按 2026-06-01 时点有效的版本，资料中关于报销提交时限存在不一致：一处规定出差结束后 30 日内提交，超过 30 日须附书面说明并经部门负责人与财务部双重审批，超过 90 日原则上不予受理[1]；另一处规定出差结束后 60 日内提交，逾期须说明原因[2]。因此仅凭现有资料无法确定唯一时限，具体以哪一规定为准不知道。"
     },
     {
       "id": "p03",
@@ -193,7 +193,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3394,
+      "took_ms": 3180,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -221,7 +221,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3218,
+      "took_ms": 3509,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -239,7 +239,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本，资料中同时出现两种标准：每人每日 120 元[1]和每人每日 100 元[2]，无法据此确定唯一标准，因此不知道每天具体是多少。"
+      "answer": "按 2026-06-01 时点有效的版本，资料中存在冲突：资料[1]规定每人每日 120 元[1]，资料[2]规定每人每日 100 元[2]。因此仅凭现有资料无法确定唯一标准，不知道应以哪个为准。"
     },
     {
       "id": "p05",
@@ -250,7 +250,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3049,
+      "took_ms": 3462,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -267,7 +267,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本：乘坐飞机公务舱须经分管副总事前批准。[1]"
+      "answer": "按 2026-06-01 时点有效的版本，乘坐飞机公务舱须经分管副总事前批准。[1]"
     },
     {
       "id": "p06",
@@ -278,7 +278,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2859,
+      "took_ms": 3281,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -295,7 +295,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本：招待客户人均标准不超过 300 元。[1]"
+      "answer": "按 2026-06-01 时点有效的版本，招待客户人均标准不超过 300 元。[1]"
     },
     {
       "id": "p07",
@@ -306,7 +306,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3127,
+      "took_ms": 2773,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -334,7 +334,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3837,
+      "took_ms": 3684,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -342,8 +342,8 @@
       "included": 3,
       "sources": [
         "差旅与费用报销管理办法（2026修订版）.md｜第九条（住宿的特殊情形）",
-        "差旅与费用报销管理办法（2026修订版）.md｜第八条（住宿标准）",
-        "差旅与费用报销管理办法（2024版）.md｜第四条（住宿标准）"
+        "差旅与费用报销管理办法（2024版）.md｜第四条（住宿标准）",
+        "差旅与费用报销管理办法（2026修订版）.md｜第八条（住宿标准）"
       ],
       "compression": null,
       "rewritten_query": null,
@@ -353,7 +353,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本，资料中仅能确认：因会议或培训统一安排住宿的，同性别同事合住一间双床房的，按一间限额报销[1]。至于合住时具体按每人还是每间、按哪一档限额计算，资料没有明确说明，不知道。"
+      "answer": "按 2026-06-01 时点有效的版本，同性别同事合住一间双床房的，按一间限额报销。[1] 但资料未说明合住时限额是按一人还是两人合并计算，也未说明具体城市类别下的限额如何适用，因此无法给出更具体的报销金额结论。"
     },
     {
       "id": "p09",
@@ -364,7 +364,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2785,
+      "took_ms": 2963,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -381,7 +381,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本：报销须提供合规发票（增值税普通发票或专用发票），发票抬头须为公司全称，税号准确[1]。"
+      "answer": "按 2026-06-01 时点有效的版本：报销须提供合规发票（增值税普通发票或专用发票），发票抬头须为公司全称，税号须准确[1]。"
     },
     {
       "id": "p10",
@@ -392,7 +392,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3422,
+      "took_ms": 3279,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -420,7 +420,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3386,
+      "took_ms": 2904,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -448,7 +448,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2745,
+      "took_ms": 2956,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -465,7 +465,7 @@
       ],
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本：年休假 5 天对应累计工作满 1 年不满 10 年。[1]"
+      "answer": "按 2026-06-01 时点有效的版本，年休假 5 天对应累计工作满 1 年不满 10 年。[1]"
     },
     {
       "id": "p13",
@@ -476,7 +476,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3122,
+      "took_ms": 3712,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -504,7 +504,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3335,
+      "took_ms": 2967,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -532,7 +532,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 4134,
+      "took_ms": 3849,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -560,15 +560,14 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3330,
+      "took_ms": 3518,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
       "uncited_count": 0,
-      "included": 2,
+      "included": 1,
       "sources": [
-        "员工考勤与请假管理办法.md｜第三条（迟到与早退）",
-        "员工考勤与请假管理办法.md｜第二条（弹性与打卡）"
+        "员工考勤与请假管理办法.md｜第三条（迟到与早退）"
       ],
       "compression": null,
       "rewritten_query": null,
@@ -589,7 +588,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2534,
+      "took_ms": 2748,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -617,21 +616,22 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3001,
+      "took_ms": 3504,
       "context_recall": null,
       "context_precision": null,
-      "citation_validity": null,
+      "citation_validity": 1.0,
       "uncited_count": 0,
-      "included": 1,
+      "included": 2,
       "sources": [
-        "员工考勤与请假管理办法.md｜第十四条（虚假请假的处理）"
+        "员工考勤与请假管理办法.md｜第十四条（虚假请假的处理）",
+        "员工考勤与请假管理办法.md｜第四条（旷工）"
       ],
       "compression": null,
       "rewritten_query": null,
       "gold": null,
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本，资料中没有说明公司对员工的处分分哪几种，我不知道。"
+      "answer": "按 2026-06-01 时点有效的版本，资料中没有完整列出公司处分的种类，只提到在特定情形下可给予“警告至解除劳动合同”的处分[1]，以及可依据《员工奖惩管理办法》解除劳动合同[2]。公司对员工的处分具体分哪几种，资料不足以下结论，我不知道。"
     },
     {
       "id": "p19",
@@ -642,7 +642,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2638,
+      "took_ms": 2799,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": 1.0,
@@ -656,7 +656,7 @@
       "gold": null,
       "session_id": null,
       "turn_index": null,
-      "answer": "按 2026-06-01 时点有效的版本：不知道。资料[1]只说明加班与调休按《加班与调休管理规定》执行，未提供该规定的具体调休办法。[1]"
+      "answer": "按 2026-06-01 时点有效的版本，资料只说明加班与调休按《加班与调休管理规定》执行[1]，但未提供该规定中关于“加班之后怎么调休”的具体内容，因此不知道具体调休办法。"
     },
     {
       "id": "p20",
@@ -667,7 +667,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 1671,
+      "took_ms": 2649,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,

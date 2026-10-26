@@ -98,6 +98,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 部署自检 | ✅ 可在坏情况下报红 | `scripts/preflight.py`：key / kb_data 可写 / 审计 / 租户表 / 模型缓存；CLI 退出码 1 |
 | 开通租户 CLI | ✅ | `scripts/create_tenant.py`：明文 key **只打印一次**，落盘只有 sha256 |
 | 自检判据的变异体 | ✅ | `scripts/mutate_preflight.py`：删 key 检查 / fail 也返回 0，**2/2 变红** |
+| 按条款号检索 | ✅ 2026-10-26 | 索引文本 = `doc + clause + text`；配对实验（同 32 题）：条款题 **2/15 → 13/15**、内容题 **17/17 → 17/17**；回滚开关 `INDEX_TEXT_MODE=text` |
 | 多租户的**未做部分** | ⏳ 明确未做 | 计费；配额数值仍是全局一套（不分租户自定义） |
 | 未实现层的状态标注 | ✅ | `layers[*].status`（implemented/reserved）+ `reason` + `reserved_layers`；`reserved`+`used_chars=0` 只能读成「没实现」 |
 | 「想实现记忆必须显式改测试」 | ✅ | `test_implementing_memory_requires_a_deliberate_test_change` 锁住 `implemented_layers==["retrieved"]` |
@@ -108,7 +109,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-356 passed, 27 skipped
+359 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -302,6 +303,7 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
 | README 端点数过期 | 新增 `/kb` 路由后 README 仍写 7/10 个，pre-commit 报错 | 更新为 **11**；`scripts/check_readme_numbers.py` 强制校验 | ✅ 已解决 |
 | 飞书 token 取错层级 | 以为 `tenant_access_token` 在 `data` 下，实际在顶层 | `_request(..., raw=True)` 取顶层 | ✅ 已解决 |
 | 飞书知识空间成员 | `131002 invalid member_type` / `invalid member_role` / `131101 public wiki space can't create member` | 实测有效组合是 **`member_type=appid` + `member_role=member`**；但**公开空间不能加任何成员**（先改回私有），且 tenant 身份无权给自己加成员（131006）→ 需管理员 | **未解决（租户策略）** |
+| 评测脚本自己撞限流 → 命中率 0 | 15+17 个请求超过默认 burst=10/每分钟 20 | 实验环境把 `RATE_BURST/RATE_PER_MIN` 调大，或脚本内加 pacing；**先看是不是 429 再怀疑检索** | **已记录** |
 | 未实现的层写成 `used_chars: 0` | 读报告的人以为是「这轮没用记忆」，实际是「记忆没做」 | 每层加 `status`/`reason`；`reserved` 只能读成未实现 | **已修复** |
 | 改 `.env` 用记事本整体覆盖 | 服务全部 500：`DEEPSEEK_API_KEY must be set` | 改 `.env` 只**追加**、不要整篇粘贴；本次已从 Windows 用户环境变量恢复 | **已修复** |
 | 飞书 wiki 无权限 | `99991672 Access denied ...` | 已把报错翻译成清单（缺哪些 scope + **发版** + 加入知识空间），CLI 失败直接打印；scope 仍需你在后台开 | **未解决（需用户操作，但不再靠猜）** |
