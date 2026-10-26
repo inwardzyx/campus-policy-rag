@@ -76,13 +76,16 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 压缩判据的变异体 | ✅ | `scripts/mutate_compress.py`：阈值失效 / 正则吞正文，**2/2 变红 + 字节还原** |
 | as-of 版本裁决（effective_date/status + event_time） | ✅ 端到端可用（语料带生效日时） | `kb/versioning.py`；字段贯通 loader·store·manifest；六道把关对「版本兄弟」放行（`service.py::_is_version_sibling`，数据触发） |
 | as-of 判据的变异体 | ✅ | `scripts/mutate_versioning.py`：忽略 event_time / 不丢废止版，**2/2 变红** |
+| 审计落盘（只存决策与定位，不存原文/正文） | ✅ 只对 namespace 请求 | `kb/audit.py`、`scripts/prune_audit.py`；`AUDIT_ENABLED/AUDIT_LOG_PATH/AUDIT_RETENTION_DAYS` |
+| 答案标注适用版本（as-of 时） | ✅ 数据触发（块带 `as_of_note` 才加） | `service.py::build_answer_prompt` |
+| 审计判据的变异体 | ✅ | `scripts/mutate_audit.py`：写原文 / 清理删脏行，**2/2 变红** |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-274 passed, 27 skipped
+283 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -149,6 +152,18 @@ budget_cut_rate 0 / p95 4794ms
   没有生效日的 docs/ 校规走原逻辑 ⇒ 263 留 / 23 拦那些数字一个没变（老守卫测试全绿）。
 ★ 也就是说：**as-of 能不能用，取决于语料有没有写生效日**。没写就诚实地按现行处理，不猜。
 
+**审计 + 版本措辞（批 5，受控验收，语料 synthetic）** —— 产物 `experiments/_audit-sample.jsonl`
+
+```text
+/chat?namespace=audit_demo&event_time=2025-06-01
+  答案开头："按 2025-06-01 时点有效的版本：…… 400 元 ……[1]"
+  as_of：dropped_by_reason={"not_yet_effective":1}
+  审计文件：1 行（docs/ 旧路径那次请求没有新增行）
+  字段：answer_chars / as_of / citation / decision / knowledge_hit / n_blocks / namespace /
+        question_sha256 / question_chars / roles / route / sources / took_ms / trace_id …
+  原文在审计里吗：False（只存 sha256 + 字数）
+```
+
 **Docling 容器**：
 
 - 镜像 `docling-runner:2.142.1`，**2.86 GB**（CPU-only torch；PyPI 默认 torch 会拖 CUDA 包）；
@@ -175,7 +190,7 @@ budget_cut_rate 0 / p95 4794ms
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
   答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
-- **审计日志没做**：没有审计表/审计事件（trace 只进响应，不落盘）。
+- **审计只有 JSONL**：单机追加 + 独立清理脚本；没有查询接口/审计库/签名链，也还没有对接 SIEM。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
 - **独立 70 题集没出**：只有 40+20+10 的模板和样例。
 - **真实扫描件/双栏/表格没验**：目前只有模拟扫描件。
@@ -272,8 +287,13 @@ prompt 逐字节不变），答案带 `[n]`，`context.citation` 报 validity/�
 + 六道把关版本感知（数据触发，docs/ 数字不变）；端到端证据见 §2.3。
 18 条用例、变异体 **3/3 变红**。
 
-**下一步（批 5）**：审计落盘（trace → JSONL，脱敏 + 保留期）或 memory 层条目化
-（二选一，审计对企业部署更刚需）；模板加"按 X 年 X 月版本"的措辞也可以顺路做。
+**批 5（审计 + 版本措辞）✅ 已完成（2026-10-26）**：每个 namespace 请求写一行 JSONL
+（问题只存 sha256、块只存 doc/clause），保留期清理走 `scripts/prune_audit.py`；
+as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异体 2/2 变红。
+
+**下一步（批 6，建议）**：memory 层条目化（会话内事实/未闭合事项，只注入相关 ≤3 条，
+trace 的 memory 层从 `used_chars=0` 变成真数字）；或先做 P1 的真实语料 20 题验收
+（更依赖你手上的 HR/合规文档）。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -318,6 +338,11 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\eval_metrics.py` | 上下文/检索指标：recall/precision/nDCG@3/budget_cut_rate/p95；缺失一律 `None`，不补 0 |
 | `D:\_review_rag-cs\scripts\run_scenario_eval.py` | 场景评测 runner：HTTP 跑题集或 `--responses` 离线复算 → 指标 + 逐题归因 JSON |
 | `D:\_review_rag-cs\scripts\check_eval_gold.py` | gold ↔ 语料联动检查（`## <clause>` 必须存在；扫 0 条报红） |
+| `D:\_review_rag-cs\kb\audit.py` | 审计落盘：决策/定位/trace 摘要 → JSONL；问题只存 sha256，块只存 doc/clause |
+| `D:\_review_rag-cs\scripts\prune_audit.py` | 审计保留期清理（独立入口，支持 `--dry-run`） |
+| `D:\_review_rag-cs\tests\test_audit.py` | 审计 9 条：不落原文/只对 namespace/写失败不炸/清理保脏行/版本措辞 |
+| `D:\_review_rag-cs\scripts\mutate_audit.py` | 审计变异体（写原文、清理删脏行），2/2 变红 + 字节还原 |
+| `D:\_review_rag-cs\experiments\_audit-sample.jsonl` | 一行真实审计记录（schema 示例；可确认无原文） |
 | `D:\_review_rag-cs\kb\versioning.py` | as-of 版本裁决：effective_date/status/event_time → 丢弃原因（stale/superseded/not_yet_effective） |
 | `D:\_review_rag-cs\tests\test_versioning.py` | 14 条：时点过滤/废止版/多版本/日期未知/上传读取/服务接线 |
 | `D:\_review_rag-cs\scripts\mutate_versioning.py` | 变异体（忽略 event_time、不丢废止版），2/2 变红 + 字节还原 |

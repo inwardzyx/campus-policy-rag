@@ -74,6 +74,7 @@ import kb.context as context_mod                    # noqa: E402  上下文层�
 import kb.citation as citation_mod                  # noqa: E402  引用校验（答案里的 [n] 指没指对块）
 import kb.compress as compress_mod                  # noqa: E402  块级规则压缩（去重/噪声行）
 import kb.versioning as version_mod                 # noqa: E402  as-of 版本裁决（effective_date/status）
+import kb.audit as audit_mod                        # noqa: E402  审计落盘（只存决策与定位，不存原文）
 import limits as limits_mod                         # noqa: E402  限流 + 日配额（见 limits.py）
 import session as session_mod                       # noqa: E402  会话历史（多轮追问，见 session.py）
 import auth as auth_mod                             # noqa: E402  SSO/代理身份 → ACL 角色
@@ -1139,6 +1140,7 @@ class RAG:
           就成了靠注释承诺的话（本仓库为这种"两处各写一份"栽过好几次）。
           抽出来之后，测试可以直接比两边的 prompt 字符串。
         """
+        as_of_note = str((chunks[0] if chunks else {}).get("as_of_note") or "")
         if chunks and "cite_id" in chunks[0]:
             # ★ v2 模板：块带编号 ⇒ 要求逐句标注来源。
             #   为什么用"数据触发"而不是给 `answer()` 加参数：那两个方法（同步/流式）的签名
@@ -1146,7 +1148,10 @@ class RAG:
             #   让"带不带编号"由数据决定 ⇒ 两条路天然同源，docs/ 旧路径的 prompt 一字不变。
             ctx = "\n".join(f"[{c['cite_id']}] {c.get('text_full', c['text'])}"
                              for c in chunks)
+            ver_line = (f"开头先写一句「按 {as_of_note} 时点有效的版本」；"
+                        if as_of_note else "")
             return ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
+                    f"{ver_line}"
                     "引用要求：每条结论后用方括号标出依据的资料编号（例如「……[2]」）；"
                     "没有资料支撑的话不要写；资料不足以下结论时直接说不知道。\n"
                     f"资料：\n{ctx}\n\n问题：{question}")
@@ -1507,7 +1512,12 @@ def chat(req: ChatRequest, request: Request):
     #   然后在某个分支上漏掉，"配额"在那条路上就整个不存在。
     # ★ 认证在闸门之前：未认证请求不该消耗配额。
     roles = _request_roles(request)
-    return _gated(request, lambda led: handle_chat(req, led, roles=roles))
+    resp = _gated(request, lambda led: handle_chat(req, led, roles=roles))
+    # ★ 审计在 HTTP 层做一次就够：进到这里的响应已经含 context（或拒答的 trace）。
+    #   `model_dump()` 为了拿 dict；失败也只 warning，不影响这一轮答案。
+    payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
+    audit_mod.record_response(req, payload, route="/chat", roles=roles)
+    return resp
 
 
 # ==================================================================
@@ -1591,6 +1601,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
                        "session_used": session_used}
             if ver_summary is not None:
                 refusal["context"] = ver_summary.model_dump()
+            audit_mod.record_response(req, refusal, route="/chat/stream", roles=roles)
             out.put(("refusal", refusal))
             return
         # ★ 写会话放在**检索之后**：检索用的历史已经取到手，现在把本轮追加进去
@@ -1622,6 +1633,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
                                          _candidate_blocks(ranked or []))
             if summary is not None:
                 refusal["context"] = summary.model_dump()
+            audit_mod.record_response(req, refusal, route="/chat/stream", roles=roles)
             out.put(("refusal", refusal))
             return
 
@@ -1638,6 +1650,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
                 "session_used": session_used}
             if context_summary is not None:
                 refusal["context"] = context_summary.model_dump()
+            audit_mod.record_response(req, refusal, route="/chat/stream", roles=roles)
             out.put(("refusal", refusal))
             return
         if context_summary is not None:
@@ -1661,8 +1674,8 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
 
         n_delta = 0
         _picked_chunks = [c for c, _, _, _ in picked]
-        fed_blocks = (_numbered(_picked_chunks) if getattr(req, "namespace", None)
-                      else _picked_chunks)
+        fed_blocks = (_numbered(_picked_chunks, getattr(req, "event_time", None))
+                      if getattr(req, "namespace", None) else _picked_chunks)
         pieces: list[str] = []
         for piece in rag.answer_stream(req.question, fed_blocks):
             pieces.append(piece)
@@ -1674,6 +1687,13 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
             report = _attach_citation(context_summary, "".join(pieces), fed_blocks)
             out.put(("citation", {"trace_id": context_summary.trace_id,
                                    "citation": report}))
+        # ★ 成功路径的审计：答案正文不落盘，只落长度/决策/块定位（见 kb/audit.py）
+        audit_mod.record_response(
+            req,
+            {"answer": "".join(pieces), "sources": sources, "knowledge_hit": True,
+             "rerank_used": True, "took_ms": None,
+             "context": context_summary.model_dump() if context_summary else None},
+            route="/chat/stream", roles=roles)
         out.put(("__ok__", {"n_delta": n_delta}))
     except LLMCallError as e:
         out.put(("error", {"message": f"模型调用失败：{e}"}))
@@ -1977,13 +1997,17 @@ def _search_for_request(req, query, roles=None):
     return rag.search(query, k=req.top_k)
 
 
-def _numbered(chunks):
+def _numbered(chunks, as_of_note: str | None = None):
     """给喂进 prompt 的块加 `cite_id`（1 起），返回**副本**。
 
     ★ 必须 copy：`sources` 与 trace 用的是同一批 dict，原地加字段会让响应里凭空多一个
       `cite_id`；而编号只对"喂进 prompt 的那一份"有意义。
     """
-    return [{**c, "cite_id": i} for i, c in enumerate(chunks, start=1)]
+    out = [{**c, "cite_id": i} for i, c in enumerate(chunks, start=1)]
+    if as_of_note:
+        for c in out:
+            c["as_of_note"] = as_of_note
+    return out
 
 
 def _attach_citation(context_summary, answer, fed_blocks):
@@ -2228,7 +2252,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
         # 所以默认还是开着 rerank —— 关掉只是留一个对比开关，不是关闭防线。
 
     # ★ 只有 namespace 路径带编号（docs/ 旧路径的 prompt 必须逐字节不变）
-    fed_blocks = _numbered(ctx) if getattr(req, "namespace", None) else ctx
+    fed_blocks = (_numbered(ctx, getattr(req, "event_time", None))
+                  if getattr(req, "namespace", None) else ctx)
     try:
         answer = rag.answer(req.question, fed_blocks)
     except LLMCallError as e:

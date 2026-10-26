@@ -182,6 +182,39 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 判据的变异体：[`scripts/mutate_citation.py`](scripts/mutate_citation.py) —— 编号从 0 开始 /
 越界不标记，**2/2 变红**，并按字节还原（sha256 一致）。
 
+## 审计落盘（2026-10-26，批 5）
+
+文件：[`kb/audit.py`](kb/audit.py)、[`scripts/prune_audit.py`](scripts/prune_audit.py)。
+每个**带 namespace** 的请求写一行 JSONL（`docs/` 旧路径一行不写）。
+
+### 记什么 / 不记什么（这条比"多记点"重要）
+
+| 记 | 不记 |
+|---|---|
+| `trace_id`、`namespace`、`route`、`decision`（answer/refuse/error） | 问题原文（只存 `sha256[:16]` + 字数） |
+| 命中的 `doc` / `clause`、`n_blocks`、`chars_used` | 块正文（正文不进审计） |
+| `as_of`（event_time + 丢弃原因）、`citation`（编号/合法性） | 答案原文（只存 `answer_chars`） |
+| `roles`（组织维度）、`took_ms`、`rerank_used`、`retention_days` | 个人信息 |
+
+三条硬约束：① 原文/正文都不进日志（它们有各自的保留期与访问控制）；
+② 写失败**不拖垮请求**（只 warning 一次，带原因）；③ 保留期清理是**独立脚本**，
+不在服务里自动删（自动删会和并发追加打架，也不再"可审计"）。
+
+### 实测（`experiments/_audit-sample.jsonl`，语料 synthetic）
+
+```text
+/chat?namespace=audit_demo&event_time=2025-06-01
+  答案开头：按 2025-06-01 时点有效的版本：…… 400 元 ……[1]      ← 版本措辞生效
+  as_of：dropped_by_reason={"not_yet_effective":1}
+  审计：1 行；docs/ 旧路径那次请求没有新增行
+  原文在审计里吗：False
+```
+
+### 判据
+
+`tests/test_audit.py` 9 条；`scripts/mutate_audit.py` 把"写问题原文"和"清理时删脏行"
+各打坏一次 —— **2/2 变红**，`kb/audit.py` 按字节还原（sha256 一致）。
+
 ## 版本 / as-of（2026-10-26，批 4）
 
 文件：[`kb/versioning.py`](kb/versioning.py)。回答"**这件事发生在哪一天，当时有效的是哪一版**"。

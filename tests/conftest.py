@@ -19,6 +19,8 @@
 
 import sys
 import time
+
+import pytest
 from pathlib import Path
 
 # ★ 本文件除了"假模型"，还顺手做一件事：跑测试时提醒「本地钩子装没装」。
@@ -71,6 +73,17 @@ def pytest_sessionstart(session):
             tr.write_line(ln)          # 走 terminalreporter：不受 pytest 捕获影响
     else:
         print("\n".join(lines))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_audit_log(tmp_path, monkeypatch):
+    """审计默认写 `kb_data/audit.jsonl`；测试里指到临时目录。
+
+    ★ 实测踩到（2026-10-26）：跑一遍 `tests/test_context.py` 的流式用例，
+      仓库里就多出一个 `kb_data/audit.jsonl` —— 测试污染运行时目录，
+      而 README 写着 `kb_data/` 是运行时数据。autouse 一次解决，别在每个文件里记得。
+    """
+    monkeypatch.setenv("AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
 
 
 class _FakeResp:
