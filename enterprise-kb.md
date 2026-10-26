@@ -356,6 +356,23 @@ budget_cut_rate 0 / p95 4794ms
 （"违纪了的话，学校都有哪些处分等级啊？" → 实际捞到第二十四条/第五条，gold 是第四条），
 `budget_cut_rate=0` 说明这批题上 1840 的额度没裁块 —— 问题在检索/改写，不在预算。
 
+### 评测内核（2026-10-26，可复用）
+
+请求级评测已拆成 `kb/evalkit/` 四件套，**新场景/新指标/新执行方式都只是组装**：
+
+| 部件 | 职责 | 换掉它意味着 |
+|---|---|---|
+| `cases` | 题集 schema + 校验 + 套件解析（`campus` 或路径） | 加题型（会话/工具轨迹） |
+| `metrics` | **指标注册表** + 逐题判分 | 加指标只加一条 `MetricSpec` |
+| `report` | `schema_version=request-eval/1` + 指标说明书 | 接看板/CI |
+| `transport` | `http` / `recorded` / `inproc` | 不联网、不起服务也能跑 |
+
+三条硬规矩写在 `kb/evalkit/__init__.py` 顶部：**缺失有名字**（每个指标声明 null 的含义）、
+**空转报红**（0 道题是错误）、**加指标不改 runner**（`register_metric` 后报告自动带上）。
+
+重构的行为证据：同一批 20 题、同一服务，新旧 runner 的 **8 个指标逐项完全一致**
+（`evalset/report-scenario-campus-evalkit.json` vs `report-scenario-campus-citation.json`）。
+
 ### 已知缺口（别当成"CI 覆盖了"）
 
 `pytrec-eval-terrier` **没有 Linux / cp314 的 wheel**（实测），所以 CI 不装

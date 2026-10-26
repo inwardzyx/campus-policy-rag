@@ -64,3 +64,36 @@ D:\Python-project\.venv\Scripts\python.exe scripts\run_scenario_eval.py `
 - 上下文指标：`context_recall`、`context_precision`、`ndcg@3`、`budget_cut_rate`、`p95_ms`；
 - **归因分布**：`retrieval_miss / rank_shift / budget_cut / gen_uncited / acl_leak / stale_version`。
   调优只能针对"当前最多的那个桶"做单点改动，然后用同一批题**配对**重跑。
+
+## 怎么扩展（评测内核在 `kb/evalkit/`，不要另写脚本）
+
+请求级评测已经拆成四个可替换部件，**新场景/新指标/新执行方式都只是组装**：
+
+| 想做什么 | 改哪里 | 判据 |
+|---|---|---|
+| 加一个场景套件 | 放 `evalset/scenarios/<name>.jsonl`（同格式），`--cases <name>` 即可 | `validate_cases` 自动校验；**空题集直接退出 1** |
+| 加一个指标 | `kb/evalkit/metrics.py` 里 `register_metric(MetricSpec(...))` | 必须写 `desc/unit/missing`（"拿不到时是什么、为什么"）；`aggregate` 与报告自动带上 |
+| 换执行方式 | `kb/evalkit/transport.py`：`http` / `recorded` / `inproc` | 三者对 runner 完全等价；`recorded` 让评测逻辑能进单测、不花钱 |
+| 接看板/CI | 读报告里的 `schema_version` + `aggregate` + `metric_specs` | 字段含义变更要升 `SCHEMA_VERSION`，不许悄悄改名 |
+
+**报告 schema（`request-eval/1`）**：`schema_version / suite / mode / n_cases / generated_at /
+meta / metric_specs / aggregate / rows`。
+
+★ `metric_specs` 是刻意放在 `aggregate` 前面的：先告诉读的人"`null` 是什么意思"，
+再给数字。本仓库反复踩过"把缺失当 0"的坑，这一层就是为了让它不可能被误读。
+
+## 三种跑法（同一套内核）
+
+```powershell
+# ① 打服务（要 trace 才有上下文指标）
+D:\Python-project\.venv\Scripts\python.exe scripts/run_scenario_eval.py `
+    --cases campus --namespace campus_eval --bootstrap-docs docs/kb `
+    --base-url http://127.0.0.1:8028 --out evalset/report-scenario-campus-evalkit.json
+
+# ② 离线复算（读录好的响应，不联网、不花钱）
+... scripts/run_scenario_eval.py --responses <响应文件.json>
+
+# ③ 直连管道（不起 HTTP；需要模型已加载，测试里可用假模型）
+... scripts/run_scenario_eval.py --transport inproc
+```
+

@@ -79,13 +79,16 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 审计落盘（只存决策与定位，不存原文/正文） | ✅ 只对 namespace 请求 | `kb/audit.py`、`scripts/prune_audit.py`；`AUDIT_ENABLED/AUDIT_LOG_PATH/AUDIT_RETENTION_DAYS` |
 | 答案标注适用版本（as-of 时） | ✅ 数据触发（块带 `as_of_note` 才加） | `service.py::build_answer_prompt` |
 | 审计判据的变异体 | ✅ | `scripts/mutate_audit.py`：写原文 / 清理删脏行，**2/2 变红** |
+| 评测内核（可复用） | ✅ | `kb/evalkit/`：cases（schema+校验+套件解析）/ metrics（**指标注册表**）/ report（`schema_version`+指标说明书）/ transport（http·recorded·inproc） |
+| 报告 schema | ✅ `request-eval/1` | `metric_specs` 自带 unit 与 missing 说明；加指标不改 runner |
+| 内核判据的变异体 | ✅ | `scripts/mutate_evalkit.py`：缺失补 0 / 不查重复 id，**2/2 变红 + 字节还原** |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-283 passed, 27 skipped
+296 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -152,6 +155,11 @@ budget_cut_rate 0 / p95 4794ms
   没有生效日的 docs/ 校规走原逻辑 ⇒ 263 留 / 23 拦那些数字一个没变（老守卫测试全绿）。
 ★ 也就是说：**as-of 能不能用，取决于语料有没有写生效日**。没写就诚实地按现行处理，不猜。
 
+**评测内核重构（批 6，行为保持）**：同一批 20 题、同一个服务，新旧 runner 的 8 个指标
+**逐项完全一致**（answer 14/15、recall/precision 0.9333、nDCG@3 0.9333、budget_cut 0、
+citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-scenario-campus-evalkit.json`
+（`schema_version=request-eval/1`，12 个指标都自带 missing 说明）。
+
 **审计 + 版本措辞（批 5，受控验收，语料 synthetic）** —— 产物 `experiments/_audit-sample.jsonl`
 
 ```text
@@ -190,6 +198,8 @@ budget_cut_rate 0 / p95 4794ms
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
   答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
+- **评测只有请求级**：会话级（多轮）与工具/Agent 轨迹级**还没做**；
+  trace 与审计里缺 `session_id`/`turn_index`，所以连"重建一次会话"都还不行。
 - **审计只有 JSONL**：单机追加 + 独立清理脚本；没有查询接口/审计库/签名链，也还没有对接 SIEM。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
 - **独立 70 题集没出**：只有 40+20+10 的模板和样例。
@@ -291,9 +301,15 @@ prompt 逐字节不变），答案带 `[n]`，`context.citation` 报 validity/�
 （问题只存 sha256、块只存 doc/clause），保留期清理走 `scripts/prune_audit.py`；
 as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异体 2/2 变红。
 
-**下一步（批 6，建议）**：memory 层条目化（会话内事实/未闭合事项，只注入相关 ≤3 条，
-trace 的 memory 层从 `used_chars=0` 变成真数字）；或先做 P1 的真实语料 20 题验收
-（更依赖你手上的 HR/合规文档）。
+**批 6（评测内核可复用化）✅ 已完成（2026-10-26）**：`kb/evalkit/` 四件套 +
+`schema_version` 报告 + 指标注册表 + 三种 transport；`scripts/run_scenario_eval.py`
+退化成薄 CLI；旧 `kb/eval_metrics` 只留兼容转发。**8/8 指标与重构前逐项一致**。
+
+**下一步（批 7，按优先级）**：
+1. **轨迹入口的键**：trace/审计补 `session_id` + `turn_index`（半小时，纯增量）；
+2. **会话轨迹评测**：复用 evalkit 的 cases/metrics/report，只加一个 `turns` 题型与 runner；
+3. memory 层条目化（让 trace 的 memory 层不再是 0）；
+4. P1 真实语料 20 题验收（等你给 HR/合规文档，最好带生效日）。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -338,6 +354,9 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\eval_metrics.py` | 上下文/检索指标：recall/precision/nDCG@3/budget_cut_rate/p95；缺失一律 `None`，不补 0 |
 | `D:\_review_rag-cs\scripts\run_scenario_eval.py` | 场景评测 runner：HTTP 跑题集或 `--responses` 离线复算 → 指标 + 逐题归因 JSON |
 | `D:\_review_rag-cs\scripts\check_eval_gold.py` | gold ↔ 语料联动检查（`## <clause>` 必须存在；扫 0 条报红） |
+| `D:\_review_rag-cs\kb\evalkit\` | 请求级评测内核：cases/metrics/report/transport（可复用，脚本只组装） |
+| `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
+| `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |
 | `D:\_review_rag-cs\kb\audit.py` | 审计落盘：决策/定位/trace 摘要 → JSONL；问题只存 sha256，块只存 doc/clause |
 | `D:\_review_rag-cs\scripts\prune_audit.py` | 审计保留期清理（独立入口，支持 `--dry-run`） |
 | `D:\_review_rag-cs\tests\test_audit.py` | 审计 9 条：不落原文/只对 namespace/写失败不炸/清理保脏行/版本措辞 |

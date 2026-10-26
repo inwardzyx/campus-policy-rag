@@ -25,21 +25,15 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
-def load_cases(path: Path) -> list[dict]:
-    """同时认 JSON 数组（老题集）与 JSONL（场景题集）。"""
-    text = path.read_text(encoding="utf-8")
-    if path.suffix.lower() == ".jsonl" or text.lstrip().startswith("{"):
-        return [json.loads(ln) for ln in text.splitlines() if ln.strip()]
-    return list(json.loads(text))
+# ★ 读题与取 gold 都复用评测内核/归因模块，不在这里抄第二份（schema 一漂移就会静默失真）。
+from kb import attribution                      # noqa: E402
+from kb.evalkit.cases import load_cases          # noqa: E402
 
-
-def gold_of(case: dict) -> tuple[str, str] | None:
-    raw = case.get("gold") or case.get("expected_sources")
-    if not raw or len(raw) < 2:
-        return None
-    return str(raw[0]), str(raw[1])
+gold_of = attribution.gold_of
 
 
 def check_cases(cases: list[dict], corpus_dir: Path) -> tuple[list[str], int]:
