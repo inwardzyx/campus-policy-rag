@@ -223,3 +223,25 @@ def test_gold_check_zero_gold_exits_nonzero(tmp_path) -> None:
                        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert r.returncode != 0, f"零 gold 却报绿：{r.stdout[-300:]}"
     assert "空转" in (r.stdout + r.stderr)
+
+def test_refusal_is_judged_by_answer_text_not_by_retrieval_hit() -> None:
+    """库外题：模型引用了"不充分"的资料并明说不知道 ⇒ 是正确拒答，不是"意外作答"。
+
+    ★ 旧判据用 `knowledge_hit` 代理"有没有答"，在这类答案上会全判错
+      （实测 20 题里 2 道被误判，报告里看起来像"拒答能力只有 1/3"）。
+    """
+    case = {"id": "r1", "type": "refuse", "question": "加班怎么调休？"}
+    refused = attribution.classify(
+        case, {"knowledge_hit": True, "answer": "资料中没有《加班与调休管理规定》，我不知道。"})
+    assert refused["bucket"] == "refuse_ok"
+
+    answered = attribution.classify(
+        case, {"knowledge_hit": True, "answer": "加班按 1.5 倍工资折算，也可以申请调休。"})
+    assert answered["bucket"] == "answered_unexpectedly"
+
+
+def test_looks_like_refusal_handles_empty_and_none() -> None:
+    assert attribution.looks_like_refusal(None) is False
+    assert attribution.looks_like_refusal("") is False
+    assert attribution.looks_like_refusal("这个问题我无法回答。") is True
+

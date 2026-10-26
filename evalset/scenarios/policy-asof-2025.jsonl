@@ -1,0 +1,3 @@
+{"id": "asof01", "type": "answer", "scenario": "policy-asof", "question": "一线城市出差住宿一晚最多报销多少？", "gold": ["差旅与费用报销管理办法（2024版）.md", "第四条（住宿标准）"]}
+{"id": "asof02", "type": "answer", "scenario": "policy-asof", "question": "出差回来后多少天内要提交报销单？", "gold": ["差旅与费用报销管理办法（2024版）.md", "第六条（报销时限）"]}
+{"id": "asof03", "type": "answer", "scenario": "policy-asof", "question": "出差伙食补助每天多少钱？", "gold": ["差旅与费用报销管理办法（2024版）.md", "第五条（伙食补助）"]}

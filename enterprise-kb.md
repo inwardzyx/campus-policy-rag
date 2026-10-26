@@ -228,6 +228,40 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 判据：`tests/test_session_eval.py` 10 条；`scripts/mutate_session.py` 把
 "补全判定"与"session_id 唯一来源"各打坏一次 —— **2/2 变红**，三个文件按字节还原。
 
+## 真实结构制度语料验收（policy，2026-10-26）
+
+语料：[`evalset/fixtures/policy_corpus/`](evalset/fixtures/policy_corpus/) —— 3 篇合成制度
+（差旅报销 2026 修订版 / 差旅报销 2024 版 / 考勤请假），**结构参照真实企业制度**
+（文号、生效日、修订记录、审批权限表、跨制度引用），但不是任何公司的内部文件。
+
+题集：20 题（17 应答 + 3 必须拒答）+ 3 题 as-of 对照。
+
+```text
+policy（event 2026-06-01）：应答 17/17、拒答 3/3
+  context recall / precision / nDCG@3 = 1.0；引用合法率 1.0；未标注段落 0.0
+  budget_cut 0；p95 ≈ 3.8s；归因 {ok:17, refuse_ok:3}
+as-of（event 2025-06-01，3 题）：3/3，答案带「按 2025-06-01 时点有效的版本」
+  值分别为 500 元/晚、60 日、100 元/日（旧版）
+不加 event_time：答「资料中存在两套互相冲突的限额，无法确定」——版本没定就不替用户选
+```
+
+### 这轮抓到的第二个「指标判错对象」
+
+库外题的拒答，旧判据用 `knowledge_hit` 代理「有没有答」。实测模型会引用**检索到但不充分**的
+资料，然后说「资料中没有…我不知道」——`knowledge_hit=True` 却是**正确拒答**，被误判成
+「意外作答」（20 题里 2 道，拒答显示 1/3）。
+
+改成按**答案文本**判（`looks_like_refusal`），拒答变 3/3。
+与之前 `rewrite_hit`（查询改写不该含条款号）是同一类错误：**判据测错了对象**。
+
+### 飞书接入的边界（实测，2026-10-26）
+
+- `tenant_access_token` **不能自举进知识空间**：加成员报 `131006 permission denied`；
+- 知识空间成员接口的合法组合是 **`member_type=appid` + `member_role=member`**
+  （`app`/`openapp` → `invalid member_type`；`read/reader/viewer/edit/editor` → `invalid member_role`）；
+- **公开空间不允许任何成员**（`131101 public wiki space can't create member`）→ 想加成员必须先改回私有；
+- 结论：需要管理员在管理后台给应用开「云文档/知识库访问」，或走 `user_access_token` 桥接（不推荐长期）。
+
 ## 连接器与增量同步（S1，2026-10-26）
 
 文件：[`kb/connectors/`](kb/connectors/)。把"外部系统"收敛成两个动作（**列文档 / 取正文**），

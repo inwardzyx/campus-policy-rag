@@ -51,6 +51,20 @@ def _trace(response: Mapping[str, Any]) -> dict[str, Any] | None:
     return ctx if isinstance(ctx, dict) else None
 
 
+#: 拒答的文本标记。宁可多认几个：漏认会把"正确拒答"记成"编造答案"；
+#: 多认最多把"我不知道，但第 3 条说…"记成拒答 —— 后者在报告里更容易被发现。
+_REFUSAL_MARKERS = (
+    "不知道", "无法回答", "无法据此", "无法确定", "资料不足", "资料中没有",
+    "未提供", "没有找到", "未收录", "不编", "不足以", "没有列出", "无法说明",
+)
+
+
+def looks_like_refusal(answer: str | None) -> bool:
+    """答案文本里有没有"我答不了"的明确标记。"""
+    text = str(answer or "")
+    return any(marker in text for marker in _REFUSAL_MARKERS)
+
+
 def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, Any]:
     """返回 `{bucket, reason, gold, context_available}` —— 可直接写进报告逐条展示。"""
     typ = str(case.get("type", "answer"))
@@ -66,8 +80,13 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
                    reason="越权题却命中了块" if hit else "越权题被正确拒答")
         return out
     if typ == "refuse":
-        out.update(bucket="answered_unexpectedly" if hit else "refuse_ok",
-                   reason="库外题却答了" if hit else "库外题被正确拒答")
+        # ★ 判据必须是**答案文本**，不能用"检索有没有命中"代理：
+        #   实测模型会引用"检索到了但不充分"的资料，然后说"资料中没有…我不知道"；
+        #   这时 knowledge_hit=True 却是**正确拒答**，旧代理把两道判成了"意外作答"。
+        refused = looks_like_refusal(response.get("answer"))
+        out.update(bucket=("refuse_ok" if (refused or not hit) else "answered_unexpectedly"),
+                   reason=("库外题被正确拒答（答案里明说不知道）" if refused else
+                           ("库外题却答了" if hit else "库外题被正确拒答")))
         return out
 
     # ---- 以下都是 answer 题 ----

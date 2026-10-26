@@ -1,0 +1,685 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "policy",
+  "mode": "http",
+  "n_cases": 20,
+  "generated_at": "2026-10-26T13:09:28+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\policy.jsonl",
+    "namespace": "policy_eval",
+    "event_time": "2026-06-01",
+    "limit": null,
+    "wall_clock_ms": 62811,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 20,
+    "answer": {
+      "passed": 17,
+      "total": 17,
+      "rate": 1.0,
+      "wilson_95": [
+        0.8157,
+        1.0
+      ]
+    },
+    "refuse": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385,
+        1.0
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 1.0,
+    "context_precision": 1.0,
+    "ndcg@3": 1.0,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.0,
+    "p95_ms": 3837,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 17,
+      "refuse_ok": 3
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0
+    },
+    "notes": [
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "p01",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "一线城市出差住宿一晚最多报销多少？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3605,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第八条（住宿标准）",
+        "差旅与费用报销管理办法（2024版）.md｜第四条（住宿标准）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第八条（住宿标准）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，资料中“一线城市”对应一类城市（北京、上海、深圳、广州）。但两份资料对一类城市的住宿费限额不一致：[1] 为 600 元/人·晚，[2] 为 500 元/人·晚。因此仅凭现有资料无法确定唯一上限，不知道应以哪份为准。"
+    },
+    {
+      "id": "p02",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "出差回来后多少天内要提交报销单？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3332,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第十三条（报销时限）",
+        "差旅与费用报销管理办法（2024版）.md｜第六条（报销时限）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第十三条（报销时限）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，资料中关于报销提交期限存在不一致：一处规定出差结束后 30 日内提交，超过 30 日须附书面说明并经部门负责人与财务部双重审批，超过 90 日原则上不予受理[1]；另一处规定出差结束后 60 日内提交，逾期须说明原因[2]。因此仅凭现有资料无法确定唯一期限，具体以哪条为准不知道。"
+    },
+    {
+      "id": "p03",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "预计出差费用 2 万元，需要谁审批？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3394,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第四条（审批层级）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第四条（审批层级）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，预计出差费用 2 万元（属于 10,000（含）–30,000 元/人次档），需要由分管副总审批，并报财务部备案。[1]"
+    },
+    {
+      "id": "p04",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "出差伙食补助每天多少钱？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3218,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第十一条（伙食补助）",
+        "差旅与费用报销管理办法（2024版）.md｜第五条（伙食补助）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第十一条（伙食补助）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，资料中同时出现两种标准：每人每日 120 元[1]和每人每日 100 元[2]，无法据此确定唯一标准，因此不知道每天具体是多少。"
+    },
+    {
+      "id": "p05",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "坐飞机公务舱需要哪一级批准？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3049,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第七条（交通工具）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第七条（交通工具）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：乘坐飞机公务舱须经分管副总事前批准。[1]"
+    },
+    {
+      "id": "p06",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "招待客户人均标准不能超过多少？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2859,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第十二条（招待费）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第十二条（招待费）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：招待客户人均标准不超过 300 元。[1]"
+    },
+    {
+      "id": "p07",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "同一张电子发票重复报销会怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3127,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第十五条（电子发票）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第十五条（电子发票）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：同一张电子发票重复报销的，除追回款项外，按《员工奖惩管理办法》处理。[1]"
+    },
+    {
+      "id": "p08",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "和同事合住一间双床房，住宿费怎么报？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3837,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第九条（住宿的特殊情形）",
+        "差旅与费用报销管理办法（2026修订版）.md｜第八条（住宿标准）",
+        "差旅与费用报销管理办法（2024版）.md｜第四条（住宿标准）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第九条（住宿的特殊情形）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，资料中仅能确认：因会议或培训统一安排住宿的，同性别同事合住一间双床房的，按一间限额报销[1]。至于合住时具体按每人还是每间、按哪一档限额计算，资料没有明确说明，不知道。"
+    },
+    {
+      "id": "p09",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "报销对发票抬头和税号有什么要求？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2785,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第十四条（票据要求）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第十四条（票据要求）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：报销须提供合规发票（增值税普通发票或专用发票），发票抬头须为公司全称，税号准确[1]。"
+    },
+    {
+      "id": "p10",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "单笔报销金额超过 1 万元，财务部要做什么？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3422,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2026修订版）.md｜第十六条（报销审核）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2026修订版）.md",
+        "第十六条（报销审核）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，单笔金额超过 10,000 元的，财务部应执行双人复核。[1]"
+    },
+    {
+      "id": "p11",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "请 5 天假需要谁审批？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3386,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第六条（审批权限）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第六条（审批权限）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，请 5 天假需要分管副总审批。[1]"
+    },
+    {
+      "id": "p12",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "年休假 5 天对应什么工龄？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2745,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第七条（年休假）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第七条（年休假）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：年休假 5 天对应累计工作满 1 年不满 10 年。[1]"
+    },
+    {
+      "id": "p13",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "连续病假超过 3 天要提供什么材料？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3122,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第八条（病假）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第八条（病假）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：连续病假超过 3 天的，须提供诊断证明与病历。[1]"
+    },
+    {
+      "id": "p14",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "假期结束后什么时候要销假？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3335,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第十二条（销假）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第十二条（销假）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，员工应在假期结束后 1 个工作日内 在系统销假。[1]"
+    },
+    {
+      "id": "p15",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "用伪造病历骗取准假会怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4134,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第十四条（虚假请假的处理）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第十四条（虚假请假的处理）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：以欺骗手段（包括伪造病历）获取准假的，除按旷工处理外，可依据《员工奖惩管理办法》给予警告至解除劳动合同的处分，并追回已发放的假期工资。[1]"
+    },
+    {
+      "id": "p16",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "迟到 20 分钟怎么算？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3330,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第三条（迟到与早退）",
+        "员工考勤与请假管理办法.md｜第二条（弹性与打卡）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第三条（迟到与早退）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：单次迟到 20 分钟属于“迟到 30 分钟以内”，每月前 3 次不计；超过 3 次的，每次扣发当日绩效 10%[1]。"
+    },
+    {
+      "id": "p17",
+      "type": "answer",
+      "scenario": "policy",
+      "question": "陪产假有多少天？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2534,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第十条（婚假、产假、丧假）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "员工考勤与请假管理办法.md",
+        "第十条（婚假、产假、丧假）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：陪产假为 15 天。[1]"
+    },
+    {
+      "id": "p18",
+      "type": "refuse",
+      "scenario": "policy",
+      "question": "公司对员工的处分分哪几种？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3001,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第十四条（虚假请假的处理）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本，资料中没有说明公司对员工的处分分哪几种，我不知道。"
+    },
+    {
+      "id": "p19",
+      "type": "refuse",
+      "scenario": "policy",
+      "question": "加班之后怎么调休？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2638,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "员工考勤与请假管理办法.md｜第十七条（衔接）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2026-06-01 时点有效的版本：不知道。资料[1]只说明加班与调休按《加班与调休管理规定》执行，未提供该规定的具体调休办法。[1]"
+    },
+    {
+      "id": "p20",
+      "type": "refuse",
+      "scenario": "policy",
+      "question": "公司食堂几点开饭？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1671,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    }
+  ]
+}

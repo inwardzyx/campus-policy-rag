@@ -96,7 +96,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-314 passed, 27 skipped
+317 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -162,6 +162,21 @@ budget_cut_rate 0 / p95 4794ms
 ★ 修法是**数据触发**的：只有块带 `effective_date` 才把两块当"版本兄弟"（去重放行、入库不裁决），
   没有生效日的 docs/ 校规走原逻辑 ⇒ 263 留 / 23 拦那些数字一个没变（老守卫测试全绿）。
 ★ 也就是说：**as-of 能不能用，取决于语料有没有写生效日**。没写就诚实地按现行处理，不猜。
+
+**真实结构制度语料（policy，2026-10-26）** —— 3 篇合成制度（差旅 2026/2024 两版 + 考勤请假），
+20 题（17 应答 + 3 必须拒答）+ 3 题 as-of 对照
+
+```text
+policy（event 2026-06-01，n=20）：应答 17/17（Wilson [0.82, 1.0]）、拒答 3/3
+  recall/precision/nDCG@3 = 1.0；引用合法率 1.0；未标注段落 0.0；budget_cut 0；p95 ≈ 3.8s
+as-of（event 2025-06-01，n=3）：3/3；答案带「按 2025-06-01 时点有效的版本」，值 500 元 / 60 日 / 100 元
+不加 event_time：答「两套限额互相冲突，无法确定」——版本没定就不替用户选（刻意行为）
+```
+
+★ 这轮抓到第二个「指标判错对象」：库外题的拒答，旧判据用 `knowledge_hit` 代理「有没有答」，
+  把「引用了不充分资料 + 明说不知道」判成「意外作答」（20 题里误判 2 道，拒答显示 1/3）。
+  改成**按答案文本**判（`looks_like_refusal`，标记含「不知道/资料中没有/未提供/无法据此」），
+  拒答变成 3/3。与之前 `rewrite_hit` 那次是同一类错误：**判据测错了对象**。
 
 **S1 连接器与增量同步（2026-10-26）** —— 离线验收（fixture，`evalset/fixtures/connector_demo/`）
 
@@ -233,6 +248,11 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
   答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
+- **真实语料**：现有语料是「校规（真实但非企业）+ 制度（合成但结构真实）」，
+  **还没有一份真实公司的内部制度**；20 题验收是在合成语料上做的。
+- **飞书接入**：代码就绪（连接器/增量/ACL/报错清单），但**租户策略卡住**：
+  租户 token 不能自举进知识空间（131006），且公开空间不允许加成员（131101）；
+  UI 与本版本 API 都不支持把应用加为空间成员 —— 需要管理员在管理后台开权限。
 - **评测有请求级 + 会话级最小版**：会话级只测「改写有没有补全指代 + 逐轮对不对」；
   **工具/Agent 轨迹级没做**（没有多步工具，硬造指标是自欺，触发条件见 §5）。
 - **审计只有 JSONL**：单机追加 + 独立清理脚本；没有查询接口/审计库/签名链，也还没有对接 SIEM。
@@ -267,6 +287,8 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
 | 文档放错目录 | 把 `enterprise-kb.md` 放进 `docs/`，被当成 KB 语料，loader 测试计数变了 | 移到仓库根；`docs/` 只放语料 | ✅ 已解决 |
 | README 端点数过期 | 新增 `/kb` 路由后 README 仍写 7/10 个，pre-commit 报错 | 更新为 **11**；`scripts/check_readme_numbers.py` 强制校验 | ✅ 已解决 |
 | 飞书 token 取错层级 | 以为 `tenant_access_token` 在 `data` 下，实际在顶层 | `_request(..., raw=True)` 取顶层 | ✅ 已解决 |
+| 飞书知识空间成员 | `131002 invalid member_type` / `invalid member_role` / `131101 public wiki space can't create member` | 实测有效组合是 **`member_type=appid` + `member_role=member`**；但**公开空间不能加任何成员**（先改回私有），且 tenant 身份无权给自己加成员（131006）→ 需管理员 | **未解决（租户策略）** |
+| 改 `.env` 用记事本整体覆盖 | 服务全部 500：`DEEPSEEK_API_KEY must be set` | 改 `.env` 只**追加**、不要整篇粘贴；本次已从 Windows 用户环境变量恢复 | **已修复** |
 | 飞书 wiki 无权限 | `99991672 Access denied ...` | 已把报错翻译成清单（缺哪些 scope + **发版** + 加入知识空间），CLI 失败直接打印；scope 仍需你在后台开 | **未解决（需用户操作，但不再靠猜）** |
 | Docling 进程内被 WDAC 拦 | `_pava_pybind` DLL load failed，应用程序控制策略阻止 | 改用 Docker 容器；`docling-local` 仅留给无 WDAC 机器 | ✅ 绕过（非根治） |
 | Docker 拉取慢 / 镜像过大 | Docker Hub 慢；PyPI torch 拉 CUDA 依赖数 GB | base 用镜像源；CPU-only torch；镜像 2.86GB | ✅ 已解决 |
@@ -345,6 +367,14 @@ as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异
 
 **S1（连接器与增量同步）✅ 已完成（2026-10-26）**；`FeishuWikiSource` 已并入同一引擎。
 
+**policy 验收 ✅（2026-10-26）**：合成但结构真实的制度语料，17/17 + 3/3 + as-of 3/3。
+
+**下一步（按 ROI）**：
+1. **一份真实公司制度**（你能拿到的任何 HR/合规文件，敏感信息可替换）→ 重跑同一套 20 题；
+2. 飞书：等管理员在管理后台开通「应用访问云文档/知识库」；或改走 user_access_token 桥接（不推荐长期）；
+3. memory 层「恒 0」假指标要修（要么实现、要么从报告删掉）；
+4. 成本/延迟：每问 3 次 LLM 调用、p95 ≈ 3.8s。
+
 **S2（平台化）待你确认约束**：逻辑租户（前缀+配额+审计视图）/ 薄控制台 / compose profile。
 **S3（运营闭环）**：反馈→归因→候选题集 + 健康度周报。
 
@@ -402,6 +432,12 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\evalkit\` | 请求级评测内核：cases/metrics/report/transport（可复用，脚本只组装） |
 | `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
 | `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |
+| `D:\_review_rag-cs\evalset\fixtures\policy_corpus\` | 3 篇合成制度语料（含 2024/2026 两版，供 as-of 演示） |
+| `D:\_review_rag-cs\evalset\scenarios\policy.jsonl` | 20 题（17 应答 + 3 拒答），gold 指向条款标题 |
+| `D:\_review_rag-cs\evalset\scenarios\policy-asof-2025.jsonl` | 3 题 as-of 对照（按 2025 时点应命中旧版） |
+| `D:\_review_rag-cs\evalset\report-scenario-policy.json` | policy 报告（request-eval/1） |
+| `D:\_review_rag-cs\evalset\report-scenario-policy-asof-2025.json` | as-of 报告（3/3） |
+| `D:\_review_rag-cs\scripts\feishu_add_member.py` | 排障工具：查看/添加知识空间成员（实测 `appid`+`member`） |
 | `D:\_review_rag-cs\kb\connectors\core.py` | 连接器协议 + 增量同步引擎（哈希∪ACL∪元数据；删除只碰 owns()） |
 | `D:\_review_rag-cs\kb\connectors\fixture.py` | 本地 fixture 连接器（离线验收增量与权限变更） |
 | `D:\_review_rag-cs\kb\connectors\feishu.py` | 飞书 wiki 适配层（遍历/取正文/ACL 来源） |

@@ -136,3 +136,30 @@ D:\Python-project\.venv\Scripts\python.exe scripts/run_session_eval.py `
 ★ 会话级**刻意不测** step/tool/goal：系统一步就结束、history 只喂改写，
 硬造轨迹指标是自欺（HANDOFF §5 写了将来什么条件下才做）。
 
+## 制度语料套件：`policy`
+
+语料：`evalset/fixtures/policy_corpus/`（3 篇合成制度：差旅 2026 修订版 / 差旅 2024 版 / 考勤请假）。
+题集：`evalset/scenarios/policy.jsonl`（20 题 = 17 应答 + 3 必须拒答）。
+
+```powershell
+# 按"2026-06-01 时点有效"的版本回答（旧版会被 as-of 规则剔除）
+D:\Python-project\.venv\Scripts\python.exe scripts/run_scenario_eval.py `
+    --cases policy --namespace policy_eval --event-time 2026-06-01 `
+    --base-url http://127.0.0.1:8032 --out evalset/report-scenario-policy.json
+
+# 按 2025 年时点回答：同 3 问应命中旧版（500 元 / 60 日 / 100 元）
+D:\Python-project\.venv\Scripts\python.exe scripts/run_scenario_eval.py `
+    --cases policy-asof-2025 --namespace policy_eval --event-time 2025-06-01 `
+    --out evalset/report-scenario-policy-asof-2025.json
+```
+
+实测（2026-10-26）：
+
+```text
+policy（n=20）：应答 17/17、拒答 3/3；recall/precision/nDCG@3 = 1.0；引用合法率 1.0；
+                未标注段落 0.0；budget_cut 0；p95 ≈ 3.8s；归因 {ok:17, refuse_ok:3}
+as-of（n=3，event 2025-06-01）：3/3，答案带"按 2025-06-01 时点有效的版本"，值为 500 元 / 60 日 / 100 元
+```
+
+★ **不加 `--event-time` 时**，系统会答"资料中存在两套互相冲突的限额，无法确定"——这是刻意设计：
+  版本没定就不替用户选；要按某时点回答，显式给 `--event-time`。

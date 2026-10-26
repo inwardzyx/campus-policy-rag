@@ -1,0 +1,210 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "policy-asof-2025",
+  "mode": "http",
+  "n_cases": 3,
+  "generated_at": "2026-10-26T13:07:48+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\policy-asof-2025.jsonl",
+    "namespace": "policy_eval",
+    "event_time": "2025-06-01",
+    "limit": null,
+    "wall_clock_ms": 8389,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 3,
+    "answer": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385,
+        1.0
+      ]
+    },
+    "refuse": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 1.0,
+    "context_precision": 1.0,
+    "ndcg@3": 1.0,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.0,
+    "p95_ms": 3148,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 3
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0
+    },
+    "notes": [
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "asof01",
+      "type": "answer",
+      "scenario": "policy-asof",
+      "question": "一线城市出差住宿一晚最多报销多少？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2712,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2024版）.md｜第四条（住宿标准）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2024版）.md",
+        "第四条（住宿标准）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2025-06-01 时点有效的版本，一线城市（如北京、上海、深圳、广州）出差住宿报销限额为 500 元/人·晚。[1]"
+    },
+    {
+      "id": "asof02",
+      "type": "answer",
+      "scenario": "policy-asof",
+      "question": "出差回来后多少天内要提交报销单？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3148,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2024版）.md｜第六条（报销时限）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2024版）.md",
+        "第六条（报销时限）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2025-06-01 时点有效的版本：员工应在出差结束后 60 日内提交报销申请，逾期须说明原因。[1]"
+    },
+    {
+      "id": "asof03",
+      "type": "answer",
+      "scenario": "policy-asof",
+      "question": "出差伙食补助每天多少钱？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2450,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "差旅与费用报销管理办法（2024版）.md｜第五条（伙食补助）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "差旅与费用报销管理办法（2024版）.md",
+        "第五条（伙食补助）"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "按 2025-06-01 时点有效的版本：出差伙食补助为每人每日 100 元，包干使用。[1]"
+    }
+  ]
+}

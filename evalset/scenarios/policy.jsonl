@@ -1,0 +1,20 @@
+{"id": "p01", "type": "answer", "scenario": "policy", "question": "一线城市出差住宿一晚最多报销多少？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第八条（住宿标准）"]}
+{"id": "p02", "type": "answer", "scenario": "policy", "question": "出差回来后多少天内要提交报销单？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第十三条（报销时限）"]}
+{"id": "p03", "type": "answer", "scenario": "policy", "question": "预计出差费用 2 万元，需要谁审批？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第四条（审批层级）"]}
+{"id": "p04", "type": "answer", "scenario": "policy", "question": "出差伙食补助每天多少钱？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第十一条（伙食补助）"]}
+{"id": "p05", "type": "answer", "scenario": "policy", "question": "坐飞机公务舱需要哪一级批准？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第七条（交通工具）"]}
+{"id": "p06", "type": "answer", "scenario": "policy", "question": "招待客户人均标准不能超过多少？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第十二条（招待费）"]}
+{"id": "p07", "type": "answer", "scenario": "policy", "question": "同一张电子发票重复报销会怎么处理？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第十五条（电子发票）"]}
+{"id": "p08", "type": "answer", "scenario": "policy", "question": "和同事合住一间双床房，住宿费怎么报？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第九条（住宿的特殊情形）"]}
+{"id": "p09", "type": "answer", "scenario": "policy", "question": "报销对发票抬头和税号有什么要求？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第十四条（票据要求）"]}
+{"id": "p10", "type": "answer", "scenario": "policy", "question": "单笔报销金额超过 1 万元，财务部要做什么？", "gold": ["差旅与费用报销管理办法（2026修订版）.md", "第十六条（报销审核）"]}
+{"id": "p11", "type": "answer", "scenario": "policy", "question": "请 5 天假需要谁审批？", "gold": ["员工考勤与请假管理办法.md", "第六条（审批权限）"]}
+{"id": "p12", "type": "answer", "scenario": "policy", "question": "年休假 5 天对应什么工龄？", "gold": ["员工考勤与请假管理办法.md", "第七条（年休假）"]}
+{"id": "p13", "type": "answer", "scenario": "policy", "question": "连续病假超过 3 天要提供什么材料？", "gold": ["员工考勤与请假管理办法.md", "第八条（病假）"]}
+{"id": "p14", "type": "answer", "scenario": "policy", "question": "假期结束后什么时候要销假？", "gold": ["员工考勤与请假管理办法.md", "第十二条（销假）"]}
+{"id": "p15", "type": "answer", "scenario": "policy", "question": "用伪造病历骗取准假会怎么处理？", "gold": ["员工考勤与请假管理办法.md", "第十四条（虚假请假的处理）"]}
+{"id": "p16", "type": "answer", "scenario": "policy", "question": "迟到 20 分钟怎么算？", "gold": ["员工考勤与请假管理办法.md", "第三条（迟到与早退）"]}
+{"id": "p17", "type": "answer", "scenario": "policy", "question": "陪产假有多少天？", "gold": ["员工考勤与请假管理办法.md", "第十条（婚假、产假、丧假）"]}
+{"id": "p18", "type": "refuse", "scenario": "policy", "question": "公司对员工的处分分哪几种？"}
+{"id": "p19", "type": "refuse", "scenario": "policy", "question": "加班之后怎么调休？"}
+{"id": "p20", "type": "refuse", "scenario": "policy", "question": "公司食堂几点开饭？"}

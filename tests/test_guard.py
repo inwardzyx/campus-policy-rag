@@ -31,6 +31,7 @@
 import ast
 import os
 import sys
+from pathlib import Path
 
 # 这两行必须放在 import 项目模块之前：
 # os.environ 是"这个 Python 进程自己的环境变量字典"，改它只影响当前进程。
@@ -72,6 +73,18 @@ def clauses(rag):
 # ① 总数：少一条、多一条都要报警
 #    ★ 没有这一条的话，"误伤型"改动（把关太严、把该留的也杀了）会全绿通过
 # ==================================================================
+#: `docs/kb` 里的文件名集合。
+#: ★ 为什么要按它过滤：`rag.chunks` 还包含 `kb_data/` 下的**运行时**语料
+#:   （跑评测/演示会往里写）。测试曾因此从 263 变成 310 —— 那不是语料坏了，
+#:   是断言把"运行时数据"也算进了"仓库语料"。测试不该依赖运行时目录。
+# 含 docs/inbox 的脏数据标本：它们本来就会被拦下，也是"仓库语料"的一部分。
+REAL_DOCS = {p.name for p in (Path(__file__).resolve().parents[1] / "docs").rglob("*.md")}
+
+
+def _real_only(items, key=lambda x: x):
+    return [x for x in items if (key(x) or {}).get("doc") in REAL_DOCS]
+
+
 def test_kept_count_matches_real_corpus(rag):
     """真实语料（学校公开制度）入库块数。
 
@@ -85,8 +98,9 @@ def test_kept_count_matches_real_corpus(rag):
       `experiments/clean_corpus.py` 统一加元信息 + 按"第X条"切块）。
       233 块原始 → 过完五道关留 200 块。
     """
-    assert len(rag.chunks) == 263, (
-        f"放行了 {len(rag.chunks)} 条，应该是 263 条。"
+    real = _real_only(rag.chunks)
+    assert len(real) == 263, (
+        f"放行了 {len(real)} 条（只看 docs/kb），应该是 263 条。"
         f"改动 docs/ 之后记得同步这个数字，并检查下面盯具体条款的断言有没有跟着失效。")
 
 
@@ -118,7 +132,8 @@ def test_rejected_count_is_23(rag):
       ⇒ 五关覆盖度现在有两层证据：注入夹具证明"关卡能触发"，
         这里的真实语料证明"关卡在真实输入上也会触发"。
     """
-    assert len(rag.rejected) == 23, f"拦下了 {len(rag.rejected)} 条，应该是 23 条"
+    real_rejected = _real_only(rag.rejected, key=lambda r: r[0])
+    assert len(real_rejected) == 23, f"拦下了 {len(real_rejected)} 条（只看 docs/kb），应该是 23 条"
 
 
 # ==================================================================
