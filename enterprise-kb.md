@@ -182,6 +182,52 @@ ALCE（Gao et al., EMNLP 2023）的 citation precision 判断"这句话是否**�
 判据的变异体：[`scripts/mutate_citation.py`](scripts/mutate_citation.py) —— 编号从 0 开始 /
 越界不标记，**2/2 变红**，并按字节还原（sha256 一致）。
 
+## 会话轨迹级评测（2026-10-26，A+B）
+
+先做"能做对的"，不做"看起来高级的"：系统的跨轮状态只有 `session.py` 里最近 5 轮**问题原文**
+（30 分钟 TTL），历史**只喂查询改写**、不喂精排与生成。所以会话级只测这条链路。
+
+### A. 轨迹的键（基础设施）
+
+- `ContextTrace` / `ContextSummary` / 审计记录增加 `session_id` 与 `turn_index`
+  （窗口内第几轮；超过保留窗口会饱和在 N+1，这是保留策略的已知限制）；
+- `rewritten_query` 只进 **trace**（客户端本来就发过那句话），**审计不记**（审计保持无原文）；
+- trace 是唯一来源：摘要由 `from_trace` 整份拷贝 —— 删掉了原先的二次赋值
+  （两处赋值 = 改一处忘一处，而漏掉的那处不报错，只静默少字段）。
+
+### B. 会话级套件与指标
+
+`evalset/scenarios/sessions/campus-followups.jsonl`：10 个会话 / 22 轮
+（指代追问、连续拒答、换主题追问、口语问法）；`scripts/run_session_eval.py` 复用 `kb/evalkit`。
+
+| 指标 | 口径 |
+|---|---|
+| `session_pass` | 整个会话每一轮都对 |
+| `turn_pass_rate` | 逐轮正确率 |
+| `rewrite_used` | 真的用上历史改写的轮数 |
+| `ellipsis_turns` | 真正"省字追问"的轮数（改写指标分母） |
+| `rewrite_resolved_rate` | 省掉的上下文实词被改写补回的比例 |
+| `repeat_question_rate` | 同会话重复提问比例 |
+
+### 实测（`evalset/report-sessions-campus-followups.json`）
+
+```text
+整个会话全对 8/10 = 80%（Wilson [0.49, 0.94]）；逐轮正确率 0.9091
+改写用了 12 轮，其中省字追问 4 轮，指代补全率 1.0；重复提问率 0
+失败：s10#1（释义问法的检索遗漏）、s09#3（"学费多少"被答了 —— 跨轮拒答不一致）
+```
+★ 单次采样、10 个会话：两次跑 s09 的拒答表现就不同，别把 80% 当承诺值。
+
+### 指标返工记录（值得记）
+
+第一版 `rewrite_hit` 要求改写结果里出现 gold 条款号/文档名 —— 实测 12 轮改写全都合理
+（"那一个礼拜呢？" → "请假一周以内由谁审批？"），却**全判 0**。
+错因：**查询改写产出的是问句，不是引用**。改成 `rewrite_resolved`（省掉的实词有没有被补回），
+并把拒答题的主题切换排除出分母（"那食堂几点开饭？"不是对上一轮的省字），才得到 4/4。
+
+判据：`tests/test_session_eval.py` 10 条；`scripts/mutate_session.py` 把
+"补全判定"与"session_id 唯一来源"各打坏一次 —— **2/2 变红**，三个文件按字节还原。
+
 ## 审计落盘（2026-10-26，批 5）
 
 文件：[`kb/audit.py`](kb/audit.py)、[`scripts/prune_audit.py`](scripts/prune_audit.py)。

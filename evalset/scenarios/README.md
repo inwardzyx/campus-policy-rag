@@ -97,3 +97,42 @@ D:\Python-project\.venv\Scripts\python.exe scripts/run_scenario_eval.py `
 ... scripts/run_scenario_eval.py --transport inproc
 ```
 
+## 会话级（多轮）套件：`sessions/`
+
+`evalset/scenarios/sessions/*.jsonl`，一行一个会话：
+
+```json
+{"id": "s07", "type": "session", "scenario": "campus-followups",
+ "turns": [
+   {"question": "请假一天以内由谁审批？", "type": "answer", "gold": ["学生请销假制度.md", "总则-第三条"]},
+   {"question": "那一个礼拜呢？",       "type": "answer", "gold": ["学生请销假制度.md", "总则-第三条"]}
+ ]}
+```
+
+跑法（复用 `kb/evalkit` 的题集/指标/报告，**不是**第二套实现）：
+
+```powershell
+D:\Python-project\.venv\Scripts\python.exe scripts/run_session_eval.py `
+    --cases evalset/scenarios/sessions/campus-followups.jsonl `
+    --namespace campus_eval --bootstrap-docs docs/kb `
+    --base-url http://127.0.0.1:8029 --out evalset/report-sessions-campus-followups.json
+```
+
+指标（`schema_version=session-eval/1`）：
+
+| 指标 | 口径 | 什么时候是 null |
+|---|---|---|
+| `session_pass` | 整个会话每一轮都对 | 无会话 |
+| `turn_pass_rate` | 逐轮正确率（合并所有会话） | 无轮次 |
+| `rewrite_used` | 真的用上历史改写的轮数 | 0 = 没触发 |
+| `ellipsis_turns` | 真正"省字追问"的轮数（改写指标分母） | 0 = 这套题没有指代 |
+| `rewrite_resolved_rate` | 省掉的上下文实词被改写补回的比例 | 没有省字追问/没触发改写 |
+| `repeat_question_rate` | 同会话重复提问的比例 | 无轮次 |
+
+★ **`rewrite_resolved_rate` 是粗代理**（词重叠），不是语义判断；它只回答"改写有没有把省掉的词
+补回来"，不回答"补得对不对"。第一版判据要求改写里出现 gold 条款号 —— 实测 12 轮合理改写全判 0，
+因为**查询改写产出的是问句、不是引用**；这条经验写在 `kb/evalkit/session.py` 顶部。
+
+★ 会话级**刻意不测** step/tool/goal：系统一步就结束、history 只喂改写，
+硬造轨迹指标是自欺（HANDOFF §5 写了将来什么条件下才做）。
+

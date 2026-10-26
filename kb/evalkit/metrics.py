@@ -114,6 +114,11 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
         "included": len(included),
         "sources": [s.get("doc") for s in (response.get("sources") or [])],
         "compression": (ctx or {}).get("compression"),
+        # ★ 会话级评测要用：改写后的检索词（只来自 trace）、gold（对齐用）、会话键。
+        "rewritten_query": (ctx or {}).get("rewritten_query"),
+        "gold": list(gold) if gold else None,
+        "session_id": (ctx or {}).get("session_id"),
+        "turn_index": (ctx or {}).get("turn_index"),
         # 留一段答案（截断）：报告要能被人逐条抽验，离线复算也要有输入
         "answer": (response.get("answer") or "")[:500],
     }

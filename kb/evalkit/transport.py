@@ -99,6 +99,9 @@ class HttpTransport:
             payload["acl"] = self.acl
         if self.event_time:
             payload["event_time"] = self.event_time
+        # ★ 会话级评测靠它把多轮串成一条轨迹；单题评测不带这个键，行为不变。
+        if case.get("session_id"):
+            payload["session_id"] = case.get("session_id")
         code, body = self._call("POST", "/chat",
                                 body=json.dumps(payload).encode("utf-8"),
                                 headers={"Content-Type": "application/json"})
@@ -129,7 +132,8 @@ class InProcTransport:
 
         req = svc.ChatRequest(question=case.get("question"),
                               namespace=self.namespace,
-                              event_time=self.event_time)
+                              event_time=self.event_time,
+                              session_id=case.get("session_id"))
         resp = svc.handle_chat(req)
         return resp.model_dump() if hasattr(resp, "model_dump") else dict(resp)
 

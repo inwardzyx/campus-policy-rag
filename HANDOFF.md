@@ -82,13 +82,16 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 评测内核（可复用） | ✅ | `kb/evalkit/`：cases（schema+校验+套件解析）/ metrics（**指标注册表**）/ report（`schema_version`+指标说明书）/ transport（http·recorded·inproc） |
 | 报告 schema | ✅ `request-eval/1` | `metric_specs` 自带 unit 与 missing 说明；加指标不改 runner |
 | 内核判据的变异体 | ✅ | `scripts/mutate_evalkit.py`：缺失补 0 / 不查重复 id，**2/2 变红 + 字节还原** |
+| 会话轨迹的键（A） | ✅ | trace / 审计带 `session_id` + `turn_index`；`rewritten_query` 只进 trace（审计保持无原文） |
+| 会话级评测（B） | ✅ 最小版（只测改写这条跨轮链路） | `kb/evalkit/session.py`、`scripts/run_session_eval.py`、`evalset/scenarios/sessions/campus-followups.jsonl`（10 会话 / 22 轮） |
+| 会话判据的变异体 | ✅ | `scripts/mutate_session.py`：指代补全恒 False / 拿掉 session_id，**2/2 变红** |
 
 ### 2.3 实测结果（可复现）
 
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-296 passed, 27 skipped
+306 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -155,6 +158,20 @@ budget_cut_rate 0 / p95 4794ms
   没有生效日的 docs/ 校规走原逻辑 ⇒ 263 留 / 23 拦那些数字一个没变（老守卫测试全绿）。
 ★ 也就是说：**as-of 能不能用，取决于语料有没有写生效日**。没写就诚实地按现行处理，不猜。
 
+**会话级评测（批 7，A+B，2026-10-26）** —— 产物 `evalset/report-sessions-campus-followups.json`
+
+```text
+10 个会话 / 22 轮：整个会话全对 8/10 = 80%（Wilson [0.49, 0.94]）、逐轮正确率 0.9091
+改写：用了 12 轮，其中真正省字追问 4 轮，指代补全率 1.0；重复提问率 0
+失败：s10#1（老熟人 q2 的释义问法检索遗漏）、s09#3（「学费多少」这轮被答了 —— 跨轮拒答不一致）
+```
+
+★ 一次运行 ≠ 稳定结论：10 个会话、单次采样；两次跑 s09 的拒答表现就不同。
+★ 指标返工过一次：第一版 `rewrite_hit` 要求改写里出现 gold 条款号/文档名，
+  实测 12 轮合理改写（「那一个礼拜呢？」→「请假一周以内由谁审批？」）**全判 0** ——
+  因为查询改写产出的是问句、不是引用。改成 `rewrite_resolved`（省掉的上下文实词有没有被补回）、
+  并把拒答题的主题切换排除出分母，才得到 4/4。
+
 **评测内核重构（批 6，行为保持）**：同一批 20 题、同一个服务，新旧 runner 的 8 个指标
 **逐项完全一致**（answer 14/15、recall/precision 0.9333、nDCG@3 0.9333、budget_cut 0、
 citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-scenario-campus-evalkit.json`
@@ -198,8 +215,8 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
   句子级抽取与超长块拆段**刻意没做**（见 §2.3 的取舍）。
 - **版本/as-of 已端到端可用**，但只在**语料带 `effective_date`** 时成立；
   答案正文还不会写"按 X 年 X 月版本"（模板没改，见 §5）。
-- **评测只有请求级**：会话级（多轮）与工具/Agent 轨迹级**还没做**；
-  trace 与审计里缺 `session_id`/`turn_index`，所以连"重建一次会话"都还不行。
+- **评测有请求级 + 会话级最小版**：会话级只测「改写有没有补全指代 + 逐轮对不对」；
+  **工具/Agent 轨迹级没做**（没有多步工具，硬造指标是自欺，触发条件见 §5）。
 - **审计只有 JSONL**：单机追加 + 独立清理脚本；没有查询接口/审计库/签名链，也还没有对接 SIEM。
 - **飞书真实同步没跑通**：应用没有 wiki scope（§4）。
 - **独立 70 题集没出**：只有 40+20+10 的模板和样例。
@@ -305,11 +322,17 @@ as-of 提问时答案开头会写"按 YYYY-MM-DD 时点有效的版本"。变异
 `schema_version` 报告 + 指标注册表 + 三种 transport；`scripts/run_scenario_eval.py`
 退化成薄 CLI；旧 `kb/eval_metrics` 只留兼容转发。**8/8 指标与重构前逐项一致**。
 
-**下一步（批 7，按优先级）**：
-1. **轨迹入口的键**：trace/审计补 `session_id` + `turn_index`（半小时，纯增量）；
-2. **会话轨迹评测**：复用 evalkit 的 cases/metrics/report，只加一个 `turns` 题型与 runner；
-3. memory 层条目化（让 trace 的 memory 层不再是 0）；
-4. P1 真实语料 20 题验收（等你给 HR/合规文档，最好带生效日）。
+**批 7（会话轨迹 A+B）✅ 已完成（2026-10-26）**：会话键进 trace/审计；
+会话级套件 + runner 复用 evalkit；指标 6 个（含 `rewrite_resolved_rate`）。
+
+**什么时候才做「完整轨迹评测」**：① 历史开始喂生成或检索；② 出现 ≥2 个工具的编排；
+③ 客户明确要会话级质检报告。在那之前不做（系统一步就结束，没有轨迹）。
+
+**下一步（按 ROI）**：
+1. **P1 真实语料 20 题**（等你给 HR/合规文档，最好带生效日）；
+2. memory 层：要么实现、要么从报告里删掉（现在 `used_chars` 恒 0 = 假指标）；
+3. 成本/延迟（每问 3 次 LLM 调用、p95 ≈ 4s）；
+4. 部署硬化（鉴权/限流/审计保留期）。
 
 ### P1：真实语料 + 20 题小型验收（与 P0 并行/紧随）
 
@@ -354,6 +377,11 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\kb\eval_metrics.py` | 上下文/检索指标：recall/precision/nDCG@3/budget_cut_rate/p95；缺失一律 `None`，不补 0 |
 | `D:\_review_rag-cs\scripts\run_scenario_eval.py` | 场景评测 runner：HTTP 跑题集或 `--responses` 离线复算 → 指标 + 逐题归因 JSON |
 | `D:\_review_rag-cs\scripts\check_eval_gold.py` | gold ↔ 语料联动检查（`## <clause>` 必须存在；扫 0 条报红） |
+| `D:\_review_rag-cs\kb\evalkit\session.py` | 会话级打分：会话全对率 / 改写补全（指代）/ 重复提问；拒答题不进改写分母 |
+| `D:\_review_rag-cs\scripts\run_session_eval.py` | 会话级 runner（复用 evalkit；http/recorded/inproc） |
+| `D:\_review_rag-cs\evalset\scenarios\sessions\campus-followups.jsonl` | 10 个会话 / 22 轮（指代、连续拒答、换主题追问） |
+| `D:\_review_rag-cs\evalset\report-sessions-campus-followups.json` | 会话级报告（schema `session-eval/1`） |
+| `D:\_review_rag-cs\scripts\mutate_session.py` | 会话判据变异体（补全恒 False / 无 session_id），2/2 变红 |
 | `D:\_review_rag-cs\kb\evalkit\` | 请求级评测内核：cases/metrics/report/transport（可复用，脚本只组装） |
 | `D:\_review_rag-cs\scripts\mutate_evalkit.py` | 内核变异体（缺失补 0、不查重复 id），2/2 变红 + 字节还原 |
 | `D:\_review_rag-cs\evalset\report-scenario-campus-evalkit.json` | 新 schema（request-eval/1）报告，8 指标与旧 runner 逐项一致 |

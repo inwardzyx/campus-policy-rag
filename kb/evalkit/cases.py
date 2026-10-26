@@ -18,12 +18,26 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-VALID_TYPES = ("answer", "refuse", "deny")
+VALID_TYPES = ("answer", "refuse", "deny", "session")
+
+#: 会话题里每一轮的 type 只许是这三类（"session" 不能套娃）
+TURN_TYPES = ("answer", "refuse", "deny")
 
 #: 套件名 → 相对仓库根的路径（新增场景套件只加一行）
 SUITES: dict[str, str] = {
     "campus": "evalset/questions.json",
 }
+
+
+def normalize_turn(turn: Mapping[str, Any], *, scenario: str | None = None) -> dict[str, Any]:
+    """会话里的一轮：形状与单题一致，但没有自己的 id/scenario。"""
+    out = {"question": str(turn.get("question") or ""),
+           "type": str(turn.get("type") or "answer").lower()}
+    raw_gold = turn.get("gold") or turn.get("expected_sources")
+    out["gold"] = [str(raw_gold[0]), str(raw_gold[1])] if raw_gold and len(raw_gold) >= 2 else None
+    if scenario:
+        out["scenario"] = scenario
+    return out
 
 
 def normalize_case(case: Mapping[str, Any], *, scenario: str | None = None) -> dict[str, Any]:
@@ -39,6 +53,8 @@ def normalize_case(case: Mapping[str, Any], *, scenario: str | None = None) -> d
         out["gold"] = [str(raw_gold[0]), str(raw_gold[1])]
     else:
         out["gold"] = None
+    if isinstance(case.get("turns"), list):
+        out["turns"] = [normalize_turn(t, scenario=scenario) for t in case["turns"]]
     return out
 
 
@@ -98,11 +114,26 @@ def validate_cases(cases: Iterable[Mapping[str, Any]]) -> list[str]:
         elif cid in seen:
             issues.append(f"{where}: id 重复（{cid}）—— 摘要会互相覆盖")
         seen.add(cid)
-        if not case.get("question"):
-            issues.append(f"{where}: question 为空")
         typ = str(case.get("type") or "answer")
+        # ★ 会话题没有顶层 question（问题在 turns 里）；别用单题规则去要求它。
+        if typ != "session" and not case.get("question"):
+            issues.append(f"{where}: question 为空")
         if typ not in VALID_TYPES:
             issues.append(f"{where}: type={typ!r} 不在 {VALID_TYPES}")
-        if typ == "answer" and not case.get("gold"):
+        if typ == "session":
+            # ★ 会话题：轮次为空 = 空转；每一轮自己也要过同样的校验。
+            turns = case.get("turns") or []
+            if not turns:
+                issues.append(f"{where}: session 题没有 turns（空会话等于空转）")
+            for ti, turn in enumerate(turns):
+                twhere = f"{where} 第 {ti + 1} 轮"
+                if not turn.get("question"):
+                    issues.append(f"{twhere}: question 为空")
+                ttype = str(turn.get("type") or "answer")
+                if ttype not in TURN_TYPES:
+                    issues.append(f"{twhere}: type={ttype!r} 不在 {TURN_TYPES}")
+                if ttype == "answer" and not turn.get("gold"):
+                    issues.append(f"{twhere}: answer 轮没有 gold（没法判分）")
+        elif typ == "answer" and not case.get("gold"):
             issues.append(f"{where}: answer 题没有 gold（{typ} 题无法判分，归因会失真）")
     return issues

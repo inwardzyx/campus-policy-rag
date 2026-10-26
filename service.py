@@ -1357,6 +1357,10 @@ class ContextSummary(BaseModel):
     compression: Optional[dict] = None
     # ★ 版本裁决报告：event_time / 各原因丢弃数 / 日期未知块数。
     as_of: Optional[dict] = None
+    # ★ 轨迹/审计的键：session_id + turn_index（窗口内第几轮）；rewritten_query 只进 trace。
+    session_id: Optional[str] = None
+    turn_index: Optional[int] = None
+    rewritten_query: Optional[str] = None
 
     @classmethod
     def from_trace(cls, trace) -> "ContextSummary":
@@ -1592,6 +1596,7 @@ def _sse_stream_worker(req: ChatStreamRequest, led: UsageLedger, out: "queue.Que
         cands = _search_for_request(req, search_q, roles=roles)
         # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
         cands = _final_acl_filter(cands, effective_acl, "检索后")
+        _SESSION_META.set(_session_meta(req, prior, search_q, session_used))
         cands, dropped_ver, as_of_report = version_mod.filter_versions(
             cands, event_time=getattr(req, "event_time", None))
         if not cands and dropped_ver:
@@ -1997,6 +2002,23 @@ def _search_for_request(req, query, roles=None):
     return rag.search(query, k=req.top_k)
 
 
+#: 本次请求的会话 meta（session_id/turn_index/rewritten_query）。
+#: ★ 用 contextvar 而不是逐个 return 点传参：handle_chat 6 个出口、worker 3 个，
+#:   逐个加必然漏一个，而漏掉的那条路径会变成"这次没有 session_id"——静默缺数据。
+#:   与 UsageLedger 用的是同一套机制（见它上面的长注释）。
+_SESSION_META: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "session_meta", default=None)
+
+
+def _session_meta(req, prior, search_q, session_used):
+    """构造会话 meta：窗口内第几轮 + 改写结果（只有真用了历史改写才记）。"""
+    if not getattr(req, "session_id", None):
+        return None
+    return {"session_id": req.session_id,
+            "turn_index": len(prior or []) + 1,
+            "rewritten_query": (search_q if session_used else None)}
+
+
 def _numbered(chunks, as_of_note: str | None = None):
     """给喂进 prompt 的块加 `cite_id`（1 起），返回**副本**。
 
@@ -2039,7 +2061,8 @@ def _candidate_blocks(items, limit: int = 10):
     return out
 
 
-def _plan_context(req, chunks, candidates=None, extra_dropped=None, as_of=None):
+def _plan_context(req, chunks, candidates=None, extra_dropped=None, as_of=None,
+                  session_meta=None):
     """算出这次**真正喂给生成模型**的块 + context 摘要（docs/ 路径原样返回、摘要 None）。
 
     ★ 两件事必须一起做：预算裁掉的块不能只从摘要里消失、却还留在喂给模型的那份里。
@@ -2051,6 +2074,7 @@ def _plan_context(req, chunks, candidates=None, extra_dropped=None, as_of=None):
     """
     if not getattr(req, "namespace", None):
         return list(chunks), None
+    session_meta = session_meta or _SESSION_META.get()
     # ★ 先压缩、再进预算：否则压缩腾出来的额度用不上（顺序错了等于白压）。
     chunks, compression = compress_mod.compress_chunks(
         chunks, mode=CONTEXT_COMPRESS_MODE)
@@ -2066,18 +2090,24 @@ def _plan_context(req, chunks, candidates=None, extra_dropped=None, as_of=None):
                                                candidates=candidates,
                                                compression=trace_compression,
                                                extra_dropped=extra,
-                                               as_of=as_of)
+                                               as_of=as_of,
+                                               session_meta=session_meta)
+    # ★ session 键由 trace 带过来（`from_trace` 会整份拷贝 trace.to_dict()），
+    #   这里**不再二次赋值**：两处赋值 = 改一处忘一处，而漏掉的那处不会报错，
+    #   只会让响应里静默少字段（本仓库为此栽过）。
     return list(kept), ContextSummary.from_trace(trace)
 
 
-def _exclusion_summary(req, chunks, reason, candidates=None):
+def _exclusion_summary(req, chunks, reason, candidates=None, session_meta=None):
     """没走到"选块"那一步的请求（低分拒答 / 模型没就绪）也留一份 trace。"""
     if not getattr(req, "namespace", None):
         return None
+    session_meta = session_meta or _SESSION_META.get()
     trace = context_mod.exclusion_trace(chunks, budget=CONTEXT_BUDGET,
                                         namespace=req.namespace, reason=reason,
-                                        candidates=candidates)
-    return ContextSummary.from_trace(trace)
+                                        candidates=candidates,
+                                        session_meta=session_meta)
+    return ContextSummary.from_trace(trace)      # 同上：session 键只由 trace 提供
 
 
 def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
@@ -2130,6 +2160,8 @@ def handle_chat(req: ChatRequest, led: "UsageLedger | None" = None, roles=None):
     cands = _search_for_request(req, search_q, roles=roles)
     # ★ 最终复检（第二道）：检索层已按 acl 过滤；这里防 rerank/后续扩展把块带回来
     cands = _final_acl_filter(cands, effective_acl, "检索后")
+    # ★ 会话键在这里定：prior/search_q/session_used 都已算好，且在任何 append_turn 之前。
+    _SESSION_META.set(_session_meta(req, prior, search_q, session_used))
     # ★ as-of 放在精排**之前**：否则旧版会白占一个 top3 名额，
     #   而精排分高并不代表它"当时有效"。
     cands, dropped_ver, as_of_report = version_mod.filter_versions(

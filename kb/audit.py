@@ -92,6 +92,10 @@ def build_event(req: Any, response: Mapping[str, Any], *, route: str,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "route": route,
         "trace_id": (ctx or {}).get("trace_id"),
+        # ★ 轨迹键：没有它们，"会话第 3 轮答错"在审计里就定位不到。
+        #   rewritten_query **刻意不记**：那是模型对用户原话的改写，审计保持无原文。
+        "session_id": (ctx or {}).get("session_id"),
+        "turn_index": (ctx or {}).get("turn_index"),
         "namespace": getattr(req, "namespace", None),
         # ★ 身份只存角色名（组织维度），问题只存哈希 —— 原文/个人标识都不进这条记录。
         "roles": list(roles or []),

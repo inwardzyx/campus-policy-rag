@@ -181,6 +181,13 @@ class ContextTrace:
     # ★ 版本裁决报告（as-of）：event_time / 分组数 / 各原因丢弃数 / 日期未知块数。
     #   没有它就看不出"这条为什么没用"到底是被预算裁的，还是被版本裁决掉的。
     as_of: dict[str, Any] | None = None
+    # ★ 2026-10-26 加（轨迹/审计的键）：没有这两样，"会话第 3 轮答错" 无法定位。
+    #   turn_index 的含义是"本次请求在窗口内的第几轮"（窗口 = session 保留的最近 N 轮），
+    #   超过窗口会饱和在 N+1 —— 这是保留策略的已知限制，不是 bug（见 session.py）。
+    session_id: str | None = None
+    turn_index: int | None = None
+    # ★ 改写后的检索词（只进 trace，不进审计）：多轮唯一的跨轮机制，不暴露就测不了。
+    rewritten_query: str | None = None
     # ★ 2026-10-26 加：压缩报告（mode/before_chars/after_chars/dedup_dropped/...）。
     #   默认 off ⇒ 空 dict；空 dict 与"压了但没变"是两件事，前者表示没启用。
     compression: dict[str, Any] | None = None
@@ -196,12 +203,30 @@ class ContextTrace:
             "candidates": [dict(c) for c in self.candidates],
             "compression": dict(self.compression) if self.compression else None,
             "as_of": dict(self.as_of) if self.as_of else None,
+            "session_id": self.session_id,
+            "turn_index": self.turn_index,
+            "rewritten_query": self.rewritten_query,
         }
 
 
 # ==================================================================
 # 选块
 # ==================================================================
+
+def _session_kwargs(meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    """把会话相关的三个键挑出来。**只认白名单**：trace 是响应体的一部分，
+    随手塞字段会让它慢慢变成"什么都往里放"的垃圾桶。"""
+    if not meta:
+        return {}
+    out = {}
+    if meta.get("session_id"):
+        out["session_id"] = str(meta["session_id"])
+    if meta.get("turn_index") is not None:
+        out["turn_index"] = int(meta["turn_index"])
+    if meta.get("rewritten_query"):
+        out["rewritten_query"] = str(meta["rewritten_query"])
+    return out
+
 
 def _chunk_text(chunk: Mapping[str, Any]) -> str:
     """块真正被喂进 prompt 的那段文本（`build_answer_prompt` 用 text_full 优先）。"""
@@ -243,6 +268,7 @@ def select_retrieved(
     compression: Mapping[str, Any] | None = None,
     extra_dropped: Sequence[Mapping[str, Any]] | None = None,
     as_of: Mapping[str, Any] | None = None,
+    session_meta: Mapping[str, Any] | None = None,
 ) -> tuple[list[Mapping[str, Any]], ContextTrace]:
     """按**给定顺序**贪心放入，返回 `(真正喂给模型的块, trace)`。
 
@@ -295,7 +321,8 @@ def select_retrieved(
                          budget=_budget_dict(budget, used),
                          candidates=[dict(c) for c in (candidates or [])],
                          compression=dict(compression) if compression else None,
-                         as_of=dict(as_of) if as_of else None)
+                         as_of=dict(as_of) if as_of else None,
+                         **(_session_kwargs(session_meta)))
     return kept, trace
 
 
@@ -307,6 +334,7 @@ def exclusion_trace(
     reason: str,
     trace_id: str | None = None,
     candidates: Sequence[Mapping[str, Any]] | None = None,
+    session_meta: Mapping[str, Any] | None = None,
 ) -> ContextTrace:
     """没走到"选块"那一步的请求（低分拒答 / 模型没就绪）：块全部记 excluded，预算一个没花。
 
@@ -318,7 +346,8 @@ def exclusion_trace(
     return ContextTrace(trace_id=tid, namespace=namespace, blocks=[], excluded=excluded,
                         degraded={"retrieval": reason},
                         budget=_budget_dict(budget, 0),
-                        candidates=[dict(c) for c in (candidates or [])])
+                        candidates=[dict(c) for c in (candidates or [])],
+                        **(_session_kwargs(session_meta)))
 
 
 # ==================================================================

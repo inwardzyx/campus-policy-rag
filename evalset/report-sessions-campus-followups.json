@@ -1,0 +1,962 @@
+{
+  "schema_version": "session-eval/1",
+  "suite": "campus-followups",
+  "mode": "http",
+  "cases_file": "evalset\\scenarios\\sessions\\campus-followups.jsonl",
+  "namespace": "campus_eval",
+  "generated_at": "2026-10-26T11:34:16+0800",
+  "wall_clock_ms": 70087,
+  "n_sessions": 10,
+  "metric_specs": {
+    "session_session_pass": {
+      "desc": "整个会话每题都对的会话占比",
+      "unit": "rate",
+      "missing": "无会话时为 None"
+    },
+    "session_turn_pass_rate": {
+      "desc": "逐轮正确率（会话内所有轮次合并）",
+      "unit": "rate",
+      "missing": "无轮次时为 None"
+    },
+    "session_rewrite_used": {
+      "desc": "真的用上历史改写的轮次数",
+      "unit": "count",
+      "missing": "0 = 没触发改写"
+    },
+    "session_ellipsis_turns": {
+      "desc": "真正「省字追问」的轮次数（改写指标的分母）",
+      "unit": "count",
+      "missing": "没有省字追问时为 0"
+    },
+    "session_rewrite_resolved_rate": {
+      "desc": "省掉的上下文实词被改写补回的比率",
+      "unit": "rate",
+      "missing": "没有省字追问或没触发改写时为 None"
+    },
+    "session_repeat_question_rate": {
+      "desc": "同会话内重复问题的比例",
+      "unit": "rate",
+      "missing": "无轮次时为 None"
+    },
+    "session_n_sessions": {
+      "desc": "会话数",
+      "unit": "count",
+      "missing": "恒可算"
+    },
+    "session_n_turns": {
+      "desc": "轮次数",
+      "unit": "count",
+      "missing": "恒可算"
+    },
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "session_n_sessions": 10,
+    "session_n_turns": 22,
+    "session_session_pass": {
+      "passed": 8,
+      "total": 10,
+      "rate": 0.8,
+      "wilson_95": [
+        0.4902,
+        0.9433
+      ]
+    },
+    "session_turn_pass_rate": 0.9091,
+    "session_rewrite_used": 12,
+    "session_ellipsis_turns": 4,
+    "session_rewrite_resolved_rate": 1.0,
+    "session_repeat_question_rate": 0.0,
+    "n_cases": 22,
+    "answer": {
+      "passed": 18,
+      "total": 19,
+      "rate": 0.9474,
+      "wilson_95": [
+        0.7536,
+        0.9906
+      ]
+    },
+    "refuse": {
+      "passed": 2,
+      "total": 3,
+      "rate": 0.6667,
+      "wilson_95": [
+        0.2077,
+        0.9385
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 0.9474,
+    "context_precision": 0.9474,
+    "ndcg@3": 0.9279,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.1,
+    "p95_ms": 4124,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "failure_buckets": {
+      "retrieval_miss": 1,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0
+    },
+    "notes": [
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ],
+    "turn_buckets": {
+      "ok": 18,
+      "refuse_ok": 2,
+      "answered_unexpectedly": 1,
+      "retrieval_miss": 1
+    }
+  },
+  "sessions": [
+    {
+      "id": "s01",
+      "turns": 3,
+      "passed": 3,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 2,
+      "ellipsis_turns": 0,
+      "rewrite_resolved_rate": null,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s01#1": "ok",
+        "s01#2": "ok",
+        "s01#3": "ok"
+      }
+    },
+    {
+      "id": "s02",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 0,
+      "rewrite_resolved_rate": null,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s02#1": "ok",
+        "s02#2": "ok"
+      }
+    },
+    {
+      "id": "s03",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 0,
+      "rewrite_resolved_rate": null,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s03#1": "ok",
+        "s03#2": "ok"
+      }
+    },
+    {
+      "id": "s04",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 0,
+      "rewrite_resolved_rate": null,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s04#1": "ok",
+        "s04#2": "ok"
+      }
+    },
+    {
+      "id": "s05",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 0,
+      "rewrite_resolved_rate": null,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s05#1": "ok",
+        "s05#2": "ok"
+      }
+    },
+    {
+      "id": "s06",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 1,
+      "rewrite_resolved_rate": 1.0,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s06#1": "ok",
+        "s06#2": "ok"
+      }
+    },
+    {
+      "id": "s07",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 1,
+      "rewrite_resolved_rate": 1.0,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s07#1": "ok",
+        "s07#2": "ok"
+      }
+    },
+    {
+      "id": "s08",
+      "turns": 2,
+      "passed": 2,
+      "turn_pass_rate": 1.0,
+      "session_pass": true,
+      "rewrite_used": 1,
+      "ellipsis_turns": 1,
+      "rewrite_resolved_rate": 1.0,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s08#1": "ok",
+        "s08#2": "ok"
+      }
+    },
+    {
+      "id": "s09",
+      "turns": 3,
+      "passed": 2,
+      "turn_pass_rate": 0.6667,
+      "session_pass": false,
+      "rewrite_used": 2,
+      "ellipsis_turns": 0,
+      "rewrite_resolved_rate": null,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s09#1": "refuse_ok",
+        "s09#2": "refuse_ok",
+        "s09#3": "answered_unexpectedly"
+      }
+    },
+    {
+      "id": "s10",
+      "turns": 2,
+      "passed": 1,
+      "turn_pass_rate": 0.5,
+      "session_pass": false,
+      "rewrite_used": 1,
+      "ellipsis_turns": 1,
+      "rewrite_resolved_rate": 1.0,
+      "repeat_questions": 0,
+      "repeat_question_rate": 0.0,
+      "buckets": {
+        "s10#1": "retrieval_miss",
+        "s10#2": "ok"
+      }
+    }
+  ],
+  "rows": [
+    {
+      "id": "s01#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "学校对学生的处分有哪几种？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3315,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第四条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第四条"
+      ],
+      "session_id": "s01-752eb4e1",
+      "turn_index": 1,
+      "answer": "学校对学生的处分种类有：警告、严重警告、记过、留校察看、开除学籍。[1]"
+    },
+    {
+      "id": "s01#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "什么情形可以从轻处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3060,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第六条"
+      ],
+      "compression": null,
+      "rewritten_query": "可以给予从轻处分的情形有哪些",
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第六条"
+      ],
+      "session_id": "s01-752eb4e1",
+      "turn_index": 2,
+      "answer": "根据资料，可以从轻处分的情形为：能主动承认错误，如实交待错误事实，检查认识深刻，有悔改表现者；以及确属他人胁迫或诱骗，并能主动检举、揭发，认错态度好，能协助学校查处违纪事件，有立功表现者。上述情形还需满足“危害后果轻微”这一前提。[1]"
+    },
+    {
+      "id": "s01#3",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "哪些情况要从重处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3131,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第七条"
+      ],
+      "compression": null,
+      "rewritten_query": "哪些情形应当从重处分？",
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第七条"
+      ],
+      "session_id": "s01-752eb4e1",
+      "turn_index": 3,
+      "answer": "根据资料，以下情况应予从重处分（且危害后果较大）：\n\n- 故意隐瞒、串供、歪曲、捏造事实，以及妨碍有关部门、单位调查，或者拒不承认错误者[1]。\n- 采用任何手段对有关人员进行打击报复、威胁恫吓者[1]。\n- 在处分期间再次违纪的[1]。\n- 一人同时有两项以上违纪行为的（含两项）[1]。"
+    },
+    {
+      "id": "s02#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "考试作弊要受什么处分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4124,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第二十五条",
+        "学生纪律处分管理规定.md｜第三章-第二十四条",
+        "学生纪律处分管理规定.md｜第三章-第二十三条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第二十四条"
+      ],
+      "session_id": "s02-1cd374b5",
+      "turn_index": 1,
+      "answer": "根据资料，考试作弊的处分取决于具体情节：\n\n1. 有资料[1]所列六类严重作弊行为之一的（如偷窃试卷、抢夺他人试卷、代替考试且性质恶劣、组织团伙作弊或使用通讯/电子设备作弊且性质恶劣后果严重、省级以上考试作弊触犯刑法等），给予开除学籍处分。[1]\n\n2. 有资料[2]所列情节之一的（如携带手机等电子设备进入考场、携带或抄袭试题答案及相关资料、交换试卷或传递答案、故意销毁考试材料、代替考试但认错态度好且未造成严重后果等），按作弊处理，给予留校察看处分；第二次考试作弊，给予开除学籍处分。[2]\n\n3. 对于不遵守考场纪律但尚未构成作弊的行为（资料[3]所列情形），给予严重警告或记过处分。[3]\n\n资料未涵盖其他未列明情形的具体处分，该部分不知道。"
+    },
+    {
+      "id": "s02#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "第二次考试作弊会被开除学籍吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3359,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第二十四条",
+        "学生纪律处分管理规定.md｜第三章-第二十五条"
+      ],
+      "compression": null,
+      "rewritten_query": "第二次考试作弊是否会被开除学籍？",
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第二十四条"
+      ],
+      "session_id": "s02-1cd374b5",
+      "turn_index": 2,
+      "answer": "会。第二次考试作弊的，给予开除学籍处分。[1]"
+    },
+    {
+      "id": "s03#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "请假一天以内由谁审批？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3378,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "session_id": "s03-78797684",
+      "turn_index": 1,
+      "answer": "请假一天以内由班主任审批。[1]"
+    },
+    {
+      "id": "s03#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "我要请一个礼拜的假，需要哪一级批准？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3321,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条",
+        "学生请销假制度.md｜总则-第二条"
+      ],
+      "compression": null,
+      "rewritten_query": "学生请假一周需要哪一级审批？",
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "session_id": "s03-78797684",
+      "turn_index": 2,
+      "answer": "根据资料，请假一周以内由二级学院审批[1]。同时，请假须填写《请假单》，先经班主任批准，再按准假权限逐级报有关部门审批，并将有效请假单交学生纪检部门后方可离校或不参加学习及活动[2]。"
+    },
+    {
+      "id": "s04#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "假期结束不销假会有什么后果？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3045,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "学生请销假制度.md｜总则-第四条",
+        "学生请销假制度.md｜总则-第三条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第四条"
+      ],
+      "session_id": "s04-a928b0e7",
+      "turn_index": 1,
+      "answer": "根据资料，未及时办理销假且超过准假时间者，按旷课论处。[1]"
+    },
+    {
+      "id": "s04#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "用欺骗手段请假被发现了怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3252,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "学生请销假制度.md｜总则-第六条",
+        "学生纪律处分管理规定.md｜第二章-第七条"
+      ],
+      "compression": null,
+      "rewritten_query": "以欺骗手段获取准假被查实后应如何处理",
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第六条"
+      ],
+      "session_id": "s04-a928b0e7",
+      "turn_index": 2,
+      "answer": "用欺骗手段请假，一经发现，取消该生请假资格并以旷课论处。[1]"
+    },
+    {
+      "id": "s05#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "触犯刑法构成刑事犯罪会被开除学籍吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3268,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第九条",
+        "学生纪律处分管理规定.md｜第三章-第十三条",
+        "学生纪律处分管理规定.md｜第三章-第二十五条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第九条"
+      ],
+      "session_id": "s05-f9072077",
+      "turn_index": 1,
+      "answer": "会。触犯国家法律、法规，构成刑事犯罪的，给予开除学籍处分。[1]"
+    },
+    {
+      "id": "s05#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "吸食毒品学校会怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2653,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第十一条"
+      ],
+      "compression": null,
+      "rewritten_query": "学生吸食毒品的，学校将给予何种处理？",
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第十一条"
+      ],
+      "session_id": "s05-f9072077",
+      "turn_index": 2,
+      "answer": "吸食毒品会被给予开除学籍处分，并移交司法机关处理。[1]"
+    },
+    {
+      "id": "s06#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "学校对学生的处分有哪几种？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4267,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第四条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第四条"
+      ],
+      "session_id": "s06-6369a1f8",
+      "turn_index": 1,
+      "answer": "学校对学生的处分种类有：警告、严重警告、记过、留校察看、开除学籍。[1]"
+    },
+    {
+      "id": "s06#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "那开除学籍算哪一种？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2823,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第二章-第四条",
+        "学生纪律处分管理规定.md｜第三章-第九条",
+        "学生纪律处分管理规定.md｜第三章-第十一条"
+      ],
+      "compression": null,
+      "rewritten_query": "开除学籍属于哪一种处分种类？",
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第四条"
+      ],
+      "session_id": "s06-6369a1f8",
+      "turn_index": 2,
+      "answer": "开除学籍属于纪律处分的一种。[1]"
+    },
+    {
+      "id": "s07#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "请假一天以内由谁审批？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2800,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "session_id": "s07-d509e4d9",
+      "turn_index": 1,
+      "answer": "请假一天以内由班主任审批。[1]"
+    },
+    {
+      "id": "s07#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "那一个礼拜呢？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2811,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条"
+      ],
+      "compression": null,
+      "rewritten_query": "请假一周以内由谁审批？",
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "session_id": "s07-d509e4d9",
+      "turn_index": 2,
+      "answer": "一周以内由二级学院审批。[1]"
+    },
+    {
+      "id": "s08#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "怎么申请助学贷款？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3136,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生资助工作实施办法.md｜第十五条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生资助工作实施办法.md",
+        "第十五条"
+      ],
+      "session_id": "s08-a6573234",
+      "turn_index": 1,
+      "answer": "根据资料，家庭经济困难学生可以向户籍所在县（市、区）的学生资助管理机构申请生源地信用助学贷款，贷款金额不超过20000元/生/年。[1]"
+    },
+    {
+      "id": "s08#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "能贷多少？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3205,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生资助工作实施办法.md｜第十五条"
+      ],
+      "compression": null,
+      "rewritten_query": "助学贷款的贷款额度是多少？",
+      "gold": [
+        "学生资助工作实施办法.md",
+        "第十五条"
+      ],
+      "session_id": "s08-a6573234",
+      "turn_index": 2,
+      "answer": "根据资料[1]，国家助学贷款（生源地信用助学贷款）的贷款金额不超过20000元/生/年。[1]"
+    },
+    {
+      "id": "s09#1",
+      "type": "refuse",
+      "scenario": "campus-followups",
+      "question": "图书馆几点关门？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1639,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": "s09-cc9680f5",
+      "turn_index": 1,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "s09#2",
+      "type": "refuse",
+      "scenario": "campus-followups",
+      "question": "那食堂几点开饭？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2580,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": "食堂几点开餐？",
+      "gold": null,
+      "session_id": "s09-cc9680f5",
+      "turn_index": 2,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "s09#3",
+      "type": "refuse",
+      "scenario": "campus-followups",
+      "question": "学费一年多少钱？",
+      "bucket": "answered_unexpectedly",
+      "reason": "库外题却答了",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2853,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "专项补助管理办法.md｜第九条"
+      ],
+      "compression": null,
+      "rewritten_query": "学生每学年应缴纳的学费标准是多少？",
+      "gold": null,
+      "session_id": "s09-cc9680f5",
+      "turn_index": 3,
+      "answer": "不知道。资料中没有提到学费的具体金额。"
+    },
+    {
+      "id": "s10#1",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "违纪了的话，学校都有哪些处分等级啊？",
+      "bucket": "retrieval_miss",
+      "reason": "gold 不在候选里（切块/检索问题）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4121,
+      "context_recall": false,
+      "context_precision": 0.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "学生纪律处分管理规定.md｜第四章-第二十七条",
+        "学生纪律处分管理规定.md｜第四章-第二十六条",
+        "学生纪律处分管理规定.md｜第二章-第五条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第四条"
+      ],
+      "session_id": "s10-5263b857",
+      "turn_index": 1,
+      "answer": "根据现有资料，无法完整回答学校有哪些处分等级。资料中没有集中列出处分等级的具体规定，只在以下内容中间接提到部分处分名称：\n\n- 资料[1]提到“留校察看以下处分”“留校察看处分”“开除学籍处分”[1]。\n- 资料[2]提到“记过以下处分”“记过及以上处分”“开除学籍处分”[2]。\n- 资料[3]提到情节轻微、不足以给予上述处分的，由学院给予通报批评[3]。\n\n因此，资料中出现的处分相关名称包括：通报批评、记过、留校察看、开除学籍[1][2][3]，但资料没有完整列明学校处分等级体系，无法据此确认全部处分等级。"
+    },
+    {
+      "id": "s10#2",
+      "type": "answer",
+      "scenario": "campus-followups",
+      "question": "那第二次作弊呢？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3014,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "学生纪律处分管理规定.md｜第三章-第二十四条"
+      ],
+      "compression": null,
+      "rewritten_query": "学生第二次考试作弊应给予何种处分。",
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第二十四条"
+      ],
+      "session_id": "s10-5263b857",
+      "turn_index": 2,
+      "answer": "第二次考试作弊的，给予开除学籍处分。[1]"
+    }
+  ]
+}
