@@ -282,3 +282,49 @@ docker compose exec rag python scripts/create_tenant.py \
 3. 审计是单文件 JSONL：多副本共享同一文件不安全；
 4. **没有计费**：租户配额是"防刷"级别；
 5. 配额数值不分租户自定义（所有租户共用 `DAILY_REQ_QUOTA`）。
+
+---
+
+# 附：路线 A（Cloudflare Tunnel，15 分钟）与上线后 runbook
+
+## A0. 三步起一个可点的 URL
+
+```powershell
+# ① 装 cloudflared（Windows，winget 一条命令；已装可跳过）
+winget install --id Cloudflare.cloudflared -e
+
+# ② 起服务（另开窗口；额度压低，护钱包）
+cd D:\_review_rag-cs
+$env:DEEPSEEK_API_KEY="你的 key"; $env:KB_ADMIN_TOKEN="随机 32 位"
+$env:GLOBAL_DAILY_TOKENS="200000"; $env:GLOBAL_DAILY_REQ_QUOTA="500"
+D:\Python-project\.venv\Scripts\python.exe -m uvicorn service:app --port 8000
+
+# ③ 开隧道（第三个窗口），记下它打印的 https://xxx.trycloudflare.com
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+
+然后**验收**（把 URL 换成隧道地址）：
+
+```powershell
+D:\Python-project\.venv\Scripts\python.exe scripts/deploy_smoke.py `
+  --base-url https://xxx.trycloudflare.com --namespace demo `
+  --seed evalset/fixtures/policy_corpus --admin-token $env:KB_ADMIN_TOKEN `
+  --out experiments/deploy-smoke.json --md experiments/deploy-smoke.md
+```
+
+6/6 全绿才算上线成功；`experiments/deploy-smoke.md` 就是**部署证据**（可直接进简历附件/README）。
+
+⚠️ 免费 Tunnel 的 URL **每次重启都会变**：适合"面试前打开"，**别印进简历**。要固定链接走路线 B。
+
+## A9. 上线后 runbook
+
+| 场景 | 看哪里 / 怎么办 |
+|---|---|
+| 服务是否活着 | `GET /health`：`status=ok` 且有 `chunks`；`loading` = 模型还在下 |
+| 变慢/出错 | `GET /limits` 看 `denied_rate`/`store`；`GET /admin/audit?limit=20` 看最近决策 |
+| 额度用尽 | 返回 429（带 `Retry-After`）或 503（`LIMIT_FAIL_MODE=closed` + 存储挂）→ 调 `.env` 里的额度并重启 |
+| 重启 | `docker compose restart rag`（compose）或 Ctrl+C 后重跑 uvicorn |
+| 备份 | 卷 `kb-data`（语料/审计/租户表）；命令见本文 §A4 |
+| 回滚检索行为 | `.env` 设 `INDEX_TEXT_MODE=text` 后重启（回到"只索引正文"） |
+| 审计导出 | `GET /admin/audit?tenant=&session_id=&limit=1000`（带 `x-kb-admin-token`） |
+| 答案突然都拒答 | 先看 `/limits` 是不是被限流、`/health` 的 `load_errors` 是否非 0、`chunks` 是否变少 |

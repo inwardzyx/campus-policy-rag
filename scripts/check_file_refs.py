@@ -66,6 +66,12 @@ IGNORE_MARK = "refcheck-ignore"      # 整行跳过（用于正文引述错路�
 
 # ★ 明确要放过的不存在路径：**每一行都要经得起下一个人问"为什么"**。
 ALLOW: dict[str, str] = {
+    "experiments/deploy-smoke.json":
+    """运行时产物：`scripts/deploy_smoke.py` 的默认输出路径（部署后才生成）。
+    本地验证的产物在 `experiments/deploy-smoke-local.json`。""",
+    "experiments/deploy-smoke.md":
+    """运行时产物：`scripts/deploy_smoke.py --md` 的输出路径（部署后才生成）。
+    本地验证的产物在 `experiments/deploy-smoke-local.md`。""",
     "evalset/probe_slot_gating.py":
         "C 槽位门控的原型，实测失败后**故意删除**（失败的正则留在仓库里是负资产）；"
         "experiments/_真实校语料入库实验.md 那一段原文已写明『已删除』",

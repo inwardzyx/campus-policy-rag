@@ -1,0 +1,38 @@
+{
+  "base_url": "http://127.0.0.1:8040",
+  "namespace": "demo",
+  "checks": [
+    {
+      "check": "health",
+      "ok": true,
+      "detail": "status=ok chunks=310"
+    },
+    {
+      "check": "chat_in_scope",
+      "ok": true,
+      "detail": "hit=True sources=[('差旅与费用报销管理办法（2026修订版）.md', '第八条（住宿标准）'), ('差旅与费用报销管理办法（2024版）.md', '第四条（住宿标准）')]"
+    },
+    {
+      "check": "chat_out_of_scope_refused",
+      "ok": true,
+      "detail": "hit=False answer='知识库里没有能回答这个问题的资料，我不编。'"
+    },
+    {
+      "check": "console",
+      "ok": true,
+      "detail": "http=200 bytes=8788"
+    },
+    {
+      "check": "limits",
+      "ok": true,
+      "detail": "store=memory daily_req=None"
+    },
+    {
+      "check": "admin_audit",
+      "ok": true,
+      "detail": "http=200 n=2"
+    }
+  ],
+  "passed": 6,
+  "total": 6
+}
