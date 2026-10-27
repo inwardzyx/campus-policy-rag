@@ -29,12 +29,28 @@ SUITES: dict[str, str] = {
 }
 
 
+def _normalize_gold(raw: Any) -> list | None:
+    """gold 的两种写法都要保留原样：
+
+    · `[doc, clause]`（老题集，单条）→ 原样
+    · `[[doc, clause], ...]`（多跳题）→ 保留**全部**（命中任一即算对）
+
+    ★ 曾经这里统一压成"前两个字符串"，多跳题的第二条 gold 会在入口静默消失。
+    """
+    if not raw:
+        return None
+    if len(raw) == 2 and isinstance(raw[0], str) and isinstance(raw[1], str):
+        return [str(raw[0]), str(raw[1])]
+    pairs = [[str(item[0]), str(item[1])] for item in raw
+             if isinstance(item, (list, tuple)) and len(item) >= 2]
+    return pairs or None
+
+
 def normalize_turn(turn: Mapping[str, Any], *, scenario: str | None = None) -> dict[str, Any]:
     """会话里的一轮：形状与单题一致，但没有自己的 id/scenario。"""
     out = {"question": str(turn.get("question") or ""),
            "type": str(turn.get("type") or "answer").lower()}
-    raw_gold = turn.get("gold") or turn.get("expected_sources")
-    out["gold"] = [str(raw_gold[0]), str(raw_gold[1])] if raw_gold and len(raw_gold) >= 2 else None
+    out["gold"] = _normalize_gold(turn.get("gold") or turn.get("expected_sources"))
     if scenario:
         out["scenario"] = scenario
     return out
@@ -48,11 +64,7 @@ def normalize_case(case: Mapping[str, Any], *, scenario: str | None = None) -> d
     out["question"] = str(case.get("question") or "")
     if scenario and not out.get("scenario"):
         out["scenario"] = scenario
-    raw_gold = case.get("gold") or case.get("expected_sources")
-    if raw_gold and len(raw_gold) >= 2:
-        out["gold"] = [str(raw_gold[0]), str(raw_gold[1])]
-    else:
-        out["gold"] = None
+    out["gold"] = _normalize_gold(case.get("gold") or case.get("expected_sources"))
     if isinstance(case.get("turns"), list):
         out["turns"] = [normalize_turn(t, scenario=scenario) for t in case["turns"]]
     return out

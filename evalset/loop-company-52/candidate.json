@@ -1,0 +1,1995 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "company-52",
+  "mode": "http",
+  "n_cases": 52,
+  "generated_at": "2026-10-27T11:27:44+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\company-52.jsonl",
+    "namespace": "company",
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 184556,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "by_category": {
+      "desc": "按题型分组的指标（每类各自给 Wilson）",
+      "unit": "dict",
+      "missing": "没有行时为空 dict"
+    },
+    "answer_value": {
+      "desc": "答案值命中率（只统计配了 expect 的题；缺失≠0）",
+      "unit": "rate",
+      "missing": "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）"
+    },
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 52,
+    "by_category": {
+      "不可答/边界": {
+        "n": 6,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 6,
+          "total": 6,
+          "rate": 1.0,
+          "wilson_95": [
+            0.6097,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "口语转述": {
+        "n": 10,
+        "answer": {
+          "passed": 7,
+          "total": 10,
+          "rate": 0.7,
+          "wilson_95": [
+            0.3968,
+            0.8922
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "多跳合成": {
+        "n": 19,
+        "answer": {
+          "passed": 18,
+          "total": 19,
+          "rate": 0.9474,
+          "wilson_95": [
+            0.7536,
+            0.9906
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "跨条款冲突与例外": {
+        "n": 10,
+        "answer": {
+          "passed": 9,
+          "total": 10,
+          "rate": 0.9,
+          "wilson_95": [
+            0.5958,
+            0.9821
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "陷阱题": {
+        "n": 7,
+        "answer": {
+          "passed": 6,
+          "total": 7,
+          "rate": 0.8571,
+          "wilson_95": [
+            0.4869,
+            0.9743
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      }
+    },
+    "answer_value": null,
+    "answer": {
+      "passed": 40,
+      "total": 46,
+      "rate": 0.8696,
+      "wilson_95": [
+        0.7433,
+        0.9388
+      ]
+    },
+    "refuse": {
+      "passed": 6,
+      "total": 6,
+      "rate": 1.0,
+      "wilson_95": [
+        0.6097,
+        1.0
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 0.8696,
+    "context_precision": 0.6118,
+    "ndcg@3": 0.6284,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.1395,
+    "p95_ms": 4312,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 40,
+      "refuse_ok": 6,
+      "retrieval_miss": 4,
+      "rank_shift": 2
+    },
+    "failure_buckets": {
+      "retrieval_miss": 4,
+      "rank_shift": 2,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0,
+      "refuse_fabricated": 0,
+      "refuse_context_overreach": 0
+    },
+    "notes": [
+      "没有配 expect 的 answer 题 ⇒ 不计算值命中率（缺失≠0）",
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "c50-A1",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我周一早上迟到了大概二十分钟，要扣多少钱？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4080,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十四条【迟到、早退与旷工】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，迟到20分钟属于“30分钟以内”，每次扣减当月考勤分2分[1]。但资料中没有说明考勤分与扣款金额之间的换算关系，因此无法计算要扣多少钱。"
+    },
+    {
+      "id": "c50-A2",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "上个月我天天加班到十点，但都没提前填加班申请单，现在还能算加班费吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3697,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十九条【加班管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，未经审批的延时工作不认定为加班，因此你上个月没有提前填加班申请单的加班，不能算加班费。[1]"
+    },
+    {
+      "id": "c50-A3",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我入职三个月，合同签的两年，试用期最长能定几个月？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3115,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第九条【试用期管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第九条【试用期管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第九条【试用期管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，合同期限一年以上不满三年的，试用期不超过二个月[1]。你签的是两年合同，因此试用期最长能定二个月[1]。"
+    },
+    {
+      "id": "c50-A4",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "试用期工资能不能就是转正工资的七成？我们那儿最低工资是 2100。",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3246,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十条【试用期待遇与录用条件确认】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十条【试用期待遇与录用条件确认】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十条【试用期待遇与录用条件确认】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不能。试用期工资不得低于劳动合同约定工资的百分之八十，七成低于这一标准；同时也不得低于当地最低工资标准（你处为2100元）。[1]"
+    },
+    {
+      "id": "c50-A5",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我连续三个月迟到很多，出勤率不到 90%，公司能直接把我开掉吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4901,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 3,
+      "sources": [
+        "企业规章制度（50条）｜第二十条【考勤异常处理与出勤要求】",
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】",
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十条【考勤异常处理与出勤要求】",
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】",
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十条【试用期待遇与录用条件确认】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，不能直接得出“公司能直接把你开掉”的结论，具体分析如下：\n\n1. 连续三个月出勤率低于90%的，公司可认定为不能胜任工作岗位或不符合录用条件，并按制度第三十一条处理[1]。但资料没有说明第三十一条的具体内容，因此无法判断该条是否允许直接解除劳动合同。\n\n2. 员工存在严重违纪行为的，公司可依据《劳动合同法》第三十九条解除劳动合同，且须履行“调查取证→告知拟处理理由与依据→听取员工书面申辩→作出处理决定→书面送达并办理交接”的程序，解除决定自送达之日起生效[2]。但资料未说明“连续三个月出勤率低于90%”是否属于严重违纪行为。\n\n3. 关于迟到，资料只规定：迟到或早退30分钟以内每次扣考勤分2分；30分钟以上不足2小时按半日事假处理[3]。资料没有规定“连续三个月迟到很多”本身可直接导致解除劳动合同。\n\n综上，公司能否解除劳动合同，取决于制度第三十一条的具体规定以及该情形是否构成严重违纪，这些资料里没有说明，因此无法给出确定结论。"
+    },
+    {
+      "id": "c50-A6",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我在公司满三周年那天收到通知，说产假只休 90 天，比国家规定的少。制度里第四十九条写了\"不一致的以本制度为准\"，这条通知有效吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3761,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十八条【婚假、产假、陪产假、丧假与育儿假】",
+        "企业规章制度（50条）｜第四十九条【解释、生效与过渡】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十八条【婚假、产假、陪产假、丧假与育儿假】",
+        "企业规章制度（50条）｜第四十九条【解释、生效与过渡】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四条【效力与优先顺序】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料中没有关于“满三周年”与产假天数关系的规定，也没有第四十九条的具体内容；仅能确认产假按国家及公司所在地规定执行、公司执行标准不得低于法定要求，且产假期间不得以怀孕、生育为由解除或终止劳动合同[1]。因此无法判断该通知是否有效。"
+    },
+    {
+      "id": "c50-A7",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我签了保密协议，那离职之后还要保密几年？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3541,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第三十七条【保密义务与期限】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第三十七条【保密义务与期限】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十七条【保密义务与期限】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料[1]，员工在职期间及离职后两年内不得擅自披露、使用或允许第三方使用保密信息；构成商业秘密的部分，保密义务持续至该信息合法公开为止[1]。因此，离职后的保密期限需区分情况：一般保密信息为离职后两年内[1]；构成商业秘密的部分则持续至信息合法公开为止[1]。"
+    },
+    {
+      "id": "c50-A8",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我想把公司写的代码拷到自己网盘里备份一份，怕哪天电脑坏了代码找不回来，这样不行吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3274,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第三九条【账号与数据安全】",
+        "企业规章制度（50条）｜第三十八条【知识产权归属】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第三九条【账号与数据安全】",
+        "企业规章制度（50条）｜第三十八条【知识产权归属】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十六条【保密信息的范围】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不行。未经审批不得使用个人网盘传输公司数据[1]；也不得将公司代码上传至未经批准的外部平台或服务[2]。"
+    },
+    {
+      "id": "c50-A9",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "采购让我爸开的公司来报价，这个能行吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3458,
+      "context_recall": true,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十七条【采购与供应商管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十七条【采购与供应商管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十一条【职业操守与利益冲突】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不行，至少需要先主动申报回避。员工本人或近亲属与供应商存在利益关系的，应主动申报回避[1]。至于申报后是否还能参与报价，资料没有说明，我不知道。"
+    },
+    {
+      "id": "c50-A10",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "项目做到一半我离职了，公司说奖金条件没达成就不发了，有依据吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4312,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十四条【绩效工资与奖金】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十四条【绩效工资与奖金】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十四条【绩效工资与奖金】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料[1]，项目奖金的发放条件、计算方式与发放时点须在项目启动前书面明确；因员工离职、客观原因导致未达条件而取消奖金的，须有事先明确的制度依据和已告知的考核记录[1]。因此，公司若以“奖金条件未达成”为由不发，需要有事先明确的制度依据和已告知的考核记录[1]。资料未说明你具体情况下公司是否具备这些依据，无法判断公司说法是否成立——这一点不知道。"
+    },
+    {
+      "id": "c50-A11",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "项目奖金我做到一半离职了、公司说条件没达成不发；那年终奖呢？我干到 12 月 31 日走的，是不是也没了？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4210,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十四条【绩效工资与奖金】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十四条【绩效工资与奖金】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十一条【薪酬结构与发放】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "关于项目奖金：资料[1]规定，项目奖金的发放条件、计算方式与发放时点须在项目启动前书面明确；因员工离职、客观原因导致未达条件而取消奖金的，须有事先明确的制度依据和已告知的考核记录[1]。至于你这种情况具体是否应发，资料未给出判断标准，我不知道。\n\n关于年终奖：资料中没有关于年终奖的任何规定，我不知道。"
+    },
+    {
+      "id": "c50-A12",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "年假我能不能攒到明年休？公司说必须当年用完。",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3792,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十七条【年休假】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十七条【年休假】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十七条【年休假】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料[1]，年休假原则上应在本年度内使用完毕；但公司因工作需要无法安排的，经本人同意可以跨年度安排，并按规定支付未休年休假的工资报酬。所以并非绝对“必须当年用完”，在符合“公司因工作需要无法安排”且“经本人同意”的条件下可以跨年度安排[1]。至于你个人具体情况能否攒到明年，资料未说明，我不知道。"
+    },
+    {
+      "id": "c50-A13",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我连续两个季度绩效都是 C，公司说要给我调岗，我可以直接不去吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3562,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第三十一条【绩效不合格的处理】",
+        "企业规章制度（50条）｜第三十条【考核结果应用】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第三十一条【绩效不合格的处理】",
+        "企业规章制度（50条）｜第三十条【考核结果应用】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，连续两个季度考核为C档的，公司可安排培训、调整工作岗位或协商变更劳动合同[1]。但资料没有说明员工是否可以拒绝调岗，也没有说明拒绝调岗的后果，因此这个问题我不知道。建议你就调岗的具体安排与公司协商，并注意处理过程应留存书面材料并由员工签收[1]。"
+    },
+    {
+      "id": "c50-A14",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "实习生适用这套规章制度吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2846,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第二条【适用范围】",
+        "企业规章制度（50条）｜文件控制信息"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二条【适用范围】",
+        "企业规章制度（50条）｜文件控制信息"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二条【适用范围】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "适用。本制度适用于公司全体在职员工，包括实习生[1]；适用范围也写明实习生参照执行，另有规定的从其规定[2]。"
+    },
+    {
+      "id": "c50-A15",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "公司规定迟到要罚 50 块，这个规定有效吗？",
+      "bucket": "rank_shift",
+      "reason": "gold 在候选里但没进 included（被 top3 或精排分挡住）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3038,
+      "context_recall": false,
+      "context_precision": 0.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四条【效力与优先顺序】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四条【效力与优先顺序】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三条【基本原则】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料[1]只说明制度经民主程序制定并公示后对全体员工具有约束力，以及制度与劳动合同、法律法规强制性规定不一致时的处理规则；资料中没有关于迟到罚款50元是否有效的规定，无法据此判断。"
+    },
+    {
+      "id": "c50-A16",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "出差住宿超了标准 200 块，当时没来得及批，回来能补批吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3030,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十六条【费用报销管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十六条【费用报销管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十七条【保密义务与期限】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不能补批。超标事项须事前单独审批，事后补批不予受理（不可抗力除外）[1]。"
+    },
+    {
+      "id": "c50-A17",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我离职两周了，工作也交接完了，公司还是没给我开离职证明，说要等我把电脑还了。这合理吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4139,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】",
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】",
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不合理。根据资料，公司应在交接完成后十五日内为员工办理档案和社保关系转移手续，并出具《解除或终止劳动合同证明》[1]；同时，离职时应归还全部资产并通过验收，验收通过后方可办理离职结算[2]。但资料并未规定“未归还电脑就可以不出具离职证明”，因此公司以未还电脑为由拒绝开具离职证明，缺乏资料依据。至于离职两周是否已超过十五日、以及电脑未还是否影响离职证明开具的具体处理，资料不足以下结论，我不知道。"
+    },
+    {
+      "id": "c50-A18",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我偶尔帮同事打卡，会不会被开除？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3877,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第四十二条【禁止行为清单】",
+        "企业规章制度（50条）｜第十三条【工作时间与考勤方式】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十二条【禁止行为清单】",
+        "企业规章制度（50条）｜第十三条【工作时间与考勤方式】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十三条【工作时间与考勤方式】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，使用他人账号或代打卡属于一律禁止的行为[1]，且任何人不得代打卡、代签到[2]。但资料中没有关于“帮同事打卡”具体会受到何种处分（包括是否会被开除）的规定，因此无法判断会不会被开除——这一点我不知道。"
+    },
+    {
+      "id": "c50-A19",
+      "type": "answer",
+      "category": "多跳合成",
+      "scenario": "company-52",
+      "question": "我上个月实际工作 22 天，那制度里的 21.75 是怎么算出来的？我拿它折算日工资对不对？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4116,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "21.75 天这个数字具体是怎么算出来的，资料里没有说明，我不知道。\n\n关于用它折算日工资：资料规定计薪日标准以月计薪天数21.75天折算，折算后的日工资与小时工资用于计算缺勤扣减[1]。所以按制度用21.75折算日工资是有依据的[1]。但你上个月实际工作22天这一情况如何适用、是否影响折算结果，资料没有涉及，我不知道。"
+    },
+    {
+      "id": "c50-B1",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "公司跟我说\"规章制度优先于合同\"。我合同里写了年终奖保底，制度里说\"公司有权调整奖金方案\"，到底听谁的？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4209,
+      "context_recall": true,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四条【效力与优先顺序】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四条【效力与优先顺序】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三条【基本原则】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料[1]只说明制度与劳动合同不一致时，以对员工更有利且不违反法律法规的约定为准，并说明制度与法律法规强制性规定不一致时以法律法规为准；资料中没有关于“规章制度优先于合同”这一说法的依据，也没有具体涉及年终奖保底与奖金方案调整冲突时如何处理的规则，因此无法据此判断到底听谁的。"
+    },
+    {
+      "id": "c50-B2",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "我在自己电脑上把客户名单整理成表格发给朋友了，这算什么性质？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3744,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 3,
+      "sources": [
+        "企业规章制度（50条）｜第四十二条【禁止行为清单】",
+        "企业规章制度（50条）｜第三九条【账号与数据安全】",
+        "企业规章制度（50条）｜第三十六条【保密信息的范围】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十二条【禁止行为清单】",
+        "企业规章制度（50条）｜第三九条【账号与数据安全】",
+        "企业规章制度（50条）｜第三十六条【保密信息的范围】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十六条【保密信息的范围】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，你描述的行为涉及客户信息外发，但资料不足以完整判定“算什么性质”，只能指出以下相关点：\n\n- 客户信息属于保密信息（客户与供应商信息在保密信息范围内）[3]。\n- 外发文件须经直属上级审批，涉密文件应加密并登记；未经审批不得使用个人网盘或即时通讯工具传输公司数据[2]。\n- 泄露或盗用商业秘密与客户数据属于一律禁止的行为[1]。\n\n至于具体“算什么性质”（例如是否构成违纪、违法或何种处分），资料没有给出定性标准，我不知道。"
+    },
+    {
+      "id": "c50-B3",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "我迟到了一次，公司就直接按\"严重违纪\"把我开了，这符合制度吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3888,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "企业规章制度（50条）｜第四十三条【奖惩原则与违纪分级】",
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十三条【奖惩原则与违纪分级】",
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十四条【迟到、早退与旷工】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。\n\n资料中没有关于“迟到”属于哪一级违纪、以及迟到能否被认定为严重违纪的具体规定，因此无法判断公司仅因一次迟到就按“严重违纪”解除劳动合同是否符合制度。[1]仅说明违纪分为三级且具体认定标准见附表五，但未提供附表五内容；[2]仅说明严重违纪可依据《劳动合同法》第三十九条解除及相应程序，未涉及迟到情形；[3]也未涉及迟到与严重违纪的认定。"
+    },
+    {
+      "id": "c50-B4",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "我加班到很晚，公司说因为我没走审批流程，所以那天的加班工资不给了。这合法吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4021,
+      "context_recall": true,
+      "context_precision": 0.25,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三条【基本原则】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，未经审批的延时工作不认定为加班，因此公司不支付该加班工资是有依据的。[1] 但资料也提到，公司安排加班的应支付加班工资，工作日不低于工资的150%，休息日安排补休而不能补休的不低于200%，法定节假日不低于300%。[1] 至于你这种情况具体是否合法，资料没有进一步说明，我不知道。"
+    },
+    {
+      "id": "c50-B5",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "我们部门一直没跟我签劳动合同，只让我在一份员工手册确认书上签了字，这算合同吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3680,
+      "context_recall": true,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第五条【制定、修订与公示程序】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料[1]只说明公司应自用工之日起一个月内与员工订立书面劳动合同，以及劳动合同内容变更应采用书面形式并经双方协商一致后生效；资料中没有关于“员工手册确认书是否算劳动合同”的说明，因此无法据此判断。"
+    },
+    {
+      "id": "c50-B6",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "我想离职，公司说不用提前 30 天通知，行业里都是随时走人。",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3861,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】",
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】",
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四条【效力与优先顺序】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料中没有关于“行业惯例”或公司能否免除提前通知义务的规定，无法据此判断公司说法是否成立。根据资料，员工解除劳动合同应提前三十日以书面形式通知公司，试用期内提前三日通知[1]；员工离职还应填写《离职申请表》，完成工作交接、资产归还、账号权限回收及档案转移等手续[2]。"
+    },
+    {
+      "id": "c50-B7",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "公司把我辞退了，只口头说了一句\"公司决定\"，没给理由也没让我解释。",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4747,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】",
+        "企业规章制度（50条）｜第四十五条【申诉与监督渠道】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】",
+        "企业规章制度（50条）｜第四十五条【申诉与监督渠道】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十三条【奖惩原则与违纪分级】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，公司辞退员工需要符合法定条件与程序，并向员工送达书面通知[2]。对于严重违纪行为的解除，处理程序包括：调查取证→告知拟处理理由与依据→听取员工书面申辩→作出处理决定→书面送达并办理交接，解除决定自送达之日起生效[1]。\n\n你描述的情况是公司仅口头说\"公司决定\"，没给理由也没让你解释。资料中没有直接针对\"仅口头通知辞退\"这一具体情形应如何处理的规定，因此无法据此判断公司行为的法律后果或你可以采取的具体救济措施——这部分我不知道。\n\n不过，资料提到：员工对处理决定有异议的，可在收到决定之日起五个工作日内向人力资源部书面申诉，公司应组织复核并书面答复[3]。如果你收到了书面处理决定，可以据此申诉；但你目前收到的是口头通知，资料未说明口头通知是否构成\"收到决定\"，这一点我不知道。"
+    },
+    {
+      "id": "c50-B8",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "周末我加班了，公司说优先安排调休，我想要加班费。行不行？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3777,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十九条【加班管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，周末加班公司优先安排补休、不能补休时才支付不低于200%的加班工资，所以公司先安排调休是符合规定的；如果你希望直接拿加班费而不接受调休，资料中没有支持这一要求的依据，无法据此下结论。另外，加班需事前提交《加班申请单》并经审批，未经审批的延时工作不认定为加班[1]。加班工资计算基数按劳动合同约定执行，约定不明的按劳动合同履行地最低工资标准以上、本年度月平均工资以下确定[2]。"
+    },
+    {
+      "id": "c50-B9",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "公司规定全体员工必须接受每月一次线上考试，考不过扣绩效。制度里有这条吗？",
+      "bucket": "retrieval_miss",
+      "reason": "gold 不在候选里（切块/检索问题）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2471,
+      "context_recall": false,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十四条【绩效工资与奖金】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-B10",
+      "type": "answer",
+      "category": "跨条款冲突与例外",
+      "scenario": "company-52",
+      "question": "有个同事拒绝在员工手册签收确认书上签字，公司是不是就等于没告知他？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3917,
+      "context_recall": true,
+      "context_precision": 0.25,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜员工签收确认书",
+        "企业规章制度（50条）｜第五十条【附件与签收】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜员工签收确认书",
+        "企业规章制度（50条）｜第五十条【附件与签收】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三条【基本原则】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据现有资料，无法得出“公司就等于没告知他”这一结论。\n\n资料能说明的是：员工签署《员工签收确认书》后归入人事档案[2]；签收确认书本身包含“公司已就本制度向本人进行了公示或书面告知”的确认内容[1]。但资料并未规定“员工拒绝签字时公司是否视为未告知”，也没有说明拒绝签字情形下的替代告知方式或法律后果。因此，仅凭这些资料，不知道公司是否等于没告知他。"
+    },
+    {
+      "id": "c50-C1",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "公司让我们把身份证照片和银行卡号发到一个共享表格里，说只是做通讯录登记，合适吗？",
+      "bucket": "rank_shift",
+      "reason": "gold 在候选里但精排分低，整体拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2713,
+      "context_recall": false,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第八条【入职与材料提交】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-C2",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "我看到同事在招人，随手把他的简历照片发到群里说\"有想来的找我\"，这有什么问题吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3787,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第四十条【个人信息保护与对外披露】",
+        "企业规章制度（50条）｜第三十七条【保密义务与期限】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十条【个人信息保护与对外披露】",
+        "企业规章制度（50条）｜第三十七条【保密义务与期限】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十六条【保密信息的范围】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "有问题。简历照片属于员工信息，收集和使用应遵循合法、正当、必要、诚信原则，明示用途并取得授权；你未经授权把简历照片发到群里，不符合这一要求[1]。此外，员工不得擅自向社交平台、第三方披露公司相关信息，涉及对外宣传的应由公司指定人员统一归口[1]。至于该行为是否还涉及保密信息或商业秘密，资料不足以判断，不知道[2]。"
+    },
+    {
+      "id": "c50-C3",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "我朋友来公司找我玩，我把工牌借给他刷门禁进楼，有事吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3509,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三九条【账号与数据安全】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料[1]只涉及资产、办公设备、门禁卡、电脑及移动存储介质的领用保管与赔偿，没有提到工牌或借给他人刷门禁的规定，无法据此判断是否有问题。"
+    },
+    {
+      "id": "c50-C4",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "我电脑坏了，公司给我换了台新的，旧的能不能我自己留着用？反正是淘汰机。",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4040,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十六条【费用报销管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料中没有关于公司更换电脑后旧设备归属或能否由个人留用的规定。[1]仅说明公司资产由个人领用登记保管，不得私自转借、出售或带离办公场所，且损坏需按认定价值赔偿、离职需归还全部资产并通过验收；据此无法判断淘汰机能否自行留用。[1]"
+    },
+    {
+      "id": "c50-C5",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "我前两天发烧烧到 39 度，在家躺了两天，让同事帮我跟领导说了一声，也没填假条，这算旷工吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 5093,
+      "context_recall": true,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十五条【请假审批规则】",
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十五条【请假审批规则】",
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十三条【工作时间与考勤方式】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，你这种情况**不能直接认定为旷工，但存在被按旷工处理的风险**，需要看你是否满足补办手续的条件。\n\n具体分析如下：\n\n1. **急病无法事先申请的，应在两小时内电话或即时通讯告知直接上级，并在三个工作日内补办书面手续**[1]。你发烧39度属于急病情形，让同事帮忙跟领导说了一声，属于告知上级的一种方式，但资料没有说明\"让同事转告\"是否等同于本人告知，这一点资料不足以下结论。\n\n2. **未经批准擅自离岗的，按旷工处理**[1]。你目前没有填假条、没有在人事系统提交申请并经上级批准，如果未在三个工作日内补办书面手续，则可能被认定为未经批准擅自离岗，从而按旷工处理[1]。\n\n3. 关于旷工的具体后果：旷工半日的，按日工资标准的200%扣减工资并计旷工一次[2]。\n\n**结论**：是否算旷工，取决于你是否在三个工作日内补办了书面手续并获得批准[1]。资料中没有说明\"同事转告\"是否有效、也没有说明你目前是否已补办手续，因此**无法确定是否构成旷工**。建议你尽快在三个工作日内补办书面请假手续[1]。"
+    },
+    {
+      "id": "c50-C6",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "公司发新工作服，通知说每人自付 200 元，抵工资也行，这规定合理吗？",
+      "bucket": "retrieval_miss",
+      "reason": "gold 不在候选里（切块/检索问题）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2370,
+      "context_recall": false,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十六条【福利与补贴】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-C7",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "公司让我签一份\"本人自愿放弃加班费\"的承诺书。我签了，是不是以后就真要不到了？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3362,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四条【效力与优先顺序】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料中没有关于“自愿放弃加班费承诺书”效力的任何规定，无法据此判断签署后是否还能主张加班费。[1][2]仅涉及加班认定、加班工资标准及计算基数，未涉及放弃加班费的承诺书问题。"
+    },
+    {
+      "id": "c50-C8",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "我用公司打印机给自己打了一百份求职简历，有问题吗？",
+      "bucket": "retrieval_miss",
+      "reason": "gold 不在候选里（切块/检索问题）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2349,
+      "context_recall": false,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十一条【职业操守与利益冲突】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-C9",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "我离职时电脑还没还，公司说\"等离职证明开出来你再来还电脑\"，这样可以吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3970,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】",
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】",
+        "企业规章制度（50条）｜第四十八条【资产与办公设备管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不可以。根据资料，离职时应归还全部资产并通过验收，验收通过后方可办理离职结算[2]；同时公司应在交接完成后十五日内办理档案和社保关系转移手续并出具《解除或终止劳动合同证明》[1]。资料未规定“先开离职证明、后还电脑”的顺序，也未说明离职证明可以替代资产归还验收，因此无法支持公司的说法。"
+    },
+    {
+      "id": "c50-C10",
+      "type": "answer",
+      "category": "口语转述",
+      "scenario": "company-52",
+      "question": "公司规定\"员工不得在社交平台发布任何涉及公司的内容\"，包括吐槽食堂。这合理吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3942,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十条【个人信息保护与对外披露】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十条【个人信息保护与对外披露】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十条【个人信息保护与对外披露】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料[1]只说明员工不得擅自向媒体、社交平台、第三方披露公司的经营信息、发布未经审定的产品信息或代表公司对外发言，并未规定“员工不得在社交平台发布任何涉及公司的内容”，也未涉及吐槽食堂是否被禁止，因此无法据此判断该规定是否合理。[1]"
+    },
+    {
+      "id": "c50-D1",
+      "type": "refuse",
+      "category": "不可答/边界",
+      "scenario": "company-52",
+      "question": "我是在校实习生，公司说不用给我交社保，直接给补贴，这个说法在制度里有依据吗？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4094,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第二条【适用范围】",
+        "企业规章制度（50条）｜第二十五条【社会保险与住房公积金】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二条【适用范围】",
+        "企业规章制度（50条）｜第二十五条【社会保险与住房公积金】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料[1]只说明本制度适用于包括实习生在内的全体在职员工，资料[2]只说明公司依法为员工缴纳社保及公积金、缴费基数按当地政策执行，均未涉及实习生是否可以以补贴代替缴纳社保的规定，因此无法据此判断该说法在制度里是否有依据。[1][2]"
+    },
+    {
+      "id": "c50-D2",
+      "type": "refuse",
+      "category": "不可答/边界",
+      "scenario": "company-52",
+      "question": "我请了三天病假，病假工资到底该扣多少？按我的工资算还是按最低工资算？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3857,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十六条【事假、病假与医疗期】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十六条【事假、病假与医疗期】",
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据现有资料，无法算出你三天病假具体该扣多少工资，也无法直接判断按你的工资还是按最低工资计算。资料只说明：病假须提供二级及以上医疗机构证明，病假期间工资按公司病假工资标准支付，且不得低于公司所在地最低工资标准的百分之八十[1]；计薪日按21.75天折算，折算后的日工资用于计算缺勤扣减[2]。但你未提供公司病假工资标准、你的工资数额、公司所在地最低工资标准等信息，因此具体扣减金额不知道。"
+    },
+    {
+      "id": "c50-D3",
+      "type": "refuse",
+      "category": "不可答/边界",
+      "scenario": "company-52",
+      "question": "我这个月请了一天事假，全勤奖 300 元还能拿吗？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2077,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-D4",
+      "type": "refuse",
+      "category": "不可答/边界",
+      "scenario": "company-52",
+      "question": "我们公司有个说法是\"员工每月出差不能超过 10 天\"，这个在制度里有吗？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2254,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-D5",
+      "type": "refuse",
+      "category": "不可答/边界",
+      "scenario": "company-52",
+      "question": "公司说午休时间大家必须在工位，不许趴着睡，这条规定在制度里吗？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2646,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-D6",
+      "type": "refuse",
+      "category": "不可答/边界",
+      "scenario": "company-52",
+      "question": "我养了只猫，公司办公室不让带宠物，这条制度里有写吗？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2297,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-E1",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "我签了员工手册签收确认书，上面写着\"同意遵守公司所有规定\"，那公司迟到罚款 50 块我是不是只能认了？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4273,
+      "context_recall": true,
+      "context_precision": 0.25,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜员工签收确认书",
+        "企业规章制度（50条）｜第五十条【附件与签收】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜员工签收确认书",
+        "企业规章制度（50条）｜第五十条【附件与签收】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三条【基本原则】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据现有资料，无法判断公司迟到罚款 50 元是否合法或你是否只能接受。\n\n资料中仅能确认：签收确认书表明你已阅读并知悉《员工规章制度》全部内容，理解并同意遵守该制度及相关附件；公司已就制度向你公示或书面告知；附件与正文具有同等效力，其中附表五为《违纪行为认定清单》[1][2]。但资料中没有关于迟到罚款 50 元的具体规定，也没有关于罚款合法性、金额标准或申诉处理的内容，因此无法据此得出结论。"
+    },
+    {
+      "id": "c50-E2",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "公司说入职要交 500 元工装押金，说行业都这样，违法吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3266,
+      "context_recall": true,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十六条【福利与补贴】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十六条【福利与补贴】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四条【效力与优先顺序】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料中没有关于“工装押金”或入职收取押金是否违法的规定；[1]只提到公司不得以其他名义收取押金、保证金，但未直接涉及工装押金及“行业都这样”的情形，无法据此判断。"
+    },
+    {
+      "id": "c50-E3",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "我拿同事的账号帮他打卡，制度里哪条写了不许？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2767,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第四十二条【禁止行为清单】",
+        "企业规章制度（50条）｜第十三条【工作时间与考勤方式】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十二条【禁止行为清单】",
+        "企业规章制度（50条）｜第十三条【工作时间与考勤方式】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十三条【工作时间与考勤方式】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "制度里明确写了不许：使用他人账号或代打卡属于一律禁止的行为[1]；同时考勤记录是计算工时与考勤待遇的唯一依据，任何人不得代打卡、代签到[2]。"
+    },
+    {
+      "id": "c50-E4",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "公司说入职必须交 2000 元培训押金，合同到期就全退。这算合法吗？",
+      "bucket": "retrieval_miss",
+      "reason": "gold 不在候选里（切块/检索问题）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1817,
+      "context_recall": false,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十六条【福利与补贴】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "c50-E5",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "公司规定\"员工不加班视为旷工\"，我要是不愿意留下来加班，就会被开除吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4163,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 3,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】",
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三条【基本原则】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据现有资料，无法判断“员工不加班视为旷工”这一规定是否合法有效，也无法判断不加班是否会被开除。\n\n资料中与加班相关的规定是：加班应事前提交《加班申请单》并经审批，未经审批的延时工作不认定为加班；公司安排加班的应支付加班工资；公司应保障员工每日加班不超过三小时、每月不超过三十六小时[1]。资料中关于旷工的规定是：旷工半日的，按日工资标准的200%扣减工资并计旷工一次；连续三个月累计旷工三次以上或年度累计旷工五次以上的，公司可依据制度第四十四条作严重违纪处理[2]。但资料中没有说明“不加班”是否可以认定为“旷工”，也没有说明此类情形下公司是否可以解除劳动合同。因此，对于“不愿意留下来加班是否会被开除”，根据现有资料不知道。"
+    },
+    {
+      "id": "c50-E6",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "我还在试用期，公司说试用期不用交社保，反正也不上工位，这可以吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3175,
+      "context_recall": true,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十五条【社会保险与住房公积金】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十五条【社会保险与住房公积金】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四条【效力与优先顺序】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不可以。公司依法为员工缴纳基本养老、基本医疗、失业、工伤、生育保险及住房公积金，缴费基数按公司所在地当期政策执行[1]。资料中没有提到试用期可以免缴社保，也没有“不上工位”可例外的情况，因此按资料不能支持公司的说法[1]。"
+    },
+    {
+      "id": "c50-E7",
+      "type": "answer",
+      "category": "陷阱题",
+      "scenario": "company-52",
+      "question": "部门说试用期考核不合格可以直接开人，制度里是这么写的吧？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3835,
+      "context_recall": true,
+      "context_precision": 0.6666666666666666,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十条【试用期待遇与录用条件确认】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十条【试用期待遇与录用条件确认】",
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十条【试用期待遇与录用条件确认】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不知道。资料中没有关于“试用期考核不合格即可直接解除劳动合同”的制度规定，无法据此确认部门说法。[1]仅规定公司应在入职时书面告知录用条件及试用期考核标准、考核结果应有记录并可签字确认；[2]仅规定公司解除劳动合同应符合法定条件与程序并送达书面通知，均未说明考核不合格可直接开人。"
+    }
+  ]
+}

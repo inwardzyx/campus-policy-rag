@@ -1,0 +1,90 @@
+{
+  "schema": "eval-loop/1",
+  "active": {
+    "id": "loop-20261027-112744",
+    "candidates": "evalset\\loop-company-52\\candidates.json",
+    "gate": {
+      "verdict": "accept",
+      "mcnemar_p": 1.0,
+      "reasons": [],
+      "n_common": 52,
+      "gains": [
+        "c50-E1"
+      ],
+      "losses": [],
+      "refuse_losses": [],
+      "leaks": [],
+      "min_gain": 1
+    }
+  },
+  "history": [
+    {
+      "id": "loop-20261027-110544",
+      "created_at": "2026-10-27T11:05:44+0800",
+      "candidates": "evalset\\loop-company-52\\candidates.json",
+      "before": "evalset\\loop-company-52\\baseline.json",
+      "after": "evalset\\loop-company-52\\candidate.json",
+      "gate": {
+        "verdict": "reject",
+        "mcnemar_p": 0.3323,
+        "reasons": [
+          "有回退：['c50-A12', 'c50-A18', 'c50-B2', 'c50-C2', 'c50-C3', 'c50-D1', 'c50-D2', 'c50-D3', 'c50-D4', 'c50-D5', 'c50-E3']",
+          "该拒答的变作答：['c50-D1', 'c50-D2', 'c50-D3', 'c50-D4', 'c50-D5']"
+        ],
+        "n_common": 52,
+        "gains": [
+          "c50-A15",
+          "c50-B9",
+          "c50-C1",
+          "c50-C6",
+          "c50-E1",
+          "c50-E4"
+        ],
+        "losses": [
+          "c50-A12",
+          "c50-A18",
+          "c50-B2",
+          "c50-C2",
+          "c50-C3",
+          "c50-D1",
+          "c50-D2",
+          "c50-D3",
+          "c50-D4",
+          "c50-D5",
+          "c50-E3"
+        ],
+        "refuse_losses": [
+          "c50-D1",
+          "c50-D2",
+          "c50-D3",
+          "c50-D4",
+          "c50-D5"
+        ],
+        "leaks": [],
+        "min_gain": 1
+      },
+      "status": "rejected"
+    },
+    {
+      "id": "loop-20261027-112744",
+      "created_at": "2026-10-27T11:27:44+0800",
+      "candidates": "evalset\\loop-company-52\\candidates.json",
+      "before": "evalset\\loop-company-52\\baseline.json",
+      "after": "evalset\\loop-company-52\\candidate.json",
+      "gate": {
+        "verdict": "accept",
+        "mcnemar_p": 1.0,
+        "reasons": [],
+        "n_common": 52,
+        "gains": [
+          "c50-E1"
+        ],
+        "losses": [],
+        "refuse_losses": [],
+        "leaks": [],
+        "min_gain": 1
+      },
+      "status": "active"
+    }
+  ]
+}

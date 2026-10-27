@@ -111,7 +111,9 @@ def mine(report: dict, corpus_dir: Path, max_entries: int = 12) -> list[dict]:
             "id": f"cand-{row['id']}",
             "source_case": row["id"],
             "question": row.get("question"),
-            "match": q_tokens[:2] or [row.get("question", "")[:6]],
+            # ★ 用**整句**做 match：只影响这一道题。
+            #   取前两个词（如"公司"）会误伤拒答题 —— 第一次真实闭环就是这么被门禁拦下的。
+            "match": [row.get("question") or ""],
             "add": add,
         })
         if len(entries) >= max_entries:

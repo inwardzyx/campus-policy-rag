@@ -36,16 +36,32 @@ FAILURE_BUCKETS: tuple[str, ...] = (
 _BUDGET_REASONS = ("budget", "oversize")
 
 
-def gold_of(case: Mapping[str, Any]) -> tuple[str, str] | None:
-    """从题面取 gold：`[doc, clause]`。
+def gold_pairs(case: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """从题面取**全部** gold 条款：`[[doc, clause], ...]`。
 
-    ★ 两种题集格式都认：老题集 `gold`、企业模板 `expected_sources`。
-      少写一种就会在另一套题集上静默变成"没有 gold"，而归因会把它算成 retrieval_miss。
+    ★ 兼容三种写法：
+      · `gold: [doc, clause]`（单条，老题集）
+      · `gold: [[doc, clause], ...]`（多跳题：命中任一即算对）
+      · `expected_sources: [[doc, clause], ...]`（企业模板）
+      少认一种，多跳题就会被静默算成 retrieval_miss。
     """
     raw = case.get("gold") or case.get("expected_sources")
-    if not raw or len(raw) < 2:
-        return None
-    return str(raw[0]), str(raw[1])
+    if not raw:
+        return []
+    # 单条：[str, str]
+    if len(raw) == 2 and isinstance(raw[0], str) and isinstance(raw[1], str):
+        return [(str(raw[0]), str(raw[1]))]
+    out: list[tuple[str, str]] = []
+    for item in raw:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            out.append((str(item[0]), str(item[1])))
+    return out
+
+
+def gold_of(case: Mapping[str, Any]) -> tuple[str, str] | None:
+    """取**第一条** gold（保持旧调用方语义）。多跳题请用 `gold_pairs()`。"""
+    pairs = gold_pairs(case)
+    return pairs[0] if pairs else None
 
 
 #: 文档名后缀：默认语料用文件名（带 .md），企业存储的 doc 可能不带。
@@ -90,6 +106,7 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
     typ = str(case.get("type", "answer"))
     hit = bool(response.get("knowledge_hit", False))
     gold = gold_of(case)
+    pairs = gold_pairs(case)
     ctx = _trace(response)
 
     out: dict[str, Any] = {"gold": list(gold) if gold else None,
@@ -132,9 +149,9 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
     excluded = {_key(b.get("source"), b.get("clause")): str(b.get("reason"))
                 for b in (ctx.get("excluded") or [])}
     cands = {_key(c.get("source"), c.get("clause")) for c in (ctx.get("candidates") or [])}
-    gold_key = _key(gold[0], gold[1]) if gold else None
+    gold_keys = [_key(doc, clause) for doc, clause in pairs]
 
-    if gold_key and gold_key in included:
+    if any(k in included for k in gold_keys):
         citation = ctx.get("citation") or {}
         if citation and not (citation.get("used_ids") or []):
             out.update(bucket="gen_uncited", reason="答案没有任何引用标记")
@@ -142,8 +159,9 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
         out.update(bucket="ok", reason="gold 在喂给模型的块里")
         return out
 
-    if gold_key and gold_key in excluded:
-        why = excluded[gold_key]
+    hit_excluded = next((k for k in gold_keys if k in excluded), None)
+    if hit_excluded:
+        why = excluded[hit_excluded]
         if why in _BUDGET_REASONS:
             out.update(bucket="budget_cut", reason=f"gold 被预算裁掉（{why}）")
         elif why in ("stale", "superseded", "not_yet_effective"):
@@ -154,7 +172,7 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
             out.update(bucket="retrieval_miss", reason=f"gold 被排除（{why}）")
         return out
 
-    if gold_key and gold_key in cands:
+    if any(k in cands for k in gold_keys):
         out.update(bucket="rank_shift",
                    reason="gold 在候选里但没进 included（被 top3 或精排分挡住）")
         return out

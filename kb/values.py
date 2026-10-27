@@ -33,7 +33,12 @@ _CN_RUN = re.compile(r"([一二两三四五六七八九十]{1,3})\s*(?=" + "|".j
 def _cn_to_int(run: str) -> int:
     """把"三/十二/二十/二十三"这类中文数字转成整数（只覆盖 1–99，够条款用）。"""
     if "十" not in run:
-        return sum(_CN_NUM.get(ch, 0) for ch in run) if len(run) == 1 else 0
+        if len(run) == 1:
+            return _CN_NUM.get(run, 0)
+        # ★ "第三九条"这种**源文档笔误**（本可写成"三十九"）：两位数字按十位+个位读
+        if len(run) == 2 and all(ch in _CN_NUM for ch in run):
+            return _CN_NUM[run[0]] * 10 + _CN_NUM[run[1]]
+        return 0
     left, _, right = run.partition("十")
     tens = _CN_NUM.get(left, 1) if left else 1
     ones = _CN_NUM.get(right, 0) if right else 0

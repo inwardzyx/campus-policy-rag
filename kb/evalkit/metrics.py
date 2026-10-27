@@ -64,12 +64,11 @@ def _ndcg(rows: Sequence[Mapping[str, Any]], cases: Sequence[Mapping[str, Any]],
     qrels: dict[str, dict[str, int]] = {}
     run: dict[str, dict[str, float]] = {}
     for case in cases:
-        gold = attribution.gold_of(case)
-        if not gold or str(case.get("type", "answer")) != "answer":
+        pairs = attribution.gold_pairs(case)
+        if not pairs or str(case.get("type", "answer")) != "answer":
             continue
         qid = str(case.get("id"))
-        gold_key = f"{attribution._norm_source(gold[0])}｜{gold[1]}"
-        qrels[qid] = {gold_key: 1}
+        qrels[qid] = {f"{attribution._norm_source(d)}｜{c}": 1 for d, c in pairs}
         row = next((r for r in rows if r["id"] == case.get("id")), None)
         keys = list(row.get("source_keys") or []) if row else []
         run[qid] = {key: float(len(keys) - i) for i, key in enumerate(keys)}
@@ -119,18 +118,20 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
     ctx = _ctx(response)
     included = _included(ctx)
     gold = attribution.gold_of(case)
-    gold_key = attribution._key(gold[0], gold[1]) if gold else None
+    pairs = attribution.gold_pairs(case)
+    gold_keys = [attribution._key(d, c) for d, c in pairs]
     attr = attribution.classify(case, response)
     typ = str(case.get("type", "answer"))
 
     recall = None
     precision = None
-    if typ == "answer" and gold:
+    if typ == "answer" and pairs:
         if ctx is None:
             recall = None          # 没有 trace 就没有"上下文召回"这回事，不补 0
         else:
-            recall = gold_key in included
-            precision = (1.0 if gold_key in included else 0.0) if included else None
+            hits = sum(1 for k in gold_keys if k in included)
+            recall = hits > 0            # 多跳题：命中任一 gold 条款即算召回
+            precision = (hits / len(gold_keys)) if included else None
 
     return {
         "id": case.get("id"),
