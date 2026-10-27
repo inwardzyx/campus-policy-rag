@@ -1,0 +1,20 @@
+{"id": "c01", "type": "answer", "question": "上班迟到二十分钟，会扣多少考勤分？", "gold": ["企业规章制度（50条）.md", "第十四条【迟到、早退与旷工】"]}
+{"id": "c02", "type": "answer", "question": "工龄满十二年能休几天年假？", "gold": ["企业规章制度（50条）.md", "第十七条【年休假】"]}
+{"id": "c03", "type": "answer", "question": "工作日加班工资按多少比例发？", "gold": ["企业规章制度（50条）.md", "第十九条【加班管理】"]}
+{"id": "c04", "type": "answer", "question": "一个月最多能加班多少小时？", "gold": ["企业规章制度（50条）.md", "第十九条【加班管理】"]}
+{"id": "c05", "type": "answer", "question": "三年以上合同的员工，试用期最长可以约定多久？", "gold": ["企业规章制度（50条）.md", "第九条【试用期管理】"]}
+{"id": "c06", "type": "answer", "question": "试用期工资最低不能低于正式工资的百分之多少？", "gold": ["企业规章制度（50条）.md", "第十条【试用期待遇与录用条件确认】"]}
+{"id": "c07", "type": "answer", "question": "正式员工想辞职，要提前多少天书面通知公司？", "gold": ["企业规章制度（50条）.md", "第十一条【劳动合同的签订、变更与解除】"]}
+{"id": "c08", "type": "answer", "question": "离职后档案和社保关系要在几天内转走？", "gold": ["企业规章制度（50条）.md", "第十二条【离职、交接与证明】"]}
+{"id": "c09", "type": "answer", "question": "算日工资时一个月按多少天折算？", "gold": ["企业规章制度（50条）.md", "第二十三条【请假与加班期间的薪酬计算】"]}
+{"id": "c10", "type": "answer", "question": "绩效考核结果分成几档？", "gold": ["企业规章制度（50条）.md", "第二十四条【绩效工资与奖金】"]}
+{"id": "c11", "type": "answer", "question": "年度考核拿了最低档，公司会怎么处理？", "gold": ["企业规章制度（50条）.md", "第三十条【考核结果应用】"]}
+{"id": "c12", "type": "answer", "question": "离职以后还要保密几年？", "gold": ["企业规章制度（50条）.md", "第三十七条【保密义务与期限】"]}
+{"id": "c13", "type": "answer", "question": "出差报销最晚要在费用发生后多少天内提交？", "gold": ["企业规章制度（50条）.md", "第四十六条【费用报销管理】"]}
+{"id": "c14", "type": "answer", "question": "采购要几家报价才合规？", "gold": ["企业规章制度（50条）.md", "第四十七条【采购与供应商管理】"]}
+{"id": "c15", "type": "answer", "question": "对处理决定不服，几个工作日内可以申诉？", "gold": ["企业规章制度（50条）.md", "第四十五条【申诉与监督渠道】"]}
+{"id": "r01", "type": "refuse", "question": "公司食堂几点开饭？", "gold": null}
+{"id": "r02", "type": "refuse", "question": "公司年会在哪个酒店办？", "gold": null}
+{"id": "r03", "type": "refuse", "question": "年终奖的具体计算公式是什么？", "gold": null, "tags": ["boundary"]}
+{"id": "r04", "type": "refuse", "question": "工龄买断的补偿标准是多少？", "gold": null, "tags": ["boundary"]}
+{"id": "r05", "type": "refuse", "question": "公司的股权激励计划怎么分配？", "gold": null, "tags": ["boundary"]}

@@ -1,19 +1,176 @@
 {
-  "scenario": "campus",
+  "schema_version": "request-eval/1",
+  "suite": "campus",
   "mode": "http",
-  "cases": "evalset/questions.json",
-  "namespace": "campus_eval",
   "n_cases": 20,
-  "missing_responses": 0,
+  "generated_at": "2026-10-27T10:29:30+0800",
+  "meta": {
+    "cases_file": "evalset\\questions.json",
+    "namespace": null,
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 59107,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "by_category": {
+      "desc": "按题型分组的指标（每类各自给 Wilson）",
+      "unit": "dict",
+      "missing": "没有行时为空 dict"
+    },
+    "answer_value": {
+      "desc": "答案值命中率（只统计配了 expect 的题；缺失≠0）",
+      "unit": "rate",
+      "missing": "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）"
+    },
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
   "aggregate": {
     "n_cases": 20,
+    "by_category": {
+      "numeric": {
+        "n": 10,
+        "answer": {
+          "passed": 10,
+          "total": 10,
+          "rate": 1.0,
+          "wilson_95": [
+            0.7225,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "other": {
+        "n": 5,
+        "answer": {
+          "passed": 5,
+          "total": 5,
+          "rate": 1.0,
+          "wilson_95": [
+            0.5655,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "out_of_scope": {
+        "n": 5,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 5,
+          "total": 5,
+          "rate": 1.0,
+          "wilson_95": [
+            0.5655,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      }
+    },
+    "answer_value": null,
     "answer": {
-      "passed": 14,
+      "passed": 15,
       "total": 15,
-      "rate": 0.9333,
+      "rate": 1.0,
       "wilson_95": [
-        0.7018,
-        0.9881
+        0.7961,
+        1.0
       ]
     },
     "refuse": {
@@ -31,26 +188,31 @@
       "rate": null,
       "wilson_95": null
     },
+    "context_recall": null,
+    "context_precision": null,
+    "ndcg@3": 0.9087,
+    "budget_cut_rate": 0.0,
+    "citation_validity": null,
+    "uncited_paragraphs_per_answer": null,
+    "p95_ms": 4331,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
     "buckets": {
-      "ok": 14,
-      "refuse_ok": 5,
-      "retrieval_miss": 1
+      "ok": 15,
+      "refuse_ok": 5
     },
     "failure_buckets": {
-      "retrieval_miss": 1,
+      "retrieval_miss": 0,
       "rank_shift": 0,
       "budget_cut": 0,
       "gen_uncited": 0,
       "acl_leak": 0,
-      "stale_version": 0
+      "stale_version": 0,
+      "refuse_fabricated": 0,
+      "refuse_context_overreach": 0
     },
-    "context_recall": 0.9333,
-    "context_precision": 0.9333,
-    "ndcg@3": 0.9333,
-    "budget_cut_rate": 0.0,
-    "citation_precision": null,
-    "p95_ms": 4794,
     "notes": [
+      "没有配 expect 的 answer 题 ⇒ 不计算值命中率（缺失≠0）",
       "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
     ]
   },
@@ -58,346 +220,643 @@
     {
       "id": "q1",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "学校对学生的处分有哪几种？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 5740,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 1,
+      "took_ms": 3497,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第二章-第四条"
-      ]
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第二章-第四条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第四条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，学校对学生的处分种类有：警告、严重警告、记过、留校察看、开除学籍。"
     },
     {
       "id": "q2",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "违纪了的话，学校都有哪些处分等级啊？",
-      "bucket": "retrieval_miss",
-      "reason": "gold 不在候选里（切块/检索问题）",
-      "context_available": true,
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3972,
-      "context_recall": false,
-      "context_precision": 0.0,
-      "citation_precision": null,
-      "included": 3,
+      "took_ms": 3188,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第四章-第二十六条",
-        "学生纪律处分管理规定.md｜第二章-第五条",
-        "学生纪律处分管理规定.md｜第四章-第二十七条"
-      ]
+        "学生纪律处分管理规定.md｜第二章-第五条"
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第四章-第二十六条",
+        "学生纪律处分管理规定｜第二章-第五条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第四条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，只能确定以下信息：\n\n- 资料中提到了“记过以下处分”“记过及以上处分”“开除学籍处分”等处分层级。\n- 第五条提到，违纪行为情节轻微、不足以给予上述处分的，由学生所在学院给予**通报批评**。\n\n但资料中没有完整列出学校全部处分等级的名称和顺序，所以无法根据资料准确回答“都有哪些处分等级”。"
     },
     {
       "id": "q3",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "什么情形可以从轻处分？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3446,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 1,
+      "took_ms": 2707,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第二章-第六条"
-      ]
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第二章-第六条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第六条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，可以从轻处分的情形是：有下列情形之一且危害后果轻微：\n\n（一）能主动承认错误，如实交待错误事实，检查认识深刻，有悔改表现者。\n（二）确属他人胁迫或诱骗，并能主动检举、揭发，认错态度好，能协助学校查处违纪事件，有立功表现者。"
     },
     {
       "id": "q4",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "我主动承认错误还检举了别人，处分能不能轻一点？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 4153,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 2,
+      "took_ms": 4331,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
-        "学生纪律处分管理规定.md｜第二章-第六条",
-        "学生纪律处分管理规定.md｜第一章-第三条"
-      ]
+        "学生纪律处分管理规定.md｜第二章-第六条"
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第二章-第六条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第六条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，可以。第六条列出的可以从轻处分的情形包括：\n\n（一）能主动承认错误，如实交待错误事实，检查认识深刻，有悔改表现者；\n（二）确属他人胁迫或诱骗，并能主动检举、揭发，认错态度好，能协助学校查处违纪事件，有立功表现者。\n\n你提到“主动承认错误”并“检举了别人”，分别对应上述两项情形。但需要注意：适用从轻处分的前提是“危害后果轻微”；其中第（二）项还要求“确属他人胁迫或诱骗”。资料未说明你的具体情况是否满足这些前提，因此无法确定一定能从轻，只能说明符合资料所列的相关情形。"
     },
     {
       "id": "q5",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "哪些情况要从重处分？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3558,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 1,
+      "took_ms": 3048,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第二章-第七条"
-      ]
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第二章-第七条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第七条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，有下列情形之一且危害后果较大的，应予从重处分：\n\n（一）故意隐瞒、串供、歪曲、捏造事实，以及妨碍有关部门、单位调查，或者拒不承认错误者。\n（二）采用任何手段对有关人员进行打击报复、威胁恫吓者。\n（三）在处分期间再次违纪的。\n（四）一人同时有两项以上违纪行为的（含两项）。"
     },
     {
       "id": "q6",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "跟同学串供、还威胁举报人，会不会加重处分？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 4072,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 1,
+      "took_ms": 3158,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第二章-第七条"
-      ]
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第二章-第七条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第二章-第七条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "会加重处分。根据第七条，故意隐瞒、串供、歪曲、捏造事实，以及妨碍调查或拒不承认错误（第一项），以及采用任何手段对有关人员进行打击报复、威胁恫吓（第二项），都属于危害后果较大、应予从重处分的情形。串供和威胁举报人分别对应这两项，因此会从重处分。"
     },
     {
       "id": "q7",
       "type": "answer",
+      "category": "other",
+      "scenario": "questions",
       "question": "触犯刑法构成刑事犯罪会被开除学籍吗？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3431,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 3,
+      "took_ms": 3196,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第三章-第九条",
-        "学生纪律处分管理规定.md｜第三章-第十三条",
-        "学生纪律处分管理规定.md｜第三章-第二十五条"
-      ]
+        "学生纪律处分管理规定.md｜第三章-第十三条"
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第三章-第九条",
+        "学生纪律处分管理规定｜第三章-第十三条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第九条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "会被开除学籍。根据资料第九条第（二）项，触犯国家法律、法规，构成刑事犯罪的，给予开除学籍处分。"
     },
     {
       "id": "q8",
       "type": "answer",
+      "category": "other",
+      "scenario": "questions",
       "question": "吸食毒品学校会怎么处理？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3174,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 2,
+      "took_ms": 2871,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
-        "学生纪律处分管理规定.md｜第三章-第十一条",
-        "学生纪律处分管理规定.md｜第二章-第四条"
-      ]
+        "学生纪律处分管理规定.md｜第三章-第十一条"
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第三章-第十一条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第十一条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料第十一条，吸食毒品的，学校会给予开除学籍处分，并移交司法机关处理。"
     },
     {
       "id": "q9",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "考试作弊要受什么处分？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 4794,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 3,
+      "took_ms": 5155,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
-        "学生纪律处分管理规定.md｜第三章-第二十四条",
         "学生纪律处分管理规定.md｜第三章-第二十五条",
+        "学生纪律处分管理规定.md｜第三章-第二十四条",
         "学生纪律处分管理规定.md｜第三章-第二十三条"
-      ]
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第三章-第二十五条",
+        "学生纪律处分管理规定｜第三章-第二十四条",
+        "学生纪律处分管理规定｜第三章-第二十三条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第二十四条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，考试作弊的处分分几种情况：\n\n- **开除学籍**：第二十五条规定，发生以下作弊行为之一给予开除学籍处分：（一）考试前偷窃试卷或利用偷窃的试卷信息谋利；（二）考场上抢夺他人试卷、答卷或强迫他人为自己抄袭提供方便；（三）代替考生或由他人代替参加考试，性质恶劣、造成严重后果；（四）组织团伙作弊、使用通讯设备或储存有与考试内容相关资料的电子设备作弊，性质恶劣、后果严重；（五）在省级或以上考试中作弊，触犯刑法以及有其他性质恶劣、后果严重的作弊行为；（六）其他严重作弊或扰乱考试秩序行为。\n\n- **留校察看；第二次作弊开除学籍**：第二十四条规定，考试（考查）中有以下情节之一按作弊处理，给予留校察看处分；第二次考试作弊给予开除学籍处分：（一）携带手机等电子设备进入考场；（二）携带、抄袭或协助他人抄袭试题答案或考试内容相关资料；（三）交换试卷、答卷、使用草稿纸或手机等电子设备传递答案；（四）故意销毁试卷、答卷等考试材料，或不允许而故意将试卷、答卷等考试材料带出考场；（五）代替考生或由他人代替参加考试，但认错态度好且未造成严重后果；（六）其他违反考试规定构成作弊的行为。\n\n另外，第二十三条"
     },
     {
       "id": "q10",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "第二次考试作弊会被开除学籍吗？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3187,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 2,
+      "took_ms": 2900,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生纪律处分管理规定.md｜第三章-第二十四条",
         "学生纪律处分管理规定.md｜第三章-第二十五条"
-      ]
+      ],
+      "source_keys": [
+        "学生纪律处分管理规定｜第三章-第二十四条",
+        "学生纪律处分管理规定｜第三章-第二十五条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生纪律处分管理规定.md",
+        "第三章-第二十四条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，会。第二十四条规定：“第二次考试作弊，给予开除学籍处分”。"
     },
     {
       "id": "q11",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "请假一天以内由谁审批？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3047,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 1,
+      "took_ms": 2621,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
-        "学生请销假制度.md｜总则-第三条"
-      ]
+        "学生请销假制度.md｜总则-第三条",
+        "学生请销假制度.md｜总则-第二条"
+      ],
+      "source_keys": [
+        "学生请销假制度｜总则-第三条",
+        "学生请销假制度｜总则-第二条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "请假一天以内由班主任审批。"
     },
     {
       "id": "q12",
       "type": "answer",
+      "category": "numeric",
+      "scenario": "questions",
       "question": "我要请一个礼拜的假，需要哪一级批准？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3095,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 2,
+      "took_ms": 3514,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生请销假制度.md｜总则-第三条",
         "学生请销假制度.md｜总则-第二条"
-      ]
+      ],
+      "source_keys": [
+        "学生请销假制度｜总则-第三条",
+        "学生请销假制度｜总则-第二条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，请假一周以内由二级学院审批。你请一个礼拜的假，需要二级学院批准。"
     },
     {
       "id": "q13",
       "type": "answer",
+      "category": "other",
+      "scenario": "questions",
       "question": "假期结束不销假会有什么后果？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 2897,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 2,
+      "took_ms": 3011,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
-        "学生请销假制度.md｜总则-第四条",
-        "学生请销假制度.md｜总则-第三条"
-      ]
+        "学生请销假制度.md｜总则-第四条"
+      ],
+      "source_keys": [
+        "学生请销假制度｜总则-第四条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第四条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，未及时办理销假且超过准假时间者，按旷课论处。"
     },
     {
       "id": "q14",
       "type": "answer",
+      "category": "other",
+      "scenario": "questions",
       "question": "用欺骗手段请假被发现了怎么处理？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3374,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 2,
+      "took_ms": 2938,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生请销假制度.md｜总则-第六条",
         "学生纪律处分管理规定.md｜第三章-第十条（九）"
-      ]
+      ],
+      "source_keys": [
+        "学生请销假制度｜总则-第六条",
+        "学生纪律处分管理规定｜第三章-第十条（九）"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第六条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，学生以欺骗手段请假，一经发现，取消该生请假资格并以旷课论处。此外，如果是伪造教师签名、骗取请假审批等情形，给予严重警告处分；情节严重的，给予记过及以上处分。"
     },
     {
       "id": "q15",
       "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "questions",
       "question": "图书馆几点关门？",
       "bucket": "refuse_ok",
-      "reason": "库外题被正确拒答",
-      "context_available": true,
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
       "knowledge_hit": false,
-      "took_ms": 2059,
+      "took_ms": 1915,
       "context_recall": null,
       "context_precision": null,
-      "citation_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
       "included": 0,
-      "sources": []
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
     },
     {
       "id": "q16",
       "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "questions",
       "question": "学费一年多少钱？",
       "bucket": "refuse_ok",
-      "reason": "库外题被正确拒答",
-      "context_available": true,
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
       "knowledge_hit": false,
-      "took_ms": 2187,
+      "took_ms": 1909,
       "context_recall": null,
       "context_precision": null,
-      "citation_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
       "included": 0,
-      "sources": []
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
     },
     {
       "id": "q17",
       "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "questions",
       "question": "食堂几点开饭？",
       "bucket": "refuse_ok",
-      "reason": "库外题被正确拒答",
-      "context_available": true,
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
       "knowledge_hit": false,
-      "took_ms": 2321,
+      "took_ms": 1863,
       "context_recall": null,
       "context_precision": null,
-      "citation_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
       "included": 0,
-      "sources": []
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
     },
     {
       "id": "q18",
       "type": "answer",
+      "category": "other",
+      "scenario": "questions",
       "question": "怎么申请助学贷款？",
       "bucket": "ok",
-      "reason": "gold 在喂给模型的块里",
-      "context_available": true,
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
       "knowledge_hit": true,
-      "took_ms": 3371,
-      "context_recall": true,
-      "context_precision": 1.0,
-      "citation_precision": null,
-      "included": 1,
+      "took_ms": 3354,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
       "sources": [
         "学生资助工作实施办法.md｜第十五条"
-      ]
+      ],
+      "source_keys": [
+        "学生资助工作实施办法｜第十五条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生资助工作实施办法.md",
+        "第十五条"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，家庭经济困难学生可以向**户籍所在县（市、区）的学生资助管理机构**申请**生源地信用助学贷款**，贷款金额不超过**20000元/生/年**。资料里没有更具体的申请流程说明，这部分我不知道。"
     },
     {
       "id": "q19",
       "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "questions",
       "question": "宿舍晚上几点熄灯？",
       "bucket": "refuse_ok",
-      "reason": "库外题被正确拒答",
-      "context_available": true,
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
       "knowledge_hit": false,
-      "took_ms": 2576,
+      "took_ms": 1750,
       "context_recall": null,
       "context_precision": null,
-      "citation_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
       "included": 0,
-      "sources": []
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
     },
     {
       "id": "q20",
       "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "questions",
       "question": "学生证丢了怎么补办？",
       "bucket": "refuse_ok",
-      "reason": "库外题被正确拒答",
-      "context_available": true,
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
       "knowledge_hit": false,
-      "took_ms": 2343,
+      "took_ms": 1951,
       "context_recall": null,
       "context_precision": null,
-      "citation_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
       "included": 0,
-      "sources": []
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
     }
-  ],
-  "generated_at": "2026-10-25T20:42:05+0800",
-  "wall_clock_ms": 3339
+  ]
 }

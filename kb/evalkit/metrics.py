@@ -25,10 +25,11 @@ def _ctx(response: Mapping[str, Any]) -> dict[str, Any] | None:
 
 
 def _included(ctx: Mapping[str, Any] | None) -> set[tuple[str, str]]:
+    """真正喂给模型的块（**归一文档后缀**：默认语料带 .md，企业存储可能不带）。"""
     if not ctx:
         return set()
-    return {(str(b.get("source")), str(b.get("clause"))) for b in (ctx.get("blocks") or [])}
-
+    return {attribution._key(b.get("source"), b.get("clause"))
+            for b in (ctx.get("blocks") or [])}
 
 def _citation_field(ctx: Mapping[str, Any] | None, key: str):
     report = (ctx or {}).get("citation") or {}
@@ -67,10 +68,11 @@ def _ndcg(rows: Sequence[Mapping[str, Any]], cases: Sequence[Mapping[str, Any]],
         if not gold or str(case.get("type", "answer")) != "answer":
             continue
         qid = str(case.get("id"))
-        qrels[qid] = {f"{gold[0]}｜{gold[1]}": 1}
+        gold_key = f"{attribution._norm_source(gold[0])}｜{gold[1]}"
+        qrels[qid] = {gold_key: 1}
         row = next((r for r in rows if r["id"] == case.get("id")), None)
-        docs = list(row["sources"]) if row else []
-        run[qid] = {str(doc): float(len(docs) - i) for i, doc in enumerate(docs)}
+        keys = list(row.get("source_keys") or []) if row else []
+        run[qid] = {key: float(len(keys) - i) for i, key in enumerate(keys)}
     if not qrels:
         return None, f"nDCG@{k} 未算：没有可算的 answer 题（gold 缺失）"
     got = ir_measures.calc_aggregate([nDCG @ k], qrels, run)
@@ -98,11 +100,26 @@ def _answer_value(case: Mapping[str, Any], response: Mapping[str, Any]) -> bool 
     return values_mod.match(response.get("answer") or "", expected)
 
 
+def _source_key(src: Mapping[str, Any]) -> str:
+    """把一条 source 归一成 `doc｜clause`。
+
+    ★ 两种形态都要认：`{doc, clause}` 分开的；以及 doc 里已经拼成 `doc｜clause` 的
+      （chat 的展示用 sources 就是后者）——不认后者，nDCG 会拿 "doc｜None" 去比 gold。
+    """
+    doc = str(src.get("doc") or "")
+    clause = src.get("clause")
+    if clause is None and "｜" in doc:
+        d, _, c = doc.partition("｜")
+        return f"{attribution._norm_source(d)}｜{c}"
+    return f"{attribution._norm_source(doc)}｜{clause}"
+
+
 def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, Any]:
     """一题一行：判分 + 归因 + 上下文指标。所有字段都可能是 None（= 拿不到）。"""
     ctx = _ctx(response)
     included = _included(ctx)
     gold = attribution.gold_of(case)
+    gold_key = attribution._key(gold[0], gold[1]) if gold else None
     attr = attribution.classify(case, response)
     typ = str(case.get("type", "answer"))
 
@@ -112,8 +129,8 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
         if ctx is None:
             recall = None          # 没有 trace 就没有"上下文召回"这回事，不补 0
         else:
-            recall = gold in included
-            precision = (1.0 if gold in included else 0.0) if included else None
+            recall = gold_key in included
+            precision = (1.0 if gold_key in included else 0.0) if included else None
 
     return {
         "id": case.get("id"),
@@ -132,6 +149,8 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
         "uncited_count": _citation_field(ctx, "uncited_count"),
         "included": len(included),
         "sources": [s.get("doc") for s in (response.get("sources") or [])],
+        # ★ nDCG 要用 (doc, clause) 对齐；doc 归一后缀（企业存储可能不带 .md）
+        "source_keys": [_source_key(s) for s in (response.get("sources") or [])],
         "compression": (ctx or {}).get("compression"),
         # ★ 会话级评测要用：改写后的检索词（只来自 trace）、gold（对齐用）、会话键。
         "rewritten_query": (ctx or {}).get("rewritten_query"),

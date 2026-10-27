@@ -48,6 +48,24 @@ def gold_of(case: Mapping[str, Any]) -> tuple[str, str] | None:
     return str(raw[0]), str(raw[1])
 
 
+#: 文档名后缀：默认语料用文件名（带 .md），企业存储的 doc 可能不带。
+_SOURCE_SUFFIXES = (".md", ".markdown", ".txt", ".html", ".htm", ".docx", ".pdf")
+
+
+def _norm_source(name: Any) -> str:
+    """只去掉**已知文档后缀**再比较；不做别的清洗（避免把 a.md.md 之类洗坏）。"""
+    s = str(name or "").strip()
+    low = s.lower()
+    for suf in _SOURCE_SUFFIXES:
+        if low.endswith(suf):
+            return s[: -len(suf)]
+    return s
+
+
+def _key(doc: Any, clause: Any) -> tuple[str, str]:
+    return _norm_source(doc), str(clause or "")
+
+
 def _trace(response: Mapping[str, Any]) -> dict[str, Any] | None:
     ctx = response.get("context")
     return ctx if isinstance(ctx, dict) else None
@@ -110,12 +128,13 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
                    reason="没有 context（旧路径）⇒ 只能按是否命中判；原因未知")
         return out
 
-    included = {(str(b.get("source")), str(b.get("clause"))) for b in (ctx.get("blocks") or [])}
-    excluded = {(str(b.get("source")), str(b.get("clause"))): str(b.get("reason"))
+    included = {_key(b.get("source"), b.get("clause")) for b in (ctx.get("blocks") or [])}
+    excluded = {_key(b.get("source"), b.get("clause")): str(b.get("reason"))
                 for b in (ctx.get("excluded") or [])}
-    cands = {(str(c.get("source")), str(c.get("clause"))) for c in (ctx.get("candidates") or [])}
+    cands = {_key(c.get("source"), c.get("clause")) for c in (ctx.get("candidates") or [])}
+    gold_key = _key(gold[0], gold[1]) if gold else None
 
-    if gold and gold in included:
+    if gold_key and gold_key in included:
         citation = ctx.get("citation") or {}
         if citation and not (citation.get("used_ids") or []):
             out.update(bucket="gen_uncited", reason="答案没有任何引用标记")
@@ -123,8 +142,8 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
         out.update(bucket="ok", reason="gold 在喂给模型的块里")
         return out
 
-    if gold and gold in excluded:
-        why = excluded[gold]
+    if gold_key and gold_key in excluded:
+        why = excluded[gold_key]
         if why in _BUDGET_REASONS:
             out.update(bucket="budget_cut", reason=f"gold 被预算裁掉（{why}）")
         elif why in ("stale", "superseded", "not_yet_effective"):
@@ -135,7 +154,7 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
             out.update(bucket="retrieval_miss", reason=f"gold 被排除（{why}）")
         return out
 
-    if gold and gold in cands:
+    if gold_key and gold_key in cands:
         out.update(bucket="rank_shift",
                    reason="gold 在候选里但没进 included（被 top3 或精排分挡住）")
         return out
