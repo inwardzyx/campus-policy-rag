@@ -1,0 +1,875 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "company",
+  "mode": "http",
+  "n_cases": 20,
+  "generated_at": "2026-10-27T10:38:35+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\company.jsonl",
+    "namespace": "company",
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 57843,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "by_category": {
+      "desc": "按题型分组的指标（每类各自给 Wilson）",
+      "unit": "dict",
+      "missing": "没有行时为空 dict"
+    },
+    "answer_value": {
+      "desc": "答案值命中率（只统计配了 expect 的题；缺失≠0）",
+      "unit": "rate",
+      "missing": "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）"
+    },
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 20,
+    "by_category": {
+      "boundary": {
+        "n": 3,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 3,
+          "total": 3,
+          "rate": 1.0,
+          "wilson_95": [
+            0.4385,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "numeric": {
+        "n": 14,
+        "answer": {
+          "passed": 14,
+          "total": 14,
+          "rate": 1.0,
+          "wilson_95": [
+            0.7847,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "other": {
+        "n": 1,
+        "answer": {
+          "passed": 1,
+          "total": 1,
+          "rate": 1.0,
+          "wilson_95": [
+            0.2065,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "out_of_scope": {
+        "n": 2,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 2,
+          "total": 2,
+          "rate": 1.0,
+          "wilson_95": [
+            0.3424,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      }
+    },
+    "answer_value": null,
+    "answer": {
+      "passed": 15,
+      "total": 15,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7961,
+        1.0
+      ]
+    },
+    "refuse": {
+      "passed": 5,
+      "total": 5,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5655,
+        1.0
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 1.0,
+    "context_precision": 1.0,
+    "ndcg@3": 0.9754,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.0,
+    "p95_ms": 3714,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 15,
+      "refuse_ok": 5
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0,
+      "refuse_fabricated": 0,
+      "refuse_context_overreach": 0
+    },
+    "notes": [
+      "没有配 expect 的 answer 题 ⇒ 不计算值命中率（缺失≠0）",
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "c01",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "上班迟到二十分钟，会扣多少考勤分？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3669,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十四条【迟到、早退与旷工】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "上班迟到二十分钟属于迟到30分钟以内，每次扣减当月考勤分2分。[1]"
+    },
+    {
+      "id": "c02",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "工龄满十二年能休几天年假？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2863,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十七条【年休假】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十七条【年休假】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十七条【年休假】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "工龄满十二年属于“满十年不满二十年”，年休假为10天。[1]"
+    },
+    {
+      "id": "c03",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "工作日加班工资按多少比例发？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2449,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十九条【加班管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "工作日加班工资不低于工资的150%。[1]"
+    },
+    {
+      "id": "c04",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "一个月最多能加班多少小时？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2412,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十九条【加班管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "一个月最多能加班三十六小时。[1]"
+    },
+    {
+      "id": "c05",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "三年以上合同的员工，试用期最长可以约定多久？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2788,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第九条【试用期管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第九条【试用期管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第九条【试用期管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "三年以上固定期限及无固定期限的劳动合同，试用期不超过六个月。[1]"
+    },
+    {
+      "id": "c06",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "试用期工资最低不能低于正式工资的百分之多少？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3154,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十条【试用期待遇与录用条件确认】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十条【试用期待遇与录用条件确认】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十条【试用期待遇与录用条件确认】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "试用期工资不得低于劳动合同约定工资的百分之八十[1]。"
+    },
+    {
+      "id": "c07",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "正式员工想辞职，要提前多少天书面通知公司？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2704,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "正式员工想辞职，应提前三十日以书面形式通知公司。[1]"
+    },
+    {
+      "id": "c08",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "离职后档案和社保关系要在几天内转走？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3162,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十二条【离职、交接与证明】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "公司应在交接完成后十五日内为员工办理档案和社保关系转移手续。[1]"
+    },
+    {
+      "id": "c09",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "算日工资时一个月按多少天折算？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2775,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十三条【请假与加班期间的薪酬计算】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "算日工资时一个月按21.75天折算。[1]"
+    },
+    {
+      "id": "c10",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "绩效考核结果分成几档？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2811,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十四条【绩效工资与奖金】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十四条【绩效工资与奖金】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十四条【绩效工资与奖金】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "绩效考核结果分为A、B、C、D四档。[1]"
+    },
+    {
+      "id": "c11",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "年度考核拿了最低档，公司会怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4110,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第三十一条【绩效不合格的处理】",
+        "企业规章制度（50条）｜第三十条【考核结果应用】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第三十一条【绩效不合格的处理】",
+        "企业规章制度（50条）｜第三十条【考核结果应用】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十条【考核结果应用】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，年度考核最低档为D档。年度考核为D档的员工应进入绩效改进计划（PIP），明确改进目标、辅导人与复评时间[2]。此外，年度考核为D档且未完成绩效改进计划的，公司可安排培训、调整工作岗位或协商变更劳动合同；员工在调整后仍不能胜任工作的，按法定程序处理，处理过程应留存书面材料并由员工签收[1]。考核结果同时作为薪酬调整、奖金发放、晋升推荐、培训安排及岗位调整的依据[2]。"
+    },
+    {
+      "id": "c12",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "离职以后还要保密几年？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3714,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第三十七条【保密义务与期限】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第三十七条【保密义务与期限】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第三十七条【保密义务与期限】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料[1]，员工在职期间及离职后两年内不得擅自披露、使用或允许第三方使用保密信息；构成商业秘密的部分，保密义务持续至该信息合法公开为止[1]。因此，一般保密信息在离职后需保密两年，而构成商业秘密的部分则持续到信息合法公开为止，并非固定年限[1]。"
+    },
+    {
+      "id": "c13",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "出差报销最晚要在费用发生后多少天内提交？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3129,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十六条【费用报销管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十六条【费用报销管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十六条【费用报销管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "出差报销最晚要在费用发生后30日内提交。[1]"
+    },
+    {
+      "id": "c14",
+      "type": "answer",
+      "category": "other",
+      "scenario": "company",
+      "question": "采购要几家报价才合规？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3398,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第四十七条【采购与供应商管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十七条【采购与供应商管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十七条【采购与供应商管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "资料[1]只说明“单笔金额达到公司规定金额标准的，须至少取得三家报价并留存比价记录”，但未说明未达到该金额标准时需几家报价，也未给出“公司规定金额标准”的具体数值，因此无法完整判断所有情形下几家报价才合规；就达到规定金额标准的情形而言，须至少取得三家报价[1]。"
+    },
+    {
+      "id": "c15",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company",
+      "question": "对处理决定不服，几个工作日内可以申诉？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3055,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第四十五条【申诉与监督渠道】",
+        "企业规章制度（50条）｜第二十九条【绩效反馈与申诉】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第四十五条【申诉与监督渠道】",
+        "企业规章制度（50条）｜第二十九条【绩效反馈与申诉】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第四十五条【申诉与监督渠道】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "对处理决定不服的，可在收到决定之日起五个工作日内向人力资源部书面申诉[1]。"
+    },
+    {
+      "id": "r01",
+      "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "company",
+      "question": "公司食堂几点开饭？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2466,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r02",
+      "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "company",
+      "question": "公司年会在哪个酒店办？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2232,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r03",
+      "type": "refuse",
+      "category": "boundary",
+      "scenario": "company",
+      "question": "年终奖的具体计算公式是什么？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1986,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r04",
+      "type": "refuse",
+      "category": "boundary",
+      "scenario": "company",
+      "question": "工龄买断的补偿标准是多少？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2335,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r05",
+      "type": "refuse",
+      "category": "boundary",
+      "scenario": "company",
+      "question": "公司的股权激励计划怎么分配？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2259,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    }
+  ]
+}

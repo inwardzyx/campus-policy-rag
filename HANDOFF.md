@@ -98,6 +98,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 部署自检 | ✅ 可在坏情况下报红 | `scripts/preflight.py`：key / kb_data 可写 / 审计 / 租户表 / 模型缓存；CLI 退出码 1 |
 | 开通租户 CLI | ✅ | `scripts/create_tenant.py`：明文 key **只打印一次**，落盘只有 sha256 |
 | 自检判据的变异体 | ✅ | `scripts/mutate_preflight.py`：删 key 检查 / fail 也返回 0，**2/2 变红** |
+| **公司套件闭环（2026-10-27）** | ✅ 跑了，结论"无事可做" | `eval_loop run --suite company --namespace company --corpus ...`：基线 **15/15**、挖到 0 条候选 → 如实停止（不编收益）。过程中抓到自家 bug：重构 `_run_eval` 丢了 `--bootstrap-docs` ⇒ 首跑 15 条假失败；已加回归测试 |
 | **真实公司制度套件（2026-10-27）** | ✅ 可跑 | `企业规章制度（50条）`（通用版，已脱敏）切成 51 块：**应答 15/15、拒答 5/5（含 3 道 boundary）**、recall/precision 1.0、nDCG@3 **0.9754**；`scripts/normalize_clause_headings.py` 把加粗条款转成 `##` 标题后才可切块 |
 | **文档名/键口径统一（2026-10-27）** | ✅ 已修 | 企业存储 doc 不带 `.md`、默认语料带 ⇒ 归因记成 retrieval_miss、recall/nDCG 0.0。已统一 key（只去已知后缀）；**nDCG 之前是失真值**：qrels 用 `doc｜clause`、run 只用 doc ⇒ 修正后 campus **0.9087**（原报 1.0 是假的）、hr 1.0、company 0.9754 |
 | **PDF 解析验收（2026-10-27）** | ✅ 两种结局都明确 | 文字版 `sisu-handbook-2025.pdf` 抽出 **340,277** 字；扫描版 `sisu-handbook-scan.pdf` **明确抛 `ParseError`**（建议 OCR/版面解析），不是静默空串；已知限制：pypdf 不识别双栏/表格。`scripts/check_pdf_samples.py` + `tests/test_pdf_samples.py` |
@@ -120,7 +121,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-411 passed, 27 skipped
+412 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。

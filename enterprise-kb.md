@@ -294,6 +294,19 @@ as-of（event 2025-06-01，3 题）：3/3，答案带「按 2025-06-01 时点有
 - **公开空间不允许任何成员**（`131101 public wiki space can't create member`）→ 想加成员必须先改回私有；
 - 结论：需要管理员在管理后台给应用开「云文档/知识库访问」，或走 `user_access_token` 桥接（不推荐长期）。
 
+### 用闭环跑 company（2026-10-27）
+
+```
+eval_loop run --suite company --namespace company --corpus evalset/fixtures/company_corpus
+① 基线 15/15 → ② 挖到 0 条候选 → ✗ 无事可做（如实停止）
+```
+
+结论：**没有失败就不改**。这是闭环的正确行为，不是没跑通。
+
+**过程中抓到的自家 bug**：重构 `_run_eval` 时把 `--bootstrap-docs` 弄丢了，首跑基线是空库，
+产出 **15 条假失败**（门禁因为"净收益 0"拒了，但候选已经写出来了）。已补回，并加回归测试
+断言命令里必须带 `--namespace` 与 `--bootstrap-docs`。
+
 ## 真实公司制度套件（2026-10-27）
 
 语料：`evalset/fixtures/company_corpus/企业规章制度（50条）.md`（通用版，公司名已脱敏）。

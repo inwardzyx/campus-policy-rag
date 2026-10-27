@@ -190,7 +190,8 @@ def _wait_health(port: int, timeout: float = 120.0) -> None:
     raise SystemExit(f"服务 {port} 在 {timeout}s 内没就绪")
 
 
-def _run_eval(cases: str, out: Path, env_extra: dict, corpus: str | None, port: int) -> None:
+def _run_eval(cases: str, out: Path, env_extra: dict, corpus: str | None, port: int,
+              namespace: str | None = None) -> None:
     """起一个**真实 HTTP 服务**跑评测，跑完杀掉。
 
     ★ 为什么不用 inproc：inproc 要求先 rag.startup()，runner 不会自动做 ——
@@ -207,6 +208,10 @@ def _run_eval(cases: str, out: Path, env_extra: dict, corpus: str | None, port: 
         cmd = [sys.executable, str(ROOT / "scripts" / "run_scenario_eval.py"),
                "--transport", "http", "--base-url", f"http://127.0.0.1:{port}",
                "--cases", cases, "--out", str(out)]
+        if namespace:
+            cmd += ["--namespace", namespace]
+        if corpus:
+            cmd += ["--bootstrap-docs", corpus]
         print("→ " + " ".join(cmd))
         r = subprocess.run(cmd, cwd=str(ROOT), env=env, capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
@@ -231,8 +236,20 @@ def cmd_run(args) -> int:
     cands = out_dir / "candidates.json"
     registry = out_dir / "registry.json"
 
+    def _env(spec: str | None) -> dict:
+        out = {}
+        for part in (spec or "").split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                out[k.strip()] = v.strip()
+        return out
+
+    base_env = _env(args.baseline_env)
+    cand_env = _env(args.candidate_env) if args.candidate_env is not None else dict(base_env)
+
     print("① 基线评测（无扩展词）")
-    _run_eval(args.suite, baseline, {"EXPAND_LEXICON": ""}, args.corpus, 8071)
+    _run_eval(args.suite, baseline, {**base_env, "EXPAND_LEXICON": ""}, args.corpus, 8071,
+              args.namespace)
 
     print("② 从失败题挖候选")
     entries = mine(load_report(baseline), Path(args.corpus), args.max_candidates)
@@ -244,7 +261,8 @@ def cmd_run(args) -> int:
         return 1
 
     print("③ 候选评测（EXPAND_LEXICON=候选）")
-    _run_eval(args.suite, candidate, {"EXPAND_LEXICON": str(cands)}, args.corpus, 8072)
+    _run_eval(args.suite, candidate, {**cand_env, "EXPAND_LEXICON": str(cands)}, args.corpus, 8072,
+              args.namespace)
 
     print("④ 门禁裁决")
     entry = gate_reports(baseline, candidate, cands, registry, args.min_gain, args.alpha)
@@ -301,6 +319,12 @@ def main() -> int:
 
     r = sub.add_parser("run", help="完整闭环（会调模型）")
     r.add_argument("--suite", default="campus")
+    r.add_argument("--namespace", default=None,
+                   help="评测用的 namespace（企业语料必须给，否则会查默认语料）")
+    r.add_argument("--baseline-env", default="",
+                   help="基线服务的额外环境变量（KEY=VAL,KEY2=VAL2），用于演示退化-修复")
+    r.add_argument("--candidate-env", default=None,
+                   help="候选服务的额外环境变量；缺省=沿用 baseline-env")
     r.add_argument("--corpus", default="docs/kb")
     r.add_argument("--out-dir", default="evalset/loop")
     r.add_argument("--max-candidates", type=int, default=12)

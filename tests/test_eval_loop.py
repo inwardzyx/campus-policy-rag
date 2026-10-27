@@ -106,3 +106,42 @@ def test_rollback_returns_to_previous_active(tmp_path) -> None:
     p.write_text(json.dumps(reg), encoding="utf-8")
     active = eval_loop.rollback(p)
     assert active is not None and active["id"] == "l1"
+
+def test_run_eval_passes_namespace_and_bootstrap(tmp_path, monkeypatch) -> None:
+    """回归：重构 _run_eval 时曾把 --bootstrap-docs 弄丢 ⇒ 基线变成空库（15 条假失败）。"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    "scripts"))
+    import eval_loop
+
+    seen_cmds: list[list[str]] = []
+
+    class _FakePopen:
+        def __init__(self, *a, **kw):
+            self.returncode = 0
+        def terminate(self):
+            pass
+        def wait(self, timeout=None):
+            return 0
+        def kill(self):
+            pass
+
+    class _FakeRun:
+        def __init__(self, code=0):
+            self.returncode = code
+            self.stdout = ""
+            self.stderr = ""
+
+    def fake_subprocess_run(cmd, **kw):
+        seen_cmds.append(list(cmd))
+        return _FakeRun()
+
+    monkeypatch.setattr(eval_loop.subprocess, "Popen", _FakePopen)
+    monkeypatch.setattr(eval_loop.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(eval_loop, "_wait_health", lambda port, timeout=120.0: None)
+
+    eval_loop._run_eval("company", tmp_path / "b.json", {}, "evalset/fixtures/company_corpus",
+                        8081, "company")
+    cmd = seen_cmds[0]
+    assert "--namespace" in cmd and cmd[cmd.index("--namespace") + 1] == "company"
+    assert "--bootstrap-docs" in cmd and cmd[cmd.index("--bootstrap-docs") + 1] == "evalset/fixtures/company_corpus"
+
