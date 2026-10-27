@@ -1,0 +1,346 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "loop-hard",
+  "mode": "http",
+  "n_cases": 8,
+  "generated_at": "2026-10-27T09:07:14+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\loop-hard.jsonl",
+    "namespace": null,
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 25962,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 8,
+    "answer": {
+      "passed": 6,
+      "total": 6,
+      "rate": 1.0,
+      "wilson_95": [
+        0.6097,
+        1.0
+      ]
+    },
+    "refuse": {
+      "passed": 2,
+      "total": 2,
+      "rate": 1.0,
+      "wilson_95": [
+        0.3424,
+        1.0
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": null,
+    "context_precision": null,
+    "ndcg@3": 1.0,
+    "budget_cut_rate": 0.0,
+    "citation_validity": null,
+    "uncited_paragraphs_per_answer": null,
+    "p95_ms": 4211,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 6,
+      "refuse_ok": 2
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0
+    },
+    "notes": [
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "h1",
+      "type": "answer",
+      "scenario": "loop-hard",
+      "question": "勤工助学一周最多能上几个小时班？",
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
+      "knowledge_hit": true,
+      "took_ms": 3905,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [
+        "学生勤工助学管理办法.md｜第十八条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生勤工助学管理办法.md",
+        "第十八条"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，勤工助学每周不超过8小时。"
+    },
+    {
+      "id": "h2",
+      "type": "answer",
+      "scenario": "loop-hard",
+      "question": "请假四天应该找谁批准？",
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
+      "knowledge_hit": true,
+      "took_ms": 3439,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [
+        "学生请销假制度.md｜总则-第三条",
+        "学生请销假制度.md｜总则-第二条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生请销假制度.md",
+        "总则-第三条"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料第三条，请假一周以内由二级学院审批。请假四天属于一周以内，所以应该找二级学院批准。"
+    },
+    {
+      "id": "h3",
+      "type": "answer",
+      "scenario": "loop-hard",
+      "question": "老家遭了灾，学校有什么补助可以申请？",
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
+      "knowledge_hit": true,
+      "took_ms": 4211,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [
+        "专项补助管理办法.md｜第十条",
+        "专项补助管理办法.md｜第四条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "专项补助管理办法.md",
+        "第十条"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，你可以申请**临时困难补助**。\n\n符合的条件是：**半年内，学生家庭因自然灾害，造成家庭经济十分困难而影响学生基本生活的**（第十条第（三）项）。\n\n补助标准：符合该项条件者，可**一次性给予1000元资助**。\n\n办理程序：学生根据通知自愿向所属二级学院递交临时困难补助申请，并如实填写提交证明材料（未进行困难认定的需要同时申请困难认定）。\n\n另外提醒：受助学生在同一学年原则上只能申请一次临时困难补助。"
+    },
+    {
+      "id": "h4",
+      "type": "answer",
+      "scenario": "loop-hard",
+      "question": "国家奖学金和国家励志奖学金能不能一起拿？",
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
+      "knowledge_hit": true,
+      "took_ms": 3173,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [
+        "全日制本专科生国家奖助学金实施办法.md｜第十二条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "全日制本专科生国家奖助学金实施办法.md",
+        "第十二条"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不能。根据资料，同一学年内学生不能同时获得国家奖学金和国家励志奖学金。"
+    },
+    {
+      "id": "h5",
+      "type": "answer",
+      "scenario": "loop-hard",
+      "question": "当兵退伍回来，多久之内必须回学校办复学？",
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
+      "knowledge_hit": true,
+      "took_ms": 3648,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [
+        "学生应征入伍管理办法（试行）.md｜第十八条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生应征入伍管理办法（试行）.md",
+        "第十八条"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，应征入伍学生服役期满后，应在退役**二年内**回到学校报到，申请复学。"
+    },
+    {
+      "id": "h6",
+      "type": "answer",
+      "scenario": "loop-hard",
+      "question": "退伍复学以后还能不能换个专业？",
+      "bucket": "ok",
+      "reason": "没有 context（旧路径）⇒ 只能按是否命中判；原因未知",
+      "context_available": false,
+      "knowledge_hit": true,
+      "took_ms": 3349,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [
+        "学生应征入伍管理办法（试行）.md｜第二十二条"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "学生应征入伍管理办法（试行）.md",
+        "第二十二条"
+      ],
+      "session_id": null,
+      "turn_index": null,
+      "answer": "可以。根据资料，应征入伍学生退出现役复学时，原所学专业因调整等原因停办的，经学校批准可在相近专业复学；经学校批准也可以转换专业，原所修课程的成绩和学分根据专业情况予以认定。"
+    },
+    {
+      "id": "r1",
+      "type": "refuse",
+      "scenario": "loop-hard",
+      "question": "学校食堂几点开门？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
+      "knowledge_hit": false,
+      "took_ms": 1847,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r2",
+      "type": "refuse",
+      "scenario": "loop-hard",
+      "question": "教职工的年终奖怎么算？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": false,
+      "knowledge_hit": false,
+      "took_ms": 2235,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    }
+  ]
+}

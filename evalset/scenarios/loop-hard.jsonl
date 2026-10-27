@@ -1,0 +1,8 @@
+{"id": "h1", "type": "answer", "question": "勤工助学一周最多能上几个小时班？", "gold": ["学生勤工助学管理办法.md", "第十八条"]}
+{"id": "h2", "type": "answer", "question": "请假四天应该找谁批准？", "gold": ["学生请销假制度.md", "总则-第三条"]}
+{"id": "h3", "type": "answer", "question": "老家遭了灾，学校有什么补助可以申请？", "gold": ["专项补助管理办法.md", "第十条"]}
+{"id": "h4", "type": "answer", "question": "国家奖学金和国家励志奖学金能不能一起拿？", "gold": ["全日制本专科生国家奖助学金实施办法.md", "第十二条"]}
+{"id": "h5", "type": "answer", "question": "当兵退伍回来，多久之内必须回学校办复学？", "gold": ["学生应征入伍管理办法（试行）.md", "第十八条"]}
+{"id": "h6", "type": "answer", "question": "退伍复学以后还能不能换个专业？", "gold": ["学生应征入伍管理办法（试行）.md", "第二十二条"]}
+{"id": "r1", "type": "refuse", "question": "学校食堂几点开门？", "gold": null}
+{"id": "r2", "type": "refuse", "question": "教职工的年终奖怎么算？", "gold": null}

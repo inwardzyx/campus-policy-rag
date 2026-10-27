@@ -98,6 +98,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 部署自检 | ✅ 可在坏情况下报红 | `scripts/preflight.py`：key / kb_data 可写 / 审计 / 租户表 / 模型缓存；CLI 退出码 1 |
 | 开通租户 CLI | ✅ | `scripts/create_tenant.py`：明文 key **只打印一次**，落盘只有 sha256 |
 | 自检判据的变异体 | ✅ | `scripts/mutate_preflight.py`：删 key 检查 / fail 也返回 0，**2/2 变红** |
+| **评测闭环 v0（2026-10-27）** | ✅ 机制可跑、门禁被证明会拦 | 失败回收→候选（查询扩展词）→配对门禁→registry/回滚；`scripts/eval_loop.py run|mine|gate|rollback`；服务用 `EXPAND_LEXICON` 加载候选。真实跑 campus/loop-hard **全对 ⇒ 无可挖失败**（如实记录）；坏候选实测被拒（`evalset/loop-hard/registry.json`）。变异体 2/2 |
 | **HR 套件（2026-10-26/27）** | ✅ 可跑（**合成**语料，非真实公司文件） | `hr.jsonl` 24 题（17 应答 + 7 拒答，含 **5 道 boundary 边界题**）：应答 **17/17**、拒答 **7/7**；`hr-deny` 3 题：**3/3 正确拒答（无 acl_leak）**；证据 `evalset/report-scenario-hr*.json` |
 | 改写/精排缓存（2026-10-26） | ✅ 默认开，可回滚 | 配对实验（同 10 题、同进程先冷后热）：热跑 p95 **6667→4045ms（-39%）**、token **10940→2913（-73%）**、**检索结果 10/10 与冷跑一致**；回滚 `CACHE_ENABLED=0` |
 | 全局追踪变量（2026-10-27） | ✅ 已兜底 | 机器上存在用户级 `LANGSMITH_TRACING=true`（别的项目留下）⇒ 服务每个请求都在向第三方上传 trace，且无 `LANGCHAIN_API_KEY` 时 401 重试拖慢响应。已加 `_guard_tracing_env()`：无 key 时强制关；preflight 对"开着"报 warn |
@@ -114,7 +115,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-380 passed, 27 skipped
+389 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -482,6 +483,10 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\evalset\fixtures\hr_corpus_acl\` | 受限语料（1 篇，acl=hr，用于越权套件） |
 | `D:\_review_rag-cs\evalset\scenarios\hr.jsonl` | 24 题（17 应答 + 7 拒答，含 5 道边界题） |
 | `D:\_review_rag-cs\evalset\scenarios\hr-deny.jsonl` | 3 题越权拒答 |
+| `D:\_review_rag-cs\kb\expand.py` | 查询扩展词表（闭环候选的载体） |
+| `D:\_review_rag-cs\kb\loopgate.py` | 闭环门禁：净收益/回退/拒答回退/越权泄漏 |
+| `D:\_review_rag-cs\scripts\eval_loop.py` | 闭环 CLI（mine/gate/run/rollback） |
+| `D:\_review_rag-cs\scripts\mutate_eval_loop.py` | 闭环判据变异体（2/2 变红） |
 | `D:\_review_rag-cs\cache.py` | 进程内 LRU（改写/精排用，key 含全部输入，线程安全） |
 | `D:\_review_rag-cs\scripts\cache_ab.py` | 缓存 A/B（同进程先冷后热；分别判 sources/answer 一致） |
 | `D:\_review_rag-cs\scripts\mutate_cache.py` | 缓存判据变异体（key 只取首参 / get 永远未命中），2/2 变红 |

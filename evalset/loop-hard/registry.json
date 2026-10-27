@@ -1,0 +1,26 @@
+{
+  "schema": "eval-loop/1",
+  "active": null,
+  "history": [
+    {
+      "id": "loop-20261027-090801",
+      "created_at": "2026-10-27T09:08:01+0800",
+      "candidates": "evalset\\loop-hard\\bad-lexicon.json",
+      "before": "evalset\\loop-hard\\baseline2.json",
+      "after": "evalset\\loop-hard\\candidate-bad.json",
+      "gate": {
+        "verdict": "reject",
+        "reasons": [
+          "净收益不足：+0 < 1"
+        ],
+        "n_common": 8,
+        "gains": [],
+        "losses": [],
+        "refuse_losses": [],
+        "leaks": [],
+        "min_gain": 1
+      },
+      "status": "rejected"
+    }
+  ]
+}

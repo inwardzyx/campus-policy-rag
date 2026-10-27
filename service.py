@@ -96,6 +96,7 @@ from kb.eval import evaluate_namespace             # noqa: E402  每语料 smoke
 import kb.context as context_mod                    # noqa: E402  上下文层：八层/预算/trace
 import kb.citation as citation_mod                  # noqa: E402  引用校验（答案里的 [n] 指没指对块）
 import kb.compress as compress_mod                  # noqa: E402  块级规则压缩（去重/噪声行）
+import kb.expand as expand_mod                      # noqa: E402  查询扩展词表（评测闭环的候选）
 import kb.versioning as version_mod                 # noqa: E402  as-of 版本裁决（effective_date/status）
 import kb.audit as audit_mod                        # noqa: E402  审计落盘（只存决策与定位，不存原文）
 import cache as cache_mod                          # noqa: E402  改写/精排的 LRU 缓存
@@ -755,6 +756,7 @@ class RAG:
 
     def __init__(self):
         self.ready = False
+        self._lexicon = None      # 查询扩展词表（EXPAND_LEXICON 指向的 JSON）
         self._llm = None          # 真正的大模型对象，第一次用到才建（见下面的 llm）
         # ★ 元信息不合格而被跳过的文件（2026-10-12 补）：原来它只活在 startup 那一瞬的
         #   日志里，服务起来之后【没有任何接口】能告诉你"我少加载了几个文件"。
@@ -801,6 +803,7 @@ class RAG:
 
     def startup(self):
         t0 = time.time()
+        self._lexicon = expand_mod.Lexicon.load(os.environ.get("EXPAND_LEXICON"))
         self.model = TextEmbedding("BAAI/bge-small-zh-v1.5", cache_dir=CACHE_DIR)
         # ★ 这里【故意不建 LLM】，原因见上面的 llm 属性
 
@@ -1110,6 +1113,8 @@ class RAG:
         返回 (归一化后的 query, 向量分, 向量排名, BM25 排名)。
         """
         query = normalize_query(query)
+        if self._lexicon is not None:
+            query, _matched = self._lexicon.apply(query)
         q = np.array(list(self.model.query_embed([query])), dtype="float32")[0]
         vec_scores = self.vectors @ q                       # 每块与问题的向量相似度
         vec_order = np.argsort(-vec_scores)                 # 按分数从高到低的下标
