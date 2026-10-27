@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GATE = ROOT / "kb" / "loopgate.py"
 EXPAND = ROOT / "kb" / "expand.py"
 CATEGORIES = ROOT / "kb" / "categories.py"
+TRANSPORT = ROOT / "kb" / "evalkit" / "transport.py"
 
 MUTATIONS = [
     # (标签, 目标文件, 原文, 替换, 测试文件, -k 关键词, 期望失败用例)
@@ -37,6 +38,10 @@ MUTATIONS = [
      "    return min(1.0, 2 * tail)\n",
      "    return 1.0\n",
      "tests/test_grouping_significance.py", "mcnemar", ["test_mcnemar_exact_values"]),
+    ("E · 429 不重试", TRANSPORT,
+     "        for _ in range(3):\n            if code not in (429, 503):\n                break\n",
+     "        for _ in range(0):\n            if code not in (429, 503):\n                break\n",
+     "tests/test_transport_ratelimit.py", "retried", ["test_429_then_ok_is_retried"]),
     ("D · 分类忽略 tags", CATEGORIES,
      "    if tags:\n        return str(tags[0])\n",
      "    if False:\n        return str(tags[0])\n",
@@ -56,7 +61,7 @@ def run_tests(testfile: str, kw: str) -> tuple[int, list[str]]:
 
 
 def main() -> int:
-    originals = {p: p.read_bytes() for p in (GATE, EXPAND, CATEGORIES)}
+    originals = {p: p.read_bytes() for p in (GATE, EXPAND, CATEGORIES, TRANSPORT)}
     before = {p: hashlib.sha256(b).hexdigest() for p, b in originals.items()}
     texts = {p: b.decode("utf-8") for p, b in originals.items()}
     ok = 0

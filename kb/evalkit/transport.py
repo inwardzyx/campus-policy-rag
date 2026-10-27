@@ -66,6 +66,10 @@ def _frontmatter(path: Path) -> dict:
     return out
 
 
+class TransportError(RuntimeError):
+    """传输层失败（限流/服务错误）。**不许伪装成"某题答错"** —— 那会把配置问题算成质量下降。"""
+
+
 class HttpTransport:
     """打真实服务。`bootstrap_docs` 可选：先把语料灌进 namespace（带 trace 才有指标）。"""
 
@@ -132,11 +136,25 @@ class HttpTransport:
         # ★ 会话级评测靠它把多轮串成一条轨迹；单题评测不带这个键，行为不变。
         if case.get("session_id"):
             payload["session_id"] = case.get("session_id")
-        code, body = self._call("POST", "/chat",
-                                body=json.dumps(payload).encode("utf-8"),
-                                headers={"Content-Type": "application/json"})
+        body_bytes = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        code, body = self._call("POST", "/chat", body=body_bytes, headers=headers)
+        # ★ 2026-10-27：429/503 是**限流/过载**，不是"这题答错"。
+        #   旧行为把非 200 变成 {"knowledge_hit": False} ⇒ 报告静默变成 0/17（实测复现）。
+        #   现在：指数退避重试；仍失败就抛 TransportError，让评测中断而不是产出假指标。
+        backoff = 2.0
+        for _ in range(3):
+            if code not in (429, 503):
+                break
+            time.sleep(backoff)
+            backoff *= 2
+            code, body = self._call("POST", "/chat", body=body_bytes, headers=headers)
         if self.pace:
             time.sleep(self.pace)
+        if code in (429, 503):
+            raise TransportError(
+                f"评测被限流/过载打断（HTTP {code}）：请调高 RATE_PER_MIN 或降并发，"
+                f"不要把这个结果当成模型退化。{str(body)[:200]}")
         if code != 200:
             return {"error": f"HTTP {code}", "knowledge_hit": False,
                     "detail": str(body)[:300]}

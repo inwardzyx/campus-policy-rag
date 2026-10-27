@@ -31,3 +31,4 @@ from kb.evalkit.report import (SCHEMA_VERSION, build_report,  # noqa: F401
                                format_summary, write_report)
 from kb.evalkit.transport import (HttpTransport, InProcTransport,  # noqa: F401
                                   RecordedTransport, make_transport)
+from kb.evalkit.transport import TransportError  # noqa: E402

@@ -365,7 +365,7 @@ VEC_REJECT_THRESHOLD = 0.55
 > 调用方还以为命中了。现在两条路都有拒答，`tests/` 里有断言专门盯着这个。
 
 接口响应里有 `knowledge_hit` 字段，调用方能明确区分「答错了」和「拒绝作答」。
-实测：命中时约 2.8 秒，拒答时约 1.3 秒（省掉了生成那一次调用）。
+实测（campus 20 题，干净一轮）：命中 **p50 3.1s / p95 4.3s / max 4.8s**；拒答约 1.3s（省掉生成那一次调用）。★ 延迟主要随**上游模型端**抖动，2.8s 是早期单次值，别当 SLA；详见 `experiments/eval-latency-and-limits.md`。
 
 ---
 
@@ -1727,7 +1727,7 @@ python evalset/probe_threshold.py        # 扫 VEC_REJECT_THRESHOLD，输出可�
 | job | 装什么 | 跑什么 | 实测耗时 |
 |---|---|---|---|
 | **fast** | 只装 `pytest` + `redis==8.1.0`，另起一个 `redis:7-alpine` service | `tests/test_loader.py` + `tests/test_limits.py` | **约 3 秒**（纯解析 + 限额判定，不装模型） |
-| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_citation.py` + `tests/test_compress.py` + `tests/test_versioning.py` + `tests/test_audit.py` + `tests/test_eval_kit.py` + `tests/test_session_eval.py` + `tests/test_connectors.py` + `tests/test_tenants.py` + `tests/test_console.py` + `tests/test_preflight.py` + `tests/test_normalize.py` + `tests/test_onboard.py` + `tests/test_index_text.py` + `tests/test_deploy_smoke.py` + `tests/test_loadstats.py` + `tests/test_metrics_endpoints.py` + `tests/test_cache.py` + `tests/test_tracing_guard.py` + `tests/test_eval_loop.py` + `tests/test_answer_value.py` + `tests/test_grouping_significance.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
+| **full** | `requirements.txt` + 下载 92MB 模型 | `tests/test_guard.py` + `tests/test_eval_set.py` + `tests/test_llm_resilience.py` + `tests/test_usage_ledger.py` + `tests/test_chat_stream.py` + `tests/test_session_multi_turn.py` + `tests/test_context.py` + `tests/test_citation.py` + `tests/test_compress.py` + `tests/test_versioning.py` + `tests/test_audit.py` + `tests/test_eval_kit.py` + `tests/test_session_eval.py` + `tests/test_connectors.py` + `tests/test_tenants.py` + `tests/test_console.py` + `tests/test_preflight.py` + `tests/test_normalize.py` + `tests/test_onboard.py` + `tests/test_index_text.py` + `tests/test_deploy_smoke.py` + `tests/test_loadstats.py` + `tests/test_metrics_endpoints.py` + `tests/test_cache.py` + `tests/test_tracing_guard.py` + `tests/test_eval_loop.py` + `tests/test_answer_value.py` + `tests/test_grouping_significance.py` + `tests/test_transport_ratelimit.py` + `tests/test_eval_attribution.py` + `tests/test_auth.py` + `tests/test_auth_endpoint.py` + `tests/test_kb_store.py` + `tests/test_kb_api.py` + `tests/test_parsers.py` + `tests/test_layout.py` + `tests/test_feishu_sync.py` + `tests/test_eval_runner.py` + `tests/test_kb_eval.py` | 15 秒起（首次还要下模型） |
 | **docker** | 构建镜像（又是 `requirements.txt` + 92MB 模型） | **在容器里**跑 `tests/test_guard.py`，再起服务打接口 | **138 秒**＝构建 42 ＋ 容器内门禁 51 ＋ 等就绪 40。★ 一次 GitHub runner 的实测值、冷缓存，换 base 镜像或加依赖就会变 —— 不是承诺值 |
 
 > ★ **上表刻意不写"每个文件多少条"**（2026-10-14 改）。原来写的是「22 + 35 = 57 条」，

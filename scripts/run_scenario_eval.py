@@ -126,13 +126,18 @@ def main() -> int:
 
     t0 = time.time()
     rows = []
-    for case in cases:
-        resp = transport.ask(case)
-        rows.append(evalkit.score_row(case, resp if resp is not None else
-                                      {"knowledge_hit": False}))
-        if resp is None:
-            rows[-1]["bucket"] = "no_response"
-            rows[-1]["reason"] = "没有收到该题的响应"
+    try:
+        for case in cases:
+            resp = transport.ask(case)
+            rows.append(evalkit.score_row(case, resp if resp is not None else
+                                          {"knowledge_hit": False}))
+            if resp is None:
+                rows[-1]["bucket"] = "no_response"
+                rows[-1]["reason"] = "没有收到该题的响应"
+    except evalkit.TransportError as exc:
+        # ★ 限流/过载要**中断**，不能产出"看起来变差了"的报告（实测：429 被当成答错，0/17）
+        print(f"\n✗ 评测中断：{exc}")
+        return 1
     elapsed = int((time.time() - t0) * 1000)
 
     metrics = evalkit.aggregate(rows, cases, k=3)
