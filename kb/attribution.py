@@ -29,6 +29,8 @@ from typing import Any, Mapping
 #: 6 个失败桶（可行动的那些）。`ok` / `refuse_ok` / `answered_unexpectedly` 是结果，不算桶。
 FAILURE_BUCKETS: tuple[str, ...] = (
     "retrieval_miss", "rank_shift", "budget_cut", "gen_uncited", "acl_leak", "stale_version",
+    # ★ 2026-10-27 加：拒答题"答了"必须再细分，否则 boundary 题失败无法行动
+    "refuse_fabricated", "refuse_context_overreach",
 )
 
 _BUDGET_REASONS = ("budget", "oversize")
@@ -84,9 +86,21 @@ def classify(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, 
         #   实测模型会引用"检索到了但不充分"的资料，然后说"资料中没有…我不知道"；
         #   这时 knowledge_hit=True 却是**正确拒答**，旧代理把两道判成了"意外作答"。
         refused = looks_like_refusal(response.get("answer"))
-        out.update(bucket=("refuse_ok" if (refused or not hit) else "answered_unexpectedly"),
-                   reason=("库外题被正确拒答（答案里明说不知道）" if refused else
-                           ("库外题却答了" if hit else "库外题被正确拒答")))
+        if refused or not hit:
+            out.update(bucket="refuse_ok",
+                       reason=("库外题被正确拒答（答案里明说不知道）" if refused else
+                               "库外题被正确拒答"))
+            return out
+        # 答了：再分两类 —— 有没有真的用检索到的块
+        ctx_ref = _trace(response)
+        citation = (ctx_ref or {}).get("citation") or {}
+        used = citation.get("used_ids") or []
+        if used:
+            out.update(bucket="refuse_context_overreach",
+                       reason="拒答题却作答，且引用了检索到的块（相关但不充分 ⇒ 越界）")
+        else:
+            out.update(bucket="refuse_fabricated",
+                       reason="拒答题却作答，且没有任何引用（疑似编造）")
         return out
 
     # ---- 以下都是 answer 题 ----

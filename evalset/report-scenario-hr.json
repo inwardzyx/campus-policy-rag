@@ -3,16 +3,21 @@
   "suite": "hr",
   "mode": "http",
   "n_cases": 24,
-  "generated_at": "2026-10-26T19:29:34+0800",
+  "generated_at": "2026-10-27T09:19:31+0800",
   "meta": {
     "cases_file": "evalset\\scenarios\\hr.jsonl",
     "namespace": "hr_eval",
     "event_time": null,
     "limit": null,
-    "wall_clock_ms": 88638,
+    "wall_clock_ms": 63873,
     "missing_responses": []
   },
   "metric_specs": {
+    "answer_value": {
+      "desc": "答案值命中率（只统计配了 expect 的题；缺失≠0）",
+      "unit": "rate",
+      "missing": "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）"
+    },
     "answer": {
       "desc": "应答类题目的正确率（bucket=ok）",
       "unit": "rate",
@@ -76,6 +81,7 @@
   },
   "aggregate": {
     "n_cases": 24,
+    "answer_value": 1.0,
     "answer": {
       "passed": 17,
       "total": 17,
@@ -106,7 +112,7 @@
     "budget_cut_rate": 0.0,
     "citation_validity": 1.0,
     "uncited_paragraphs_per_answer": 0.0,
-    "p95_ms": 4140,
+    "p95_ms": 3352,
     "compression_rows_active": 0,
     "compression_dedup_total": 0,
     "buckets": {
@@ -119,7 +125,9 @@
       "budget_cut": 0,
       "gen_uncited": 0,
       "acl_leak": 0,
-      "stale_version": 0
+      "stale_version": 0,
+      "refuse_fabricated": 0,
+      "refuse_context_overreach": 0
     },
     "notes": [
       "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
@@ -135,7 +143,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 9356,
+      "took_ms": 3352,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -150,6 +158,7 @@
         "员工培训管理办法.md",
         "第四条（年度学时要求）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
       "answer": "员工每年至少要完成不少于 40 学时的培训，其中合规必修培训不少于 8 学时。[1]"
@@ -163,7 +172,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3573,
+      "took_ms": 2381,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -178,6 +187,7 @@
         "员工培训管理办法.md",
         "第四条（年度学时要求）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
       "answer": "合规必修培训每年不少于 8 学时。[1]"
@@ -191,7 +201,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3643,
+      "took_ms": 2689,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -206,6 +216,7 @@
         "员工培训管理办法.md",
         "第五条（新员工入职培训）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "新员工应在入职之日起 30 日内完成入职培训。[1]"
@@ -219,7 +230,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3776,
+      "took_ms": 2638,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -234,6 +245,7 @@
         "员工培训管理办法.md",
         "第五条（新员工入职培训）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
       "answer": "入职培训累计不少于 16 学时。[1]"
@@ -247,7 +259,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3871,
+      "took_ms": 3022,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -262,6 +274,7 @@
         "员工培训管理办法.md",
         "第六条（培训申请与审批）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "报名外部培训应提前 5 个工作日提交申请。[1]"
@@ -275,7 +288,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3668,
+      "took_ms": 2767,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -290,6 +303,7 @@
         "员工培训管理办法.md",
         "第六条（培训申请与审批）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "人力资源部应在收到完整申请材料后 3 个工作日内作出批复。[1]"
@@ -303,7 +317,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3783,
+      "took_ms": 2646,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -318,6 +332,7 @@
         "员工培训管理办法.md",
         "第七条（培训期间的出勤与工资）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "参加培训期间工资、津贴照常计发。[1]"
@@ -331,7 +346,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3781,
+      "took_ms": 3062,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -346,6 +361,7 @@
         "员工培训管理办法.md",
         "第九条（服务期与违约责任）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
       "answer": "单次培训费用超过 10000 元的，服务期不少于 2 年。[1]"
@@ -359,7 +375,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3519,
+      "took_ms": 2804,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -374,6 +390,7 @@
         "员工培训管理办法.md",
         "第九条（服务期与违约责任）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "要还。员工在服务期内主动离职的，应按未履行服务期比例返还相应培训费用。[1]"
@@ -387,7 +404,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 4140,
+      "took_ms": 2720,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -402,6 +419,7 @@
         "员工培训管理办法.md",
         "第十条（培训考核）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "首次考核不合格的，可补考一次；补考仍不合格的，当年度该门培训不计入学时，并由人力资源部安排重新培训。[1]"
@@ -415,7 +433,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3458,
+      "took_ms": 2905,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -430,6 +448,7 @@
         "员工培训管理办法.md",
         "第十一条（培训记录管理）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
       "answer": "员工培训档案保存期限不少于 5 年。[1]"
@@ -443,7 +462,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3105,
+      "took_ms": 2659,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -458,6 +477,7 @@
         "员工培训费用报销实施细则.md",
         "第三条（异地培训住宿费标准）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "异地培训住宿费按每人每晚 400 元限额据实报销，超出部分由个人承担。[1] 如果是由培训机构统一安排住宿的，则按培训通知金额报销，不受该限额限制。[1]"
@@ -471,7 +491,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3156,
+      "took_ms": 2579,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -486,6 +506,7 @@
         "员工培训费用报销实施细则.md",
         "第五条（培训期间伙食补助）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "异地培训伙食补助为每人每日 80 元。[1]"
@@ -499,7 +520,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3874,
+      "took_ms": 2463,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -514,6 +535,7 @@
         "员工培训费用报销实施细则.md",
         "第六条（报销时限与材料）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
       "answer": "培训结束后应在30日内提交报销申请。[1]"
@@ -527,7 +549,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3727,
+      "took_ms": 2379,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -542,9 +564,10 @@
         "员工培训费用报销实施细则.md",
         "第七条（培训供应商准入）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
-      "answer": "单笔合同金额超过 50000 元的，应通过公司采购流程比选确定，不得由个人指定。[1]"
+      "answer": "单笔合同金额超过 50000 元的培训合同，应通过公司采购流程比选确定，不得由个人指定。[1]"
     },
     {
       "id": "h16",
@@ -555,7 +578,7 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3717,
+      "took_ms": 3430,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -570,6 +593,7 @@
         "员工培训费用报销实施细则.md",
         "第八条（不予报销的情形）"
       ],
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "以下情况的培训费用不予报销：未事前审批的培训、与岗位职责无关的培训、发票抬头不是公司全称的培训，以及考核不合格且未重新培训通过的场次。[1]"
@@ -583,15 +607,14 @@
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 4068,
+      "took_ms": 3140,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
       "uncited_count": 0,
-      "included": 2,
+      "included": 1,
       "sources": [
-        "员工培训管理办法.md｜第八条（培训费用承担与报销）",
-        "员工培训费用报销实施细则.md｜第一条（依据与范围）"
+        "员工培训管理办法.md｜第八条（培训费用承担与报销）"
       ],
       "compression": null,
       "rewritten_query": null,
@@ -599,9 +622,10 @@
         "员工培训管理办法.md",
         "第八条（培训费用承担与报销）"
       ],
+      "answer_value": true,
       "session_id": null,
       "turn_index": null,
-      "answer": "一次培训花了 8000 元，属于单次培训费用超过 5000 元的情形，应按《员工培训费用报销实施细则》办理审批与报销。[1][2]"
+      "answer": "超过 5000 元的培训费用，应按《员工培训费用报销实施细则》办理审批与报销。[1]"
     },
     {
       "id": "h18",
@@ -612,7 +636,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2616,
+      "took_ms": 1979,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -622,6 +646,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "知识库里没有能回答这个问题的资料，我不编。"
@@ -635,7 +660,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 3196,
+      "took_ms": 2114,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -645,6 +670,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "知识库里没有能回答这个问题的资料，我不编。"
@@ -658,7 +684,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2144,
+      "took_ms": 2131,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -668,6 +694,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "知识库里没有能回答这个问题的资料，我不编。"
@@ -681,7 +708,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3383,
+      "took_ms": 2721,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": 1.0,
@@ -693,6 +720,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "不知道。资料[1]只说明培训期间工资、津贴照常计发，未提及绩效工资的计算方式。"
@@ -706,7 +734,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2333,
+      "took_ms": 2212,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -716,6 +744,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "知识库里没有能回答这个问题的资料，我不编。"
@@ -729,7 +758,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3701,
+      "took_ms": 2861,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": 1.0,
@@ -741,6 +770,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "不知道。资料[1]只说明异地培训往返交通优先选择高铁二等座或经济舱机票、凭票报销，未提及能否按“差旅管理办法”报销。[1]"
@@ -754,7 +784,7 @@
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2711,
+      "took_ms": 1855,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -764,6 +794,7 @@
       "compression": null,
       "rewritten_query": null,
       "gold": null,
+      "answer_value": null,
       "session_id": null,
       "turn_index": null,
       "answer": "知识库里没有能回答这个问题的资料，我不编。"

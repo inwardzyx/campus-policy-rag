@@ -24,6 +24,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts/run_scenario_eval.py `
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -71,6 +72,8 @@ def main() -> int:
     ap.add_argument("--acl", default=None)
     ap.add_argument("--event-time", default=None, help="as-of 时点 YYYY-MM-DD")
     ap.add_argument("--bootstrap-docs", default=None, help="先把该目录的 .md 灌进 namespace")
+    ap.add_argument("--expect", default=None,
+                    help="expect 映射文件（scripts/extract_answer_values.py 的产物）")
     ap.add_argument("--bootstrap-acl", default=None,
                     help="灌语料时的 acl（frontmatter 里的 acl 优先）")
     ap.add_argument("--responses", default=None, help="离线模式：录好的响应 {id: response}")
@@ -91,6 +94,13 @@ def main() -> int:
     cases = evalkit.load_cases(path)
     if args.limit:
         cases = cases[:args.limit]
+
+    if args.expect:
+        mapping = json.loads(Path(args.expect).read_text(encoding="utf-8")).get("expect") or {}
+        for case in cases:
+            if str(case.get("id")) in mapping:
+                case["expect"] = mapping[str(case["id"])]
+        print(f"· 注入 expect：{len(mapping)} 条")
 
     issues = evalkit.validate_cases(cases)
     if issues:

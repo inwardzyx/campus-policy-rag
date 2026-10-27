@@ -80,6 +80,24 @@ def _ndcg(rows: Sequence[Mapping[str, Any]], cases: Sequence[Mapping[str, Any]],
 
 # ---------------------------------------------------------------- 逐题判分
 
+def _answer_value(case: Mapping[str, Any], response: Mapping[str, Any]) -> bool | None:
+    """答案值校验：命中=None 表示**没有判据**（该题没配 expect），不是失败也不是通过。"""
+    expect = case.get("expect") or []
+    if not expect:
+        return None
+    import kb.values as values_mod
+
+    expected = []
+    for item in expect:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            expected.append((float(item[0]), str(item[1])))
+        else:
+            expected.extend(values_mod.extract(str(item)))
+    if not expected:
+        return None
+    return values_mod.match(response.get("answer") or "", expected)
+
+
 def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str, Any]:
     """一题一行：判分 + 归因 + 上下文指标。所有字段都可能是 None（= 拿不到）。"""
     ctx = _ctx(response)
@@ -117,6 +135,7 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
         # ★ 会话级评测要用：改写后的检索词（只来自 trace）、gold（对齐用）、会话键。
         "rewritten_query": (ctx or {}).get("rewritten_query"),
         "gold": list(gold) if gold else None,
+        "answer_value": _answer_value(case, response),
         "session_id": (ctx or {}).get("session_id"),
         "turn_index": (ctx or {}).get("turn_index"),
         # 留一段答案（截断）：报告要能被人逐条抽验，离线复算也要有输入
@@ -189,6 +208,15 @@ def _m_answer(rows, cases, o):
     return _rate(rows, "answer", ["ok"]), None
 
 
+def _m_answer_value(rows, cases, o):
+    """值命中率（只统计**配了 expect** 的 answer 题；没配的不进分母）。"""
+    vals = [r.get("answer_value") for r in rows
+            if r.get("type") == "answer" and r.get("answer_value") is not None]
+    if not vals:
+        return None, "没有配 expect 的 answer 题 ⇒ 不计算值命中率（缺失≠0）"
+    return round(sum(1 for v in vals if v) / len(vals), 4), None
+
+
 def _m_refuse(rows, cases, o):
     return _rate(rows, "refuse", ["refuse_ok"]), None
 
@@ -244,6 +272,8 @@ def _m_compress_dedup(rows, cases, o):
 
 
 for _spec in (
+    MetricSpec("answer_value", "答案值命中率（只统计配了 expect 的题；缺失≠0）", "rate",
+               "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）", _m_answer_value),
     MetricSpec("answer", "应答类题目的正确率（bucket=ok）", "rate",
                "该套件没有 answer 题时为 None", _m_answer),
     MetricSpec("refuse", "库外题的正确拒答率（bucket=refuse_ok）", "rate",

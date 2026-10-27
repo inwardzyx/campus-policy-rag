@@ -112,10 +112,15 @@ def test_deny_case_hit_leaks_and_miss_is_ok() -> None:
     assert (denied["bucket"], leaked["bucket"]) == ("ok", "acl_leak")
 
 
-def test_refuse_case_hit_is_answered_unexpectedly() -> None:
+def test_refuse_case_hit_is_split_by_citation() -> None:
+    """★ 2026-10-27：拒答题"答了"再细分 —— 有没有引用决定是越界还是编造。"""
+    with_used = response(hit=True, blocks=[("x.md", "第一条")])
+    with_used["context"]["citation"] = {"used_ids": [1]}
+    assert attribution.classify(case(typ="refuse", gold=None), with_used)["bucket"] \
+        == "refuse_context_overreach"
     assert attribution.classify(case(typ="refuse", gold=None),
                                 response(hit=True, blocks=[("x.md", "第一条")]))["bucket"] \
-        == "answered_unexpectedly"
+        == "refuse_fabricated"
     assert attribution.classify(case(typ="refuse", gold=None),
                                 response(hit=False))["bucket"] == "refuse_ok"
 
@@ -237,7 +242,7 @@ def test_refusal_is_judged_by_answer_text_not_by_retrieval_hit() -> None:
 
     answered = attribution.classify(
         case, {"knowledge_hit": True, "answer": "加班按 1.5 倍工资折算，也可以申请调休。"})
-    assert answered["bucket"] == "answered_unexpectedly"
+    assert answered["bucket"] in ("refuse_fabricated", "refuse_context_overreach")
 
 
 def test_looks_like_refusal_handles_empty_and_none() -> None:
