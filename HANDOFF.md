@@ -98,6 +98,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 部署自检 | ✅ 可在坏情况下报红 | `scripts/preflight.py`：key / kb_data 可写 / 审计 / 租户表 / 模型缓存；CLI 退出码 1 |
 | 开通租户 CLI | ✅ | `scripts/create_tenant.py`：明文 key **只打印一次**，落盘只有 sha256 |
 | 自检判据的变异体 | ✅ | `scripts/mutate_preflight.py`：删 key 检查 / fail 也返回 0，**2/2 变红** |
+| **分组指标 + McNemar 门禁（2026-10-27）** | ✅ 有数 | HR 实测分组：`boundary` n=5 拒答 1.0、`numeric` n=12 应答 1.0/值 1.0、`other` n=5 应答 1.0、`out_of_scope` n=2 拒答 1.0；门禁加 `mcnemar_p`（精确二项），`--alpha 0.05` 可开严格模式（+1/0 不显著会被拒）|
 | **答案值校验 + 拒答细分（2026-10-27）** | ✅ 实测有区分度 | 新增指标 `answer_value`（只判**问数值**的题，缺失≠0）与两个拒答归因桶 `refuse_fabricated` / `refuse_context_overreach`；HR 8 道数值题 **8/8** 值命中。过程中抓到一个假阴性：h09 问"要不要还"不含数值，旧版自动判值把它判错 ⇒ 改成只在问题含单位词时才判 |
 | **评测闭环 v0（2026-10-27）** | ✅ 机制可跑、门禁被证明会拦 | 失败回收→候选（查询扩展词）→配对门禁→registry/回滚；`scripts/eval_loop.py run|mine|gate|rollback`；服务用 `EXPAND_LEXICON` 加载候选。真实跑 campus/loop-hard **全对 ⇒ 无可挖失败**（如实记录）；坏候选实测被拒（`evalset/loop-hard/registry.json`）。变异体 2/2 |
 | **HR 套件（2026-10-26/27）** | ✅ 可跑（**合成**语料，非真实公司文件） | `hr.jsonl` 24 题（17 应答 + 7 拒答，含 **5 道 boundary 边界题**）：应答 **17/17**、拒答 **7/7**；`hr-deny` 3 题：**3/3 正确拒答（无 acl_leak）**；证据 `evalset/report-scenario-hr*.json` |
@@ -116,7 +117,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-397 passed, 27 skipped
+402 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -484,6 +485,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 | `D:\_review_rag-cs\evalset\fixtures\hr_corpus_acl\` | 受限语料（1 篇，acl=hr，用于越权套件） |
 | `D:\_review_rag-cs\evalset\scenarios\hr.jsonl` | 24 题（17 应答 + 7 拒答，含 5 道边界题） |
 | `D:\_review_rag-cs\evalset\scenarios\hr-deny.jsonl` | 3 题越权拒答 |
+| `D:\_review_rag-cs\kb\categories.py` | 题型分类（tags 优先；numeric/out_of_scope/acl_deny） |
 | `D:\_review_rag-cs\kb\values.py` | 从条款抽数值/单位、校验答案值 |
 | `D:\_review_rag-cs\scripts\extract_answer_values.py` | 生成 expect 映射（只判问数值的题） |
 | `D:\_review_rag-cs\scripts\mutate_answer_value.py` | 值校验/拒答细分变异体（2/2 变红） |

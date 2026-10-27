@@ -17,8 +17,8 @@
 {"id": "h17", "type": "answer", "scenario": "hr", "question": "一次培训花了 8000 元，该按哪份文件办？", "gold": ["员工培训管理办法.md", "第八条（培训费用承担与报销）"], "note": "多跳：主办法第八条把 >5000 元指向实施细则，答案要说清指向哪份文件"}
 {"id": "h18", "type": "refuse", "scenario": "hr", "question": "公司食堂几点开饭？", "gold": null, "why_forced_to_refuse": "培训制度里没有任何餐饮服务时间的规定，属库里压根没有这类信息。"}
 {"id": "h19", "type": "refuse", "scenario": "hr", "question": "公司年会在哪家酒店办？", "gold": null, "why_forced_to_refuse": "两份文件都不涉及年会场地，属库外。"}
-{"id": "h20", "type": "refuse", "scenario": "hr", "question": "外聘培训讲师的课时费标准是多少？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。细则第七条只规定供应商准入（资质、比选），通篇没有讲师课时费这个数 —— 语义沾边（讲的都是外部培训的钱），但没有用户要的那个值。"}
-{"id": "h21", "type": "refuse", "scenario": "hr", "question": "培训期间的绩效工资怎么计算？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第七条只说「工资、津贴照常计发」，没有绩效工资的计算口径 —— 沾边但无值。"}
-{"id": "h22", "type": "refuse", "scenario": "hr", "question": "培训供应商要满足多少注册资本？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第七条只要求「合法经营资质与开票能力」，没有注册资本门槛这个数。"}
-{"id": "h23", "type": "refuse", "scenario": "hr", "question": "去外地参加培训的机票能不能按差旅管理办法报？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。细则第三、四条只给了培训口径的交通与住宿限额，没有一句说培训差旅转致差旅管理办法 —— 语义与差旅报销高度相邻，但库里没有这条转致规定。"}
-{"id": "h24", "type": "refuse", "scenario": "hr", "question": "培训考核不合格会扣工资吗？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第十条只规定补考与不计学时，没有任何扣款条款 —— 沾边但无值。"}
+{"id": "h20", "type": "refuse", "scenario": "hr", "question": "外聘培训讲师的课时费标准是多少？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。细则第七条只规定供应商准入（资质、比选），通篇没有讲师课时费这个数 —— 语义沾边（讲的都是外部培训的钱），但没有用户要的那个值。", "tags": ["boundary"]}
+{"id": "h21", "type": "refuse", "scenario": "hr", "question": "培训期间的绩效工资怎么计算？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第七条只说「工资、津贴照常计发」，没有绩效工资的计算口径 —— 沾边但无值。", "tags": ["boundary"]}
+{"id": "h22", "type": "refuse", "scenario": "hr", "question": "培训供应商要满足多少注册资本？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第七条只要求「合法经营资质与开票能力」，没有注册资本门槛这个数。", "tags": ["boundary"]}
+{"id": "h23", "type": "refuse", "scenario": "hr", "question": "去外地参加培训的机票能不能按差旅管理办法报？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。细则第三、四条只给了培训口径的交通与住宿限额，没有一句说培训差旅转致差旅管理办法 —— 语义与差旅报销高度相邻，但库里没有这条转致规定。", "tags": ["boundary"]}
+{"id": "h24", "type": "refuse", "scenario": "hr", "question": "培训考核不合格会扣工资吗？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第十条只规定补考与不计学时，没有任何扣款条款 —— 沾边但无值。", "tags": ["boundary"]}

@@ -44,7 +44,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from kb.loopgate import decide                     # noqa: E402
+from kb.loopgate import apply_significance, decide  # noqa: E402
 
 HEADING = re.compile(r"^(#{1,6})\s*(.+?)\s*$", re.M)
 STOP = set("的 了 是 在 有 和 与 及 或 对 把 被 为 从 到 中 上 下 什么 哪些 怎么 如何 多少 哪 吗 呢 请 问 学校 学生 规定".split())
@@ -133,10 +133,12 @@ def save_registry(path: Path, reg: dict) -> None:
 
 
 def gate_reports(before_path: Path, after_path: Path, candidates_path: Path,
-                 registry_path: Path, min_gain: int = 1) -> dict:
+                 registry_path: Path, min_gain: int = 1, alpha: float | None = None) -> dict:
     before = load_report(before_path)
     after = load_report(after_path)
     verdict = decide(before.get("rows") or [], after.get("rows") or [], min_gain=min_gain)
+    if alpha is not None:
+        verdict = apply_significance(verdict, alpha)
 
     reg = load_registry(registry_path)
     loop_id = f"loop-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -245,7 +247,7 @@ def cmd_run(args) -> int:
     _run_eval(args.suite, candidate, {"EXPAND_LEXICON": str(cands)}, args.corpus, 8072)
 
     print("④ 门禁裁决")
-    entry = gate_reports(baseline, candidate, cands, registry, args.min_gain)
+    entry = gate_reports(baseline, candidate, cands, registry, args.min_gain, args.alpha)
     g = entry["gate"]
     print(json.dumps({"verdict": g["verdict"], "reasons": g["reasons"],
                       "gains": g["gains"], "losses": g["losses"]}, ensure_ascii=False))
@@ -265,7 +267,7 @@ def cmd_mine(args) -> int:
 
 def cmd_gate(args) -> int:
     entry = gate_reports(Path(args.before), Path(args.after), Path(args.candidates),
-                         Path(args.registry), args.min_gain)
+                         Path(args.registry), args.min_gain, args.alpha)
     print(json.dumps(entry["gate"], ensure_ascii=False, indent=2))
     return 0 if entry["gate"]["verdict"] == "accept" else 2
 
@@ -293,6 +295,8 @@ def main() -> int:
     g.add_argument("--candidates", required=True)
     g.add_argument("--registry", default="evalset/loop/registry.json")
     g.add_argument("--min-gain", type=int, default=1)
+    g.add_argument("--alpha", type=float, default=None,
+                   help="给值则启用严格模式：McNemar 不显著就拒（如 0.05）")
     g.set_defaults(func=cmd_gate)
 
     r = sub.add_parser("run", help="完整闭环（会调模型）")
@@ -301,6 +305,8 @@ def main() -> int:
     r.add_argument("--out-dir", default="evalset/loop")
     r.add_argument("--max-candidates", type=int, default=12)
     r.add_argument("--min-gain", type=int, default=1)
+    r.add_argument("--alpha", type=float, default=None,
+                   help="给值则启用严格模式：McNemar 不显著就拒（如 0.05）")
     r.set_defaults(func=cmd_run)
 
     b = sub.add_parser("rollback", help="回退 active")

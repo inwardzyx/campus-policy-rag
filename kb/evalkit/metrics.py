@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
-from kb import attribution
+from kb import attribution, categories
 from kb.eval_runner import wilson_interval
 
 # ---------------------------------------------------------------- 基础工具
@@ -118,6 +118,7 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
     return {
         "id": case.get("id"),
         "type": typ,
+        "category": categories.category_of(case),
         "scenario": case.get("scenario"),
         "question": case.get("question"),
         "bucket": attr["bucket"],
@@ -204,6 +205,23 @@ def aggregate(rows: Sequence[Mapping[str, Any]], cases: Sequence[Mapping[str, An
 
 # ---------------------------------------------------------------- 默认指标集
 
+def _m_by_category(rows, cases, o):
+    """分组指标：按题型分别给 Wilson —— 小样本时区间自动变宽。"""
+    groups: dict[str, list] = {}
+    for r in rows:
+        groups.setdefault(str(r.get("category") or "other"), []).append(r)
+    return {
+        cat: {
+            "n": len(sub),
+            "answer": _rate(sub, "answer", ["ok"]),
+            "refuse": _rate(sub, "refuse", ["refuse_ok"]),
+            "deny": _rate(sub, "deny", ["ok"]),
+            "answer_value": _m_answer_value(sub, [], {})[0],
+        }
+        for cat, sub in sorted(groups.items())
+    }, None
+
+
 def _m_answer(rows, cases, o):
     return _rate(rows, "answer", ["ok"]), None
 
@@ -272,6 +290,8 @@ def _m_compress_dedup(rows, cases, o):
 
 
 for _spec in (
+    MetricSpec("by_category", "按题型分组的指标（每类各自给 Wilson）", "dict",
+               "没有行时为空 dict", _m_by_category),
     MetricSpec("answer_value", "答案值命中率（只统计配了 expect 的题；缺失≠0）", "rate",
                "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）", _m_answer_value),
     MetricSpec("answer", "应答类题目的正确率（bucket=ok）", "rate",

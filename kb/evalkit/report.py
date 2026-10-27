@@ -84,7 +84,14 @@ def format_summary(report: Mapping[str, Any]) -> str:
     rest = {k: v for k, v in agg.items()
             if k not in shown and k not in ("buckets", "failure_buckets", "notes", "n_cases")}
     if rest:
-        lines.append("  其他指标：" + " ".join(f"{k}={v}" for k, v in rest.items()))
+        # ★ 字典型指标（如 by_category）不进"一行式"打印：会撑爆终端；单独摘要一行
+        scalars = {k: v for k, v in rest.items() if not isinstance(v, dict)}
+        if scalars:
+            lines.append("  其他指标：" + " ".join(f"{k}={v}" for k, v in scalars.items()))
+        cats = rest.get("by_category") or {}
+        if cats:
+            lines.append("  分组：" + " ".join(
+                f"{cat}(n={v.get('n')})" for cat, v in sorted(cats.items())))
     if agg.get("buckets"):
         lines.append(f"  归因：{agg['buckets']}")
     for note in (agg.get("notes") or []):

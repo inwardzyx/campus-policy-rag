@@ -3,13 +3,13 @@
   "suite": "hr",
   "mode": "http",
   "n_cases": 24,
-  "generated_at": "2026-10-27T09:19:31+0800",
+  "generated_at": "2026-10-27T09:36:04+0800",
   "meta": {
     "cases_file": "evalset\\scenarios\\hr.jsonl",
     "namespace": "hr_eval",
     "event_time": null,
     "limit": null,
-    "wall_clock_ms": 63873,
+    "wall_clock_ms": 72066,
     "missing_responses": []
   },
   "metric_specs": {
@@ -112,7 +112,7 @@
     "budget_cut_rate": 0.0,
     "citation_validity": 1.0,
     "uncited_paragraphs_per_answer": 0.0,
-    "p95_ms": 3352,
+    "p95_ms": 3750,
     "compression_rows_active": 0,
     "compression_dedup_total": 0,
     "buckets": {
@@ -129,6 +129,108 @@
       "refuse_fabricated": 0,
       "refuse_context_overreach": 0
     },
+    "by_category": {
+      "boundary": {
+        "n": 5,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 5,
+          "total": 5,
+          "rate": 1.0,
+          "wilson_95": [
+            0.5655,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "numeric": {
+        "n": 12,
+        "answer": {
+          "passed": 12,
+          "total": 12,
+          "rate": 1.0,
+          "wilson_95": [
+            0.7575,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": 1.0
+      },
+      "other": {
+        "n": 5,
+        "answer": {
+          "passed": 5,
+          "total": 5,
+          "rate": 1.0,
+          "wilson_95": [
+            0.5655,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "out_of_scope": {
+        "n": 2,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 2,
+          "total": 2,
+          "rate": 1.0,
+          "wilson_95": [
+            0.3424,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      }
+    },
     "notes": [
       "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
     ]
@@ -137,13 +239,14 @@
     {
       "id": "h01",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "员工每年至少要完成多少学时培训？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3352,
+      "took_ms": 3750,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -161,18 +264,19 @@
       "answer_value": true,
       "session_id": null,
       "turn_index": null,
-      "answer": "员工每年至少要完成不少于 40 学时的培训，其中合规必修培训不少于 8 学时。[1]"
+      "answer": "员工每年至少要完成不少于 40 学时的培训[1]。"
     },
     {
       "id": "h02",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "合规必修培训每年至少几个学时？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2381,
+      "took_ms": 3342,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -195,13 +299,14 @@
     {
       "id": "h03",
       "type": "answer",
+      "category": "other",
       "scenario": "hr",
       "question": "新员工入职后多久之内要完成入职培训？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2689,
+      "took_ms": 3175,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -224,13 +329,14 @@
     {
       "id": "h04",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "入职培训一共要多少学时？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2638,
+      "took_ms": 3428,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -253,13 +359,14 @@
     {
       "id": "h05",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "报名外部培训要提前几个工作日提交申请？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3022,
+      "took_ms": 3553,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -282,13 +389,14 @@
     {
       "id": "h06",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "人力资源部收到申请后几个工作日内要批复？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2767,
+      "took_ms": 3248,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -311,13 +419,14 @@
     {
       "id": "h07",
       "type": "answer",
+      "category": "other",
       "scenario": "hr",
       "question": "参加培训期间工资怎么发？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2646,
+      "took_ms": 2766,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -340,13 +449,14 @@
     {
       "id": "h08",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "单次培训费用超过 1 万元要签几年服务期？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3062,
+      "took_ms": 3012,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -369,13 +479,14 @@
     {
       "id": "h09",
       "type": "answer",
+      "category": "other",
       "scenario": "hr",
       "question": "服务期内主动离职，培训费要还吗？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2804,
+      "took_ms": 3546,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -398,13 +509,14 @@
     {
       "id": "h10",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "培训考核第一次没过怎么办？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2720,
+      "took_ms": 3870,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -427,13 +539,14 @@
     {
       "id": "h11",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "员工培训档案要保存多少年？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2905,
+      "took_ms": 3393,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -456,13 +569,14 @@
     {
       "id": "h12",
       "type": "answer",
+      "category": "other",
       "scenario": "hr",
       "question": "异地培训住宿费每晚最多报多少？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2659,
+      "took_ms": 3379,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -485,13 +599,14 @@
     {
       "id": "h13",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "异地培训伙食补助每天多少钱？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2579,
+      "took_ms": 3201,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -514,13 +629,14 @@
     {
       "id": "h14",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "培训结束后多少天内要提交报销？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2463,
+      "took_ms": 2571,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -543,13 +659,14 @@
     {
       "id": "h15",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "单笔超过 5 万元的培训合同怎么确定供应商？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2379,
+      "took_ms": 3325,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -567,18 +684,19 @@
       "answer_value": true,
       "session_id": null,
       "turn_index": null,
-      "answer": "单笔合同金额超过 50000 元的培训合同，应通过公司采购流程比选确定，不得由个人指定。[1]"
+      "answer": "单笔合同金额超过 50000 元的，应通过公司采购流程比选确定，不得由个人指定。[1]"
     },
     {
       "id": "h16",
       "type": "answer",
+      "category": "other",
       "scenario": "hr",
       "question": "哪些情况的培训费用不给报？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3430,
+      "took_ms": 2889,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
@@ -601,20 +719,22 @@
     {
       "id": "h17",
       "type": "answer",
+      "category": "numeric",
       "scenario": "hr",
       "question": "一次培训花了 8000 元，该按哪份文件办？",
       "bucket": "ok",
       "reason": "gold 在喂给模型的块里",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 3140,
+      "took_ms": 3191,
       "context_recall": true,
       "context_precision": 1.0,
       "citation_validity": 1.0,
       "uncited_count": 0,
-      "included": 1,
+      "included": 2,
       "sources": [
-        "员工培训管理办法.md｜第八条（培训费用承担与报销）"
+        "员工培训管理办法.md｜第八条（培训费用承担与报销）",
+        "员工培训费用报销实施细则.md｜第一条（依据与范围）"
       ],
       "compression": null,
       "rewritten_query": null,
@@ -625,18 +745,19 @@
       "answer_value": true,
       "session_id": null,
       "turn_index": null,
-      "answer": "超过 5000 元的培训费用，应按《员工培训费用报销实施细则》办理审批与报销。[1]"
+      "answer": "一次培训花了 8000 元，属于单次培训费用超过 5000 元的情形，应按《员工培训费用报销实施细则》办理审批与报销。[1][2]"
     },
     {
       "id": "h18",
       "type": "refuse",
+      "category": "out_of_scope",
       "scenario": "hr",
       "question": "公司食堂几点开饭？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 1979,
+      "took_ms": 1693,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -654,13 +775,14 @@
     {
       "id": "h19",
       "type": "refuse",
+      "category": "out_of_scope",
       "scenario": "hr",
       "question": "公司年会在哪家酒店办？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2114,
+      "took_ms": 1914,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -678,13 +800,14 @@
     {
       "id": "h20",
       "type": "refuse",
+      "category": "boundary",
       "scenario": "hr",
       "question": "外聘培训讲师的课时费标准是多少？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2131,
+      "took_ms": 1934,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -702,13 +825,14 @@
     {
       "id": "h21",
       "type": "refuse",
+      "category": "boundary",
       "scenario": "hr",
       "question": "培训期间的绩效工资怎么计算？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2721,
+      "took_ms": 2278,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": 1.0,
@@ -728,13 +852,14 @@
     {
       "id": "h22",
       "type": "refuse",
+      "category": "boundary",
       "scenario": "hr",
       "question": "培训供应商要满足多少注册资本？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 2212,
+      "took_ms": 2208,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,
@@ -752,13 +877,14 @@
     {
       "id": "h23",
       "type": "refuse",
+      "category": "boundary",
       "scenario": "hr",
       "question": "去外地参加培训的机票能不能按差旅管理办法报？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": true,
-      "took_ms": 2861,
+      "took_ms": 3730,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": 1.0,
@@ -773,18 +899,19 @@
       "answer_value": null,
       "session_id": null,
       "turn_index": null,
-      "answer": "不知道。资料[1]只说明异地培训往返交通优先选择高铁二等座或经济舱机票、凭票报销，未提及能否按“差旅管理办法”报销。[1]"
+      "answer": "不知道。资料[1]只说明异地培训往返交通优先选择高铁二等座或经济舱机票、凭票报销，但没有说明能否按“差旅管理办法”报销，因此无法据此判断。"
     },
     {
       "id": "h24",
       "type": "refuse",
+      "category": "boundary",
       "scenario": "hr",
       "question": "培训考核不合格会扣工资吗？",
       "bucket": "refuse_ok",
       "reason": "库外题被正确拒答（答案里明说不知道）",
       "context_available": true,
       "knowledge_hit": false,
-      "took_ms": 1855,
+      "took_ms": 2244,
       "context_recall": null,
       "context_precision": null,
       "citation_validity": null,

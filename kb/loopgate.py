@@ -35,6 +35,31 @@ def _ok(row: dict[str, Any] | None) -> bool:
     return bucket == "ok"
 
 
+def mcnemar_exact(b: int, c: int) -> float:
+    """精确 McNemar：只配对"一成一败"的题（b=gain, c=loss），返回双侧 p 值。
+
+    ★ 为什么不用卡方：配对题数很少（8–24），卡方近似会把 +1/0 这种当"显著"。
+      精确二项分布下，+1/0 的 p=1.0（不显著）——这是诚实的结论。
+    """
+    import math
+
+    n = b + c
+    if n == 0:
+        return 1.0
+    tail = sum(math.comb(n, k) for k in range(0, min(b, c) + 1)) / (2 ** n)
+    return min(1.0, 2 * tail)
+
+
+def apply_significance(verdict: dict, alpha: float = 0.05) -> dict:
+    """严格模式：McNemar 不显著就拒（默认关闭 —— 小样本下 +1 本来就不显著）。"""
+    if verdict.get("verdict") == "accept" and verdict.get("mcnemar_p", 1.0) >= alpha:
+        verdict = dict(verdict)
+        verdict["verdict"] = "reject"
+        verdict["reasons"] = list(verdict.get("reasons") or []) + [
+            f"不显著：McNemar p={verdict.get('mcnemar_p')} >= alpha={alpha}"]
+    return verdict
+
+
 def decide(before_rows: Iterable[dict[str, Any]], after_rows: Iterable[dict[str, Any]],
            *, min_gain: int = 1) -> dict[str, Any]:
     before = _index(before_rows)
@@ -73,8 +98,10 @@ def decide(before_rows: Iterable[dict[str, Any]], after_rows: Iterable[dict[str,
         verdict = "reject"
         reasons.append(f"越权泄漏：{leaks}")
 
+    p = mcnemar_exact(len(gains), len(losses))
     return {
         "verdict": verdict,
+        "mcnemar_p": round(p, 4),
         "reasons": reasons,
         "n_common": len(common),
         "gains": gains,
