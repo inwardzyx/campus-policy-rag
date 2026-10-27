@@ -201,3 +201,36 @@ def test_cli_refuses_empty_suite(tmp_path) -> None:
     r = _run_cli(["--cases", str(cases), "--transport", "inproc", "--out", str(out)])
     assert r.returncode == 1 and "空" in r.stdout
     assert not out.exists(), "空题集不该产出报告"
+
+def test_bootstrap_docs_uses_frontmatter_acl_and_date(tmp_path, monkeypatch) -> None:
+    """受限语料要能靠 frontmatter 自动带上 acl/version —— 否则只能用 curl 手工传。"""
+    from kb.evalkit.transport import HttpTransport
+
+    (tmp_path / "a.md").write_text(
+        "---\nacl: hr\neffective_date: 2026-01-01\n---\n\n## 第一条\n正文。\n",
+        encoding="utf-8")
+    (tmp_path / "b.md").write_text("## 第一条\n普通正文。\n", encoding="utf-8")
+
+    tr = HttpTransport(base_url="http://127.0.0.1:1", namespace="demo")
+    seen: list[str] = []
+
+    def fake_call(method, path, *, body=None, headers=None):
+        seen.append(path)
+        return 200, {}
+
+    monkeypatch.setattr(tr, "_call", fake_call)
+    tr.bootstrap_docs(tmp_path, acl="public")
+    joined = "\n".join(seen)
+    assert "a.md" in joined and "acl=hr" in joined, "frontmatter 的 acl 应优先"
+    assert "version=2026-01-01" in joined, "frontmatter 的生效日应作为版本号（关卡⑤要求日期）"
+    assert "b.md" in joined and "acl=public" in joined, "没有 acl 时用调用方给的默认值"
+
+
+def test_bootstrap_docs_cli_flag_exists() -> None:
+    """CLI 必须能把 acl 传下去（hr-deny 套件的可复现性靠它）。"""
+    import subprocess
+
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_scenario_eval.py"), "--help"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert "--bootstrap-acl" in r.stdout
+

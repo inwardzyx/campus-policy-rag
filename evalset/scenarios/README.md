@@ -33,7 +33,7 @@
 | 场景 | 状态 | 题集 | 语料 |
 |---|---|---|---|
 | `campus` | ✅ 可跑（复用老题集，20 题：15 答 + 5 拒） | `evalset/questions.json` | `docs/kb/`（11 份校规） |
-| `hr` / `compliance` / `support` | ⏳ 待真实语料（HANDOFF P1） | 未出题（**不编数据**） | 未上传 |
+| `hr` / `compliance` / `support` | `hr` ✅ 可跑（**合成**语料，非真实公司文件）；`compliance` / `support` ⏳ 待真实语料（HANDOFF P1） | `hr.jsonl` 24 题 / `hr-deny.jsonl` 3 题 | `evalset/fixtures/hr_corpus/`（2 篇）+ `hr_corpus_acl/`（1 篇受限） |
 
 `campus` 直接复用 `evalset/questions.json`（不复制一份，避免两份 gold 漂移）；
 其余场景等真实制度文档进来再出题——**没有语料就不出题**，否则评测只能测"模型会不会编"。
@@ -163,3 +163,58 @@ as-of（n=3，event 2025-06-01）：3/3，答案带"按 2025-06-01 时点有效�
 
 ★ **不加 `--event-time` 时**，系统会答"资料中存在两套互相冲突的限额，无法确定"——这是刻意设计：
   版本没定就不替用户选；要按某时点回答，显式给 `--event-time`。
+
+## HR 语料套件：`hr` / `hr-deny`（2026-10-26 加）
+
+语料：`evalset/fixtures/hr_corpus/`（2 篇合成制度，public）
+题集：`evalset/scenarios/hr.jsonl`（24 题 = 17 应答 + 7 必须拒答，其中 **5 题是 boundary 边界题**）
+
+| 题组 | 数量 | 设计意图 |
+|---|---|---|
+| answer | 17 | 数值型条款为主（学时/限额/天数/比例），判分靠 gold 命中；h17 是跨文档多跳 |
+| refuse·库外 | 2 | 食堂、年会 —— 库里压根没有这类信息 |
+| refuse·**边界** | 5 | ★ 语义沾边但库里没有那个值（讲师课时费 / 绩效工资算法 / 注册资本 / 培训差旅转致 / 扣工资） |
+
+边界题的存在意义：现有 `policy` 套件的 3 道拒答都是"完全库外"（食堂几点开饭），
+拒答准确率虚高。真正的失效模式是 **"检索到了相关条款，但里面没有用户要的那个数"** ——
+这批题专门打这个。
+
+```powershell
+D:\Python-project\.venv\Scripts\python.exe scripts\run_scenario_eval.py `
+    --cases hr --namespace hr_eval --bootstrap-docs evalset/fixtures/hr_corpus `
+    --base-url http://127.0.0.1:8030 --out evalset/report-scenario-hr.json
+```
+
+### 越权套件 `hr-deny`（必须先手工上传受限语料）
+
+语料：`evalset/fixtures/hr_corpus_acl/`（1 篇，密级=受限）
+题集：`evalset/scenarios/hr-deny.jsonl`（3 题 deny）
+
+★ 2026-10-27 起 `bootstrap_docs` **不再写死 acl**：支持 `--bootstrap-acl hr`，
+也支持文件 frontmatter 里的 `acl:`（frontmatter 优先）。所以受限语料可以直接灌：
+
+```powershell
+D:\Python-project\.venv\Scripts\python.exe scripts\run_scenario_eval.py `
+    --cases hr-deny --namespace hr_deny --bootstrap-docs evalset/fixtures/hr_corpus_acl `
+    --bootstrap-acl hr --base-url http://127.0.0.1:8030 --out evalset/report-scenario-hr-deny.json
+```
+
+（旧办法仍然可用：手工 curl 上传，见下面的历史命令。）
+
+D:\Python-project\.venv\Scripts\python.exe scripts\run_scenario_eval.py `
+    --cases hr-deny --namespace hr_deny `
+    --base-url http://127.0.0.1:8030 --out evalset/report-scenario-hr-deny.json
+```
+
+判据：deny 题要求 `knowledge_hit=false` 且 `sources=[]`；泄漏则归因进 `acl_leak` 桶。
+★ 跑 deny 套件时**不要**加 `--acl hr` —— 加了就变成"有权看"，题就测不出越权了。
+
+清场（评测会往 namespace 里写 manifest，不清理会一直堆）：
+
+```powershell
+Remove-Item -Recurse -Force kb_data\hr_eval, kb_data\hr_deny
+```
+
+**已知覆盖空洞**：本题组用不上 `stale_version` 归因桶 —— 那需要同一 `(doc, clause)` 的
+deprecated 版本，本套件的旧版对照留给了 `policy` / `policy-asof-2025`。
+

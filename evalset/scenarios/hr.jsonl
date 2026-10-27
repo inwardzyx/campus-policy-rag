@@ -1,0 +1,24 @@
+{"id": "h01", "type": "answer", "scenario": "hr", "question": "员工每年至少要完成多少学时培训？", "gold": ["员工培训管理办法.md", "第四条（年度学时要求）"]}
+{"id": "h02", "type": "answer", "scenario": "hr", "question": "合规必修培训每年至少几个学时？", "gold": ["员工培训管理办法.md", "第四条（年度学时要求）"]}
+{"id": "h03", "type": "answer", "scenario": "hr", "question": "新员工入职后多久之内要完成入职培训？", "gold": ["员工培训管理办法.md", "第五条（新员工入职培训）"]}
+{"id": "h04", "type": "answer", "scenario": "hr", "question": "入职培训一共要多少学时？", "gold": ["员工培训管理办法.md", "第五条（新员工入职培训）"]}
+{"id": "h05", "type": "answer", "scenario": "hr", "question": "报名外部培训要提前几个工作日提交申请？", "gold": ["员工培训管理办法.md", "第六条（培训申请与审批）"]}
+{"id": "h06", "type": "answer", "scenario": "hr", "question": "人力资源部收到申请后几个工作日内要批复？", "gold": ["员工培训管理办法.md", "第六条（培训申请与审批）"]}
+{"id": "h07", "type": "answer", "scenario": "hr", "question": "参加培训期间工资怎么发？", "gold": ["员工培训管理办法.md", "第七条（培训期间的出勤与工资）"]}
+{"id": "h08", "type": "answer", "scenario": "hr", "question": "单次培训费用超过 1 万元要签几年服务期？", "gold": ["员工培训管理办法.md", "第九条（服务期与违约责任）"]}
+{"id": "h09", "type": "answer", "scenario": "hr", "question": "服务期内主动离职，培训费要还吗？", "gold": ["员工培训管理办法.md", "第九条（服务期与违约责任）"]}
+{"id": "h10", "type": "answer", "scenario": "hr", "question": "培训考核第一次没过怎么办？", "gold": ["员工培训管理办法.md", "第十条（培训考核）"]}
+{"id": "h11", "type": "answer", "scenario": "hr", "question": "员工培训档案要保存多少年？", "gold": ["员工培训管理办法.md", "第十一条（培训记录管理）"]}
+{"id": "h12", "type": "answer", "scenario": "hr", "question": "异地培训住宿费每晚最多报多少？", "gold": ["员工培训费用报销实施细则.md", "第三条（异地培训住宿费标准）"]}
+{"id": "h13", "type": "answer", "scenario": "hr", "question": "异地培训伙食补助每天多少钱？", "gold": ["员工培训费用报销实施细则.md", "第五条（培训期间伙食补助）"]}
+{"id": "h14", "type": "answer", "scenario": "hr", "question": "培训结束后多少天内要提交报销？", "gold": ["员工培训费用报销实施细则.md", "第六条（报销时限与材料）"]}
+{"id": "h15", "type": "answer", "scenario": "hr", "question": "单笔超过 5 万元的培训合同怎么确定供应商？", "gold": ["员工培训费用报销实施细则.md", "第七条（培训供应商准入）"]}
+{"id": "h16", "type": "answer", "scenario": "hr", "question": "哪些情况的培训费用不给报？", "gold": ["员工培训费用报销实施细则.md", "第八条（不予报销的情形）"]}
+{"id": "h17", "type": "answer", "scenario": "hr", "question": "一次培训花了 8000 元，该按哪份文件办？", "gold": ["员工培训管理办法.md", "第八条（培训费用承担与报销）"], "note": "多跳：主办法第八条把 >5000 元指向实施细则，答案要说清指向哪份文件"}
+{"id": "h18", "type": "refuse", "scenario": "hr", "question": "公司食堂几点开饭？", "gold": null, "why_forced_to_refuse": "培训制度里没有任何餐饮服务时间的规定，属库里压根没有这类信息。"}
+{"id": "h19", "type": "refuse", "scenario": "hr", "question": "公司年会在哪家酒店办？", "gold": null, "why_forced_to_refuse": "两份文件都不涉及年会场地，属库外。"}
+{"id": "h20", "type": "refuse", "scenario": "hr", "question": "外聘培训讲师的课时费标准是多少？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。细则第七条只规定供应商准入（资质、比选），通篇没有讲师课时费这个数 —— 语义沾边（讲的都是外部培训的钱），但没有用户要的那个值。"}
+{"id": "h21", "type": "refuse", "scenario": "hr", "question": "培训期间的绩效工资怎么计算？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第七条只说「工资、津贴照常计发」，没有绩效工资的计算口径 —— 沾边但无值。"}
+{"id": "h22", "type": "refuse", "scenario": "hr", "question": "培训供应商要满足多少注册资本？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第七条只要求「合法经营资质与开票能力」，没有注册资本门槛这个数。"}
+{"id": "h23", "type": "refuse", "scenario": "hr", "question": "去外地参加培训的机票能不能按差旅管理办法报？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。细则第三、四条只给了培训口径的交通与住宿限额，没有一句说培训差旅转致差旅管理办法 —— 语义与差旅报销高度相邻，但库里没有这条转致规定。"}
+{"id": "h24", "type": "refuse", "scenario": "hr", "question": "培训考核不合格会扣工资吗？", "gold": null, "boundary": true, "why_forced_to_refuse": "★ 边界题。第十条只规定补考与不计学时，没有任何扣款条款 —— 沾边但无值。"}

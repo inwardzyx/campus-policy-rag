@@ -95,6 +95,22 @@ def check_tenancy(env: Mapping[str, str], root: Path) -> Result:
     return Result("tenancy", "ok", f"多租户已开，租户表 {tenants.name} 存在")
 
 
+def check_tracing(env: Mapping[str, str], root: Path) -> Result:
+    """追踪会把 prompt 发到第三方：开着就要让人知道。
+
+    ★ 为什么算 warn 而不是 ok：它不影响服务能不能用，但影响"数据出不出本机"。
+    """
+    keys = ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
+    on = any((env.get(k) or "").strip().lower() in ("1", "true", "yes", "on") for k in keys)
+    if not on:
+        return Result("tracing", "ok", "追踪关闭（prompt 不出本机）")
+    if not (env.get("LANGCHAIN_API_KEY") or "").strip():
+        return Result("tracing", "warn",
+                      "追踪开着但没有 LANGCHAIN_API_KEY：服务会强制关掉它（否则 401 重试 + 数据外发）")
+    return Result("tracing", "warn",
+                  "追踪已开：prompt/答案会发往 api.smith.langchain.com（第三方），确认这是你要的")
+
+
 def check_model_cache(env: Mapping[str, str], root: Path) -> Result:
     """embedding 模型首次要下载（约 91MB）：没缓存且没网就会卡在 loading。"""
     cache = Path(env.get("MODEL_CACHE_DIR") or (Path.home() / ".cache" / "fastembed"))
@@ -110,6 +126,7 @@ CHECKS: list[Callable[[Mapping[str, str], Path], Result]] = [
     check_audit,
     check_tenancy,
     check_model_cache,
+    check_tracing,
 ]
 
 

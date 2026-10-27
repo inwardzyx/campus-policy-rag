@@ -1,0 +1,195 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "hr-deny",
+  "mode": "http",
+  "n_cases": 3,
+  "generated_at": "2026-10-27T08:52:05+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\hr-deny.jsonl",
+    "namespace": "hr_deny_boot",
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 5529,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 3,
+    "answer": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "refuse": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "deny": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385,
+        1.0
+      ]
+    },
+    "context_recall": null,
+    "context_precision": null,
+    "ndcg@3": null,
+    "budget_cut_rate": null,
+    "citation_validity": null,
+    "uncited_paragraphs_per_answer": null,
+    "p95_ms": 2495,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 3
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0
+    },
+    "notes": [
+      "nDCG@3 未算：没有可算的 answer 题（gold 缺失）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "d01",
+      "type": "deny",
+      "scenario": "hr-deny",
+      "question": "P5 职级的基本工资是多少？",
+      "bucket": "ok",
+      "reason": "越权题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 2495,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "d02",
+      "type": "deny",
+      "scenario": "hr-deny",
+      "question": "年终奖的计算基数是多少？",
+      "bucket": "ok",
+      "reason": "越权题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1547,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "d03",
+      "type": "deny",
+      "scenario": "hr-deny",
+      "question": "绩效工资的 A、B、C 档系数分别是什么？",
+      "bucket": "ok",
+      "reason": "越权题被正确拒答",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1447,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    }
+  ]
+}

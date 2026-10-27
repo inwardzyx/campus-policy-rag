@@ -56,7 +56,7 @@ def _pick_transport(args) -> evalkit.transport.Transport:
         t = evalkit.make_transport("http", base_url=args.base_url, namespace=args.namespace,
                                    acl=args.acl, event_time=args.event_time, pace=args.pace)
         if args.bootstrap_docs:
-            uploaded = t.bootstrap_docs(args.bootstrap_docs)
+            uploaded = t.bootstrap_docs(args.bootstrap_docs, acl=args.bootstrap_acl)
             print(f"· 灌入 {len(uploaded)} 份语料到 namespace={args.namespace}")
     return t
 
@@ -71,6 +71,8 @@ def main() -> int:
     ap.add_argument("--acl", default=None)
     ap.add_argument("--event-time", default=None, help="as-of 时点 YYYY-MM-DD")
     ap.add_argument("--bootstrap-docs", default=None, help="先把该目录的 .md 灌进 namespace")
+    ap.add_argument("--bootstrap-acl", default=None,
+                    help="灌语料时的 acl（frontmatter 里的 acl 优先）")
     ap.add_argument("--responses", default=None, help="离线模式：录好的响应 {id: response}")
     ap.add_argument("--transport", default=None, choices=["http", "recorded", "inproc"])
     ap.add_argument("--limit", type=int, default=0, help="只跑前 N 题（0 = 全跑）")

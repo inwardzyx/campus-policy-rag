@@ -50,6 +50,22 @@ class RecordedTransport:
         return resp
 
 
+def _frontmatter(path: Path) -> dict:
+    """极简 frontmatter 读取（只取 bootstrap 需要的几个键）。"""
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return {}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    out = {}
+    for line in parts[1].splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
 class HttpTransport:
     """打真实服务。`bootstrap_docs` 可选：先把语料灌进 namespace（带 trace 才有指标）。"""
 
@@ -76,13 +92,27 @@ class HttpTransport:
         except urllib.error.HTTPError as e:
             return e.code, {"error": e.read().decode("utf-8", "replace")}
 
-    def bootstrap_docs(self, corpus: str | Path, *, namespace: str | None = None) -> list[str]:
+    def bootstrap_docs(self, corpus: str | Path, *, namespace: str | None = None,
+                       acl: str | None = None) -> list[str]:
+        """把目录下的 .md 灌进 namespace。
+
+        ★ 2026-10-26：**不再把 acl 写死成 public**。优先级：
+          文件 frontmatter 的 `acl:` > 调用方给的 `acl` > "public"。
+          写死 public 的直接后果：受限语料只能手工 curl 上传，评测脚本没法复现越权用例
+          （hr-deny 套件就是这么被逼着用 curl 的）。
+        """
         ns = namespace or self.namespace
         if not ns:
             raise ValueError("bootstrap_docs 需要 namespace")
         done = []
         for path in sorted(Path(corpus).glob("*.md")):
-            q = urllib.parse.urlencode({"filename": path.name, "acl": "public"})
+            meta = _frontmatter(path)
+            file_acl = meta.get("acl")
+            effective_acl = file_acl or acl or "public"
+            params = {"filename": path.name, "acl": effective_acl}
+            if meta.get("effective_date"):
+                params["version"] = meta["effective_date"]   # 关卡⑤要求版本号是日期
+            q = urllib.parse.urlencode(params)
             code, body = self._call("POST", f"/kb/{ns}/documents?{q}",
                                     body=path.read_bytes(),
                                     headers={"Content-Type": "text/markdown; charset=utf-8"})

@@ -51,6 +51,28 @@ from typing import Optional
 from dotenv import load_dotenv                        # noqa: E402
 load_dotenv()
 
+#: 追踪兜底：LangSmith 会把 prompt/答案发到 api.smith.langchain.com（第三方）。
+#   ★ 2026-10-27 真事：机器上有全局 LANGSMITH_TRACING=true（别的项目留下的），
+#     服务进程于是每个请求都在上传 trace；而且没有 LANGCHAIN_API_KEY ⇒ 401 重试，
+#     数据照样发出去、还拖慢响应。这里在 import langchain 之前按"隐私默认关"兜底。
+_TRACING_FORCED_OFF = False
+
+
+def _guard_tracing_env() -> None:
+    """没配 LANGCHAIN_API_KEY 时强制关掉追踪（配了才允许开，且 preflight 会警告）。"""
+    global _TRACING_FORCED_OFF
+    keys = ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
+    on = any((os.environ.get(k) or "").strip().lower() in ("1", "true", "yes", "on")
+             for k in keys)
+    has_key = bool((os.environ.get("LANGCHAIN_API_KEY") or "").strip())
+    if on and not has_key:
+        for k in keys:
+            os.environ[k] = "false"
+        _TRACING_FORCED_OFF = True
+
+
+_guard_tracing_env()
+
 # ⚠️ 必须在 import 之前：走国内镜像 + 指定模型缓存
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 # 缓存目录默认放在【用户主目录】下（Windows / Mac / Linux 通用）。
