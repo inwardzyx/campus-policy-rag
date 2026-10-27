@@ -1,0 +1,460 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "company-hard",
+  "mode": "http",
+  "n_cases": 8,
+  "generated_at": "2026-10-27T10:48:36+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\company-hard.jsonl",
+    "namespace": "company",
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 28527,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "by_category": {
+      "desc": "按题型分组的指标（每类各自给 Wilson）",
+      "unit": "dict",
+      "missing": "没有行时为空 dict"
+    },
+    "answer_value": {
+      "desc": "答案值命中率（只统计配了 expect 的题；缺失≠0）",
+      "unit": "rate",
+      "missing": "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）"
+    },
+    "answer": {
+      "desc": "应答类题目的正确率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 条款是否进了真正喂给模型的块",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 8,
+    "by_category": {
+      "numeric": {
+        "n": 4,
+        "answer": {
+          "passed": 4,
+          "total": 4,
+          "rate": 1.0,
+          "wilson_95": [
+            0.5101,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "other": {
+        "n": 4,
+        "answer": {
+          "passed": 4,
+          "total": 4,
+          "rate": 1.0,
+          "wilson_95": [
+            0.5101,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      }
+    },
+    "answer_value": null,
+    "answer": {
+      "passed": 8,
+      "total": 8,
+      "rate": 1.0,
+      "wilson_95": [
+        0.6756,
+        1.0
+      ]
+    },
+    "refuse": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 1.0,
+    "context_precision": 1.0,
+    "ndcg@3": 1.0,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.0,
+    "p95_ms": 4468,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 8
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0,
+      "refuse_fabricated": 0,
+      "refuse_context_overreach": 0
+    },
+    "notes": [
+      "没有配 expect 的 answer 题 ⇒ 不计算值命中率（缺失≠0）",
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "ch1",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company-hard",
+      "question": "考勤分被扣了会有什么后果？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 4468,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】",
+        "企业规章制度（50条）｜第二十条【考勤异常处理与出勤要求】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十四条【迟到、早退与旷工】",
+        "企业规章制度（50条）｜第二十条【考勤异常处理与出勤要求】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十四条【迟到、早退与旷工】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，考勤分被扣本身没有直接写明后续后果；资料只规定了迟到或早退30分钟以内每次扣减当月考勤分2分[1]。至于扣分之后会带来什么进一步处理，资料里没有说明，我不知道。"
+    },
+    {
+      "id": "ch2",
+      "type": "answer",
+      "category": "other",
+      "scenario": "company-hard",
+      "question": "请病假要什么证明，工资怎么算？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3487,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十六条【事假、病假与医疗期】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十六条【事假、病假与医疗期】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十六条【事假、病假与医疗期】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "请病假须提供二级及以上医疗机构证明；病假期间工资按公司病假工资标准支付，且不得低于公司所在地最低工资标准的百分之八十。[1]"
+    },
+    {
+      "id": "ch3",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company-hard",
+      "question": "年假没休完能折成钱吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3885,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十七条【年休假】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十七条【年休假】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十七条【年休假】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料[1]，公司因工作需要无法安排年休假、经本人同意跨年度安排的，按规定支付未休年休假的工资报酬。也就是说，在“公司因工作需要无法安排且经本人同意跨年度安排”这一情形下，未休年休假可以按规定折算为工资报酬[1]。资料未说明其他情形（如个人原因未休）是否也能折成钱，这部分不知道。"
+    },
+    {
+      "id": "ch4",
+      "type": "answer",
+      "category": "other",
+      "scenario": "company-hard",
+      "question": "加班没提前申请，还算不算加班？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3547,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十九条【加班管理】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十九条【加班管理】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不算加班。未经审批的延时工作不认定为加班。[1]"
+    },
+    {
+      "id": "ch5",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company-hard",
+      "question": "试用期被辞退要提前几天说？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3426,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】",
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十一条【劳动合同的签订、变更与解除】",
+        "企业规章制度（50条）｜第四十四条【严重违纪与合同解除】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十一条【劳动合同的签订、变更与解除】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料[1]，员工在试用期内解除劳动合同应提前三日通知公司；但资料中只规定了员工主动解除的通知期，没有说明公司辞退试用期员工需要提前几天通知，因此这个问题无法根据现有资料得出答案。"
+    },
+    {
+      "id": "ch6",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "company-hard",
+      "question": "离职时公司要开什么证明？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3818,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第十二条【离职、交接与证明】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第十二条【离职、交接与证明】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "离职时公司应出具《解除或终止劳动合同证明》。[1]"
+    },
+    {
+      "id": "ch7",
+      "type": "answer",
+      "category": "other",
+      "scenario": "company-hard",
+      "question": "公司能不能收我押金？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2625,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十六条【福利与补贴】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十六条【福利与补贴】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十六条【福利与补贴】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不能。公司不得以其他名义收取押金、保证金。[1]"
+    },
+    {
+      "id": "ch8",
+      "type": "answer",
+      "category": "other",
+      "scenario": "company-hard",
+      "question": "同事之间打听工资可以吗？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3180,
+      "context_recall": true,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "企业规章制度（50条）｜第二十一条【薪酬结构与发放】"
+      ],
+      "source_keys": [
+        "企业规章制度（50条）｜第二十一条【薪酬结构与发放】"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "企业规章制度（50条）.md",
+        "第二十一条【薪酬结构与发放】"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "不可以。工资数额属公司商业秘密，员工不得相互打探、传播或对外披露。[1]"
+    }
+  ]
+}

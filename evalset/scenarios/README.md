@@ -32,6 +32,7 @@
 
 | 场景 | 状态 | 题集 | 语料 |
 |---|---|---|---|
+| `company-hard` | ✅ 可跑（公司制度的口语化/跨条款难题，8 题） | `company-hard.jsonl`（8 题，全部应答类） | 同 `company` |
 | `company` | ✅ 可跑（**真实公司制度**：50 条，通用版/已脱敏） | `company.jsonl` 20 题（15 答 + 5 拒，含 3 道 boundary） | `evalset/fixtures/company_corpus/`（1 份，需先跑 `normalize_clause_headings.py` 把加粗条款转 ## 标题）|
 | `campus` | ✅ 可跑（复用老题集，20 题：15 答 + 5 拒） | `evalset/questions.json` | `docs/kb/`（11 份校规） |
 | `hr` / `compliance` / `support` | `hr` ✅ 可跑（**合成**语料，非真实公司文件）；`compliance` / `support` ⏳ 待真实语料（HANDOFF P1） | `hr.jsonl` 24 题 / `hr-deny.jsonl` 3 题 | `evalset/fixtures/hr_corpus/`（2 篇）+ `hr_corpus_acl/`（1 篇受限） |
