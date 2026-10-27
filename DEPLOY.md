@@ -1,6 +1,10 @@
 
 # 部署到公网：路线选择 + 上线前必查清单 + 回放式演示
 
+> **闭环候选的生效方式**：`eval_loop.py run` 门禁 accept 后会写 `evalset/loop/active.json`，
+> 服务启动时**自动加载**（也可用 `EXPAND_LEXICON` 显式覆盖）。回滚用
+> `python scripts/eval_loop.py rollback`，它会清掉/换掉这个文件；改完需重启服务。
+
 > **跑评测前先调高 `RATE_PER_MIN`**（默认 20 次/分，连续跑会被限流）。client 现在遇 429 会退避重试，仍失败则**中断并报错**——不会再产出"0/15"的假报告。详见 `experiments/eval-latency-and-limits.md`。
 
 

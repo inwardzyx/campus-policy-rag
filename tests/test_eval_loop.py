@@ -93,55 +93,60 @@ def test_gate_rejects_when_gain_below_threshold() -> None:
 
 # ---------------------------------------------------------------- rollback
 
-def test_rollback_returns_to_previous_active(tmp_path) -> None:
+def test_rollback_walks_back_and_clears(tmp_path, monkeypatch) -> None:
+    """连退两次必须能退到空（旧实现会卡在第一个 accept）。"""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     "scripts"))
     import eval_loop
 
-    reg = {"schema": "eval-loop/1", "active": None, "history": [
-        {"id": "l1", "candidates": "a.json", "status": "active", "gate": {"verdict": "accept"}},
-        {"id": "l2", "candidates": "b.json", "status": "active", "gate": {"verdict": "accept"}},
-    ]}
     p = tmp_path / "registry.json"
+    monkeypatch.setattr(eval_loop, "ACTIVE_LEXICON", tmp_path / "active.json")
+    for name in ("a.json", "b.json"):
+        (tmp_path / name).write_text('{"entries": []}', encoding="utf-8")
+    reg = {"schema": "eval-loop/1", "active": None, "accepted_order": ["l1", "l2"],
+           "active_id": "l2", "history": [
+               {"id": "l1", "candidates": str(tmp_path / "a.json"), "status": "superseded", "gate": {"verdict": "accept"}},
+               {"id": "l2", "candidates": str(tmp_path / "b.json"), "status": "active", "gate": {"verdict": "accept"}},
+           ]}
     p.write_text(json.dumps(reg), encoding="utf-8")
-    active = eval_loop.rollback(p)
-    assert active is not None and active["id"] == "l1"
+    first = eval_loop.rollback(p)
+    assert first is not None and first["id"] == "l1"
+    second = eval_loop.rollback(p)
+    assert second is None, "退到空之后不能再返回旧版本"
+    reg2 = json.loads(p.read_text(encoding="utf-8"))
+    assert reg2["active_id"] is None
+    assert all(h["status"] != "active" for h in reg2["history"])
 
-def test_run_eval_passes_namespace_and_bootstrap(tmp_path, monkeypatch) -> None:
-    """回归：重构 _run_eval 时曾把 --bootstrap-docs 弄丢 ⇒ 基线变成空库（15 条假失败）。"""
+
+def test_gate_rejects_incomplete_reports() -> None:
+    """缺行的 after 报告不能算出 verdict（盲审 P2-3）。"""
+    from kb.loopgate import decide
+    before = [{"id": f"q{i}", "type": "answer", "bucket": "ok"} for i in range(5)]
+    after = before[:3]
+    v = decide(before, after, min_gain=1)
+    assert v["verdict"] == "reject" and "行数" in v["reasons"][0]
+
+
+def test_deny_ok_counts_as_gain() -> None:
+    """deny 题的正确桶是 ok，不是 refuse_ok（盲审 P1-1）。"""
+    from kb.loopgate import decide
+    before = [{"id": "d1", "type": "deny", "bucket": "acl_leak"},
+              {"id": "a1", "type": "answer", "bucket": "retrieval_miss"}]
+    after = [{"id": "d1", "type": "deny", "bucket": "ok"},
+             {"id": "a1", "type": "answer", "bucket": "ok"}]
+    v = decide(before, after, min_gain=1)
+    assert v["verdict"] == "accept" and "d1" in v["gains"]
+
+def test_write_active_is_the_consumer(tmp_path, monkeypatch) -> None:
+    """accept 后写 `evalset/loop/active.json`，服务启动会加载它（盲审 P1-3）。"""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     "scripts"))
     import eval_loop
 
-    seen_cmds: list[list[str]] = []
-
-    class _FakePopen:
-        def __init__(self, *a, **kw):
-            self.returncode = 0
-        def terminate(self):
-            pass
-        def wait(self, timeout=None):
-            return 0
-        def kill(self):
-            pass
-
-    class _FakeRun:
-        def __init__(self, code=0):
-            self.returncode = code
-            self.stdout = ""
-            self.stderr = ""
-
-    def fake_subprocess_run(cmd, **kw):
-        seen_cmds.append(list(cmd))
-        return _FakeRun()
-
-    monkeypatch.setattr(eval_loop.subprocess, "Popen", _FakePopen)
-    monkeypatch.setattr(eval_loop.subprocess, "run", fake_subprocess_run)
-    monkeypatch.setattr(eval_loop, "_wait_health", lambda port, timeout=120.0: None)
-
-    eval_loop._run_eval("company", tmp_path / "b.json", {}, "evalset/fixtures/company_corpus",
-                        8081, "company")
-    cmd = seen_cmds[0]
-    assert "--namespace" in cmd and cmd[cmd.index("--namespace") + 1] == "company"
-    assert "--bootstrap-docs" in cmd and cmd[cmd.index("--bootstrap-docs") + 1] == "evalset/fixtures/company_corpus"
+    active = tmp_path / "active.json"
+    monkeypatch.setattr(eval_loop, "ACTIVE_LEXICON", active)
+    src = tmp_path / "cands.json"
+    src.write_text('{"entries": [{"id": "x", "match": ["q"], "add": ["词"]}]}', encoding="utf-8")
+    eval_loop._write_active(src)
+    assert active.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
 

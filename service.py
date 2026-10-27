@@ -803,7 +803,12 @@ class RAG:
 
     def startup(self):
         t0 = time.time()
-        self._lexicon = expand_mod.Lexicon.load(os.environ.get("EXPAND_LEXICON"))
+        lex_path = os.environ.get("EXPAND_LEXICON")
+        if not lex_path:
+            # ★ 闭环 accept 后写的是这个文件；没有环境变量也要生效（盲审 P1-3：之前没人读）
+            default_lex = Path(__file__).parent / "evalset" / "loop" / "active.json"
+            lex_path = str(default_lex) if default_lex.exists() else None
+        self._lexicon = expand_mod.Lexicon.load(lex_path)
         self.model = TextEmbedding("BAAI/bge-small-zh-v1.5", cache_dir=CACHE_DIR)
         # ★ 这里【故意不建 LLM】，原因见上面的 llm 属性
 

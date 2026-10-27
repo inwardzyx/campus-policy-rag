@@ -66,6 +66,8 @@ IGNORE_MARK = "refcheck-ignore"      # 整行跳过（用于正文引述错路�
 
 # ★ 明确要放过的不存在路径：**每一行都要经得起下一个人问"为什么"**。
 ALLOW: dict[str, str] = {
+    "evalset/loop/active.json":
+    """运行时产物：闭环 accept 后写入、服务启动时加载（`_write_active`）。""",
     "evalset/loop/registry.json":
     """运行时产物：`scripts/eval_loop.py` 的 registry 默认路径（跑过闭环才有）。""",
     "evalset/report-scenario-hr.json":

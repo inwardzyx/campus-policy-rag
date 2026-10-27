@@ -53,5 +53,6 @@ def test_recall_precision_over_all_gold_pairs() -> None:
             "context": {"blocks": [{"source": "a", "clause": "第二条"}],
                         "citation": {"used_ids": [1]}}}
     row = score_row(case, resp)
-    assert row["context_recall"] is True
-    assert row["context_precision"] == 0.5, "2 条 gold 命中 1 条"
+    # ★ 语义（盲审 P1-2）：recall = 命中 gold / gold 总数；precision = 命中 gold / included 数
+    assert row["context_recall"] == 0.5, "2 条 gold 命中 1 条"
+    assert row["context_precision"] == 1.0, "included 只有 1 块且是 gold"

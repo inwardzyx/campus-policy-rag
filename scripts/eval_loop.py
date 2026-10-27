@@ -93,8 +93,10 @@ def _find_clause(corpus: dict[tuple[str, str], str], doc: str, clause: str) -> s
 def mine(report: dict, corpus_dir: Path, max_entries: int = 12) -> list[dict]:
     corpus = parse_corpus(corpus_dir)
     entries: list[dict] = []
+    # ★ 只挖"检索/排序"类失败：查询扩展词救不了 budget_cut / gen_uncited（盲审 P2-1）
+    MINEABLE = ("retrieval_miss", "rank_shift")
     missed = [r for r in report.get("rows") or []
-              if r.get("type") == "answer" and r.get("bucket") != "ok" and r.get("gold")]
+              if r.get("type") == "answer" and r.get("bucket") in MINEABLE and r.get("gold")]
     for row in missed:
         doc, clause = row["gold"][0], row["gold"][1]
         gold_text = _find_clause(corpus, doc, clause)
@@ -123,6 +125,24 @@ def mine(report: dict, corpus_dir: Path, max_entries: int = 12) -> list[dict]:
 
 # ------------------------------------------------------------------ gate / registry
 
+#: 服务启动时默认加载的候选（`EXPAND_LEXICON` 未设时用它）
+ACTIVE_LEXICON = ROOT / "evalset" / "loop" / "active.json"
+
+
+def _write_active(source: Path) -> None:
+    src = Path(source)
+    if not src.exists():
+        print(f"· 候选文件不存在，跳过写 active：{src}")
+        return
+    ACTIVE_LEXICON.parent.mkdir(parents=True, exist_ok=True)
+    ACTIVE_LEXICON.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _clear_active() -> None:
+    if ACTIVE_LEXICON.exists():
+        ACTIVE_LEXICON.unlink()
+
+
 def load_registry(path: Path) -> dict:
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -144,6 +164,7 @@ def gate_reports(before_path: Path, after_path: Path, candidates_path: Path,
 
     reg = load_registry(registry_path)
     loop_id = f"loop-{time.strftime('%Y%m%d-%H%M%S')}"
+    accepted = verdict["verdict"] == "accept"
     entry = {
         "id": loop_id,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -151,28 +172,52 @@ def gate_reports(before_path: Path, after_path: Path, candidates_path: Path,
         "before": str(before_path),
         "after": str(after_path),
         "gate": verdict,
-        "status": "active" if verdict["verdict"] == "accept" else "rejected",
+        "status": "active" if accepted else "rejected",
     }
+    # ★ 状态机：同一时刻只能有一个 active，其余 accepted 标记 superseded（盲审 P1-3）
+    if accepted:
+        for h in reg.get("history", []):
+            if h.get("status") == "active":
+                h["status"] = "superseded"
+        reg.setdefault("accepted_order", []).append(loop_id)
+        reg["active_id"] = loop_id
     reg["history"].append(entry)
-    if verdict["verdict"] == "accept":
-        reg["active"] = {"id": loop_id, "candidates": str(candidates_path), "gate": verdict}
+    reg["active"] = (({"id": loop_id, "candidates": str(candidates_path), "gate": verdict})
+                     if accepted else reg.get("active"))
     save_registry(registry_path, reg)
+
+    # ★ 真正的消费方：把候选写成服务启动时会加载的文件（盲审 P1-3：之前没人读 registry）
+    if accepted:
+        _write_active(candidates_path)
     return entry
 
 
 def rollback(registry_path: Path) -> dict | None:
+    """退回上一个 accept 的版本；没有就清空。
+
+    ★ 旧实现每次把 history 里所有 active 都算进去、只 pop 一个、被弹出的仍标 active，
+      连退两次会卡死（盲审 P1-3）。现在用显式的 accepted_order 栈。
+    """
     reg = load_registry(registry_path)
-    accepted = [h for h in reg.get("history", []) if h.get("status") == "active"]
-    if not accepted:
+    order: list[str] = list(reg.get("accepted_order") or [])
+    if order:
+        order.pop()                              # 丢掉当前这版
+    by_id = {h["id"]: h for h in reg.get("history", [])}
+    for h in reg.get("history", []):
+        if h.get("status") in ("active", "superseded"):
+            h["status"] = "superseded"
+    reg["accepted_order"] = order
+    current = order[-1] if order else None
+    if current and current in by_id:
+        reg["active_id"] = current
+        reg["active"] = {"id": current, "candidates": by_id[current]["candidates"],
+                         "gate": by_id[current]["gate"]}
+        by_id[current]["status"] = "active"
+        _write_active(Path(by_id[current]["candidates"]))
+    else:
+        reg["active_id"] = None
         reg["active"] = None
-        save_registry(registry_path, reg)
-        return None
-    accepted.pop()                                   # 当前这版不要
-    reg["active"] = ({"id": accepted[-1]["id"], "candidates": accepted[-1]["candidates"],
-                      "gate": accepted[-1]["gate"]} if accepted else None)
-    for h in reg["history"]:
-        if h["id"] == (accepted[-1]["id"] if accepted else None):
-            h["status"] = "active"
+        _clear_active()
     save_registry(registry_path, reg)
     return reg["active"]
 

@@ -130,8 +130,12 @@ def score_row(case: Mapping[str, Any], response: Mapping[str, Any]) -> dict[str,
             recall = None          # 没有 trace 就没有"上下文召回"这回事，不补 0
         else:
             hits = sum(1 for k in gold_keys if k in included)
-            recall = hits > 0            # 多跳题：命中任一 gold 条款即算召回
-            precision = (hits / len(gold_keys)) if included else None
+            # ★ 语义修正（盲审 P1-2）：
+            #   recall    = 命中 gold 条数 / gold 总条数（多 gold 时是覆盖率，不是布尔）
+            #   precision = 命中 gold 条数 / included 块数（"喂进去的块里 gold 占多少"）
+            #   旧实现把 hits/len(gold) 当 precision，和描述不符、且聚合值系统性偏低。
+            recall = (hits / len(gold_keys)) if gold_keys else None
+            precision = (hits / len(included)) if included else None
 
     return {
         "id": case.get("id"),
@@ -314,13 +318,13 @@ for _spec in (
                "没有行时为空 dict", _m_by_category),
     MetricSpec("answer_value", "答案值命中率（只统计配了 expect 的题；缺失≠0）", "rate",
                "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）", _m_answer_value),
-    MetricSpec("answer", "应答类题目的正确率（bucket=ok）", "rate",
+    MetricSpec("answer", "应答类题目的**检索命中率**（bucket=ok；不是答案正确性）", "rate",
                "该套件没有 answer 题时为 None", _m_answer),
     MetricSpec("refuse", "库外题的正确拒答率（bucket=refuse_ok）", "rate",
                "该套件没有 refuse 题时为 None", _m_refuse),
     MetricSpec("deny", "越权题的正确拒绝率（bucket=ok）", "rate",
                "该套件没有 deny 题时为 None", _m_deny),
-    MetricSpec("context_recall", "gold 条款是否进了真正喂给模型的块", "rate",
+    MetricSpec("context_recall", "gold 覆盖率（命中 gold 条数 / gold 总条数）", "rate",
                "无 trace（docs/ 旧路径）或没有 gold 时为 None", _m_recall),
     MetricSpec("context_precision", "喂进去的块里 gold 的占比（单 gold 粗口径）", "rate",
                "无 trace 或没有 gold 时为 None", _m_precision),

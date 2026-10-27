@@ -45,7 +45,7 @@ def test_score_row_recall_uses_same_key() -> None:
             "context": {"blocks": [{"source": "制度", "clause": "第一条"}],
                         "citation": {"used_ids": [1]}}}
     row = score_row(case, resp)
-    assert row["context_recall"] is True
+    assert row["context_recall"] == 1.0
     assert row["source_keys"][0] == "制度｜第一条"
 
 
