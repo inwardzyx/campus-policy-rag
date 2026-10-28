@@ -73,3 +73,9 @@ def test_namespaces_endpoint_lists_libraries() -> None:
     for item in data:
         assert set(item) >= {"namespace", "docs", "chunks", "label"}
         assert "text" not in item and "content" not in item
+
+def test_index_page_defaults_to_auto_namespace() -> None:
+    """"全部分区（自动匹配）"必须是默认项——用户不该先选库再提问。"""
+    html = client().get("/").text
+    assert 'value="*" selected' in html, "默认项应是全部分区"
+    assert "自动匹配" in html

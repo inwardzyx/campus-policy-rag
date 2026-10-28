@@ -1151,8 +1151,12 @@ class RAG:
         _, vec_scores, vec_order, bm25_order = self.route_orders(query)
 
         target = namespace or "default"
+        # ★ 2026-10-28：namespace="*" = **跨分区检索**（"全部分区/自动匹配"）。
+        #   用户不该为了问一句阳光跑先去选分区：先全库检索、按分数融合，
+        #   来源里带分区名，答案出处看得见。
+        all_ok = target == "*"
         allowed = {i for i, c in enumerate(self.chunks)
-                   if c.get("namespace", "default") == target
+                   if (all_ok or c.get("namespace", "default") == target)
                    and _acl_allows(c.get("acl"), acl)}
         if not allowed:
             return []
@@ -2680,6 +2684,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <p style="color:#666;font-size:14px">bge-small-zh 向量检索 + BM25 混合 + 入库把关 + 大模型精排 + DeepSeek 生成</p>
 <textarea id="q" placeholder="试试：学校对学生的处分有哪几种？ / 请假一天以内由谁审批？ / 图书馆几点关门？（最后一条库里没有，看它怎么拒答）"></textarea><br>
 <select id="ns" style="width:280px;padding:6px 8px;font-size:13px;margin-top:8px;border:1px solid #ccc;border-radius:6px">
+  <option value="*" selected>全部分区（自动匹配）</option>
   <option value="">默认库（校规）</option>
 </select>
 <button onclick="ask()">提问</button>
@@ -2704,9 +2709,9 @@ HTML_PAGE = """<!DOCTYPE html>
       o.textContent=x.label+'（'+x.docs+' 份 / '+x.chunks+' 块）';
       el.appendChild(o);
     });
-    const extra=list.filter(x=>x.namespace!=='default');
-    const pick=fromUrl||saved||(extra.length===1?extra[0].namespace:'');
-    if(pick) el.value=pick;
+    // 默认"全部分区（自动匹配）"；URL / 上次选择才覆盖
+    const pick=fromUrl||saved||'*';
+    el.value=pick;
   }catch(e){/* 接口不可用就只剩默认库，不阻断问答 */}
   el.addEventListener('change',()=>localStorage.setItem('kb_namespace',el.value));
 })();
