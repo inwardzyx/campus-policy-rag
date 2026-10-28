@@ -76,6 +76,23 @@ class KnowledgeStore:
         tmp.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(p)
 
+    def list_namespaces(self) -> list[dict]:
+        """列出所有分区（有 manifest 的目录），返回 [{namespace, docs}]。
+
+        ★ 给"人看的"用：页面上不该让用户手填 namespace，应该从列表里选。
+        """
+        out: list[dict] = []
+        if not self.root.exists():
+            return out
+        for d in sorted(self.root.iterdir()):
+            if not d.is_dir() or not _NS_RE.match(d.name):
+                continue
+            records = self._load_manifest(d.name)
+            live = [r for r in records if not r.get("tombstone")]
+            if live or (d / "manifest.json").exists():
+                out.append({"namespace": d.name, "docs": len(live)})
+        return out
+
     # ---------- 写 ----------
     def upload(
         self,

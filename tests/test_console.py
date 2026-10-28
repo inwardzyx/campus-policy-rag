@@ -63,3 +63,13 @@ def test_index_page_can_switch_namespace() -> None:
     html = client().get("/").text
     assert 'id="ns"' in html, "页面缺命名空间输入框"
     assert "namespace" in html, "请求体里没带 namespace 字段"
+
+def test_namespaces_endpoint_lists_libraries() -> None:
+    """页面下拉框的数据源：只给名字/文档数/块数，不泄露内容。"""
+    r = client().get("/kb/namespaces")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list)
+    for item in data:
+        assert set(item) >= {"namespace", "docs", "chunks", "label"}
+        assert "text" not in item and "content" not in item

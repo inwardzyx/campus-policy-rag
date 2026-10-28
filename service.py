@@ -2186,6 +2186,21 @@ async def kb_upload(
     }
 
 
+@app.get("/kb/namespaces")
+def kb_namespaces():
+    """列出可用分区（页面下拉框用；只暴露名字与块数，不含文档内容）。"""
+    counts: dict[str, int] = {}
+    for c in (rag.chunks or []):
+        ns = str(c.get("namespace") or "default")
+        counts[ns] = counts.get(ns, 0) + 1
+    docs = {item["namespace"]: item["docs"] for item in rag.store.list_namespaces()}
+    # 默认库来自 docs/ 目录，不在 store 里；单独标出来
+    out = [{"namespace": ns, "chunks": n, "docs": docs.get(ns, 0),
+            "label": ("默认库（校规）" if ns == "default" else ns)}
+           for ns, n in sorted(counts.items())]
+    return out
+
+
 @app.get("/kb/{namespace}/documents")
 def kb_list(namespace: str, request: Request, include_deleted: bool = False):
     """列出某知识库的文档（默认不含已删除）。"""
@@ -2664,7 +2679,9 @@ HTML_PAGE = """<!DOCTYPE html>
 <h2>校园政策问答（RAG）</h2>
 <p style="color:#666;font-size:14px">bge-small-zh 向量检索 + BM25 混合 + 入库把关 + 大模型精排 + DeepSeek 生成</p>
 <textarea id="q" placeholder="试试：学校对学生的处分有哪几种？ / 请假一天以内由谁审批？ / 图书馆几点关门？（最后一条库里没有，看它怎么拒答）"></textarea><br>
-<input id="ns" placeholder="命名空间（留空=默认库；例如 sunrun）" style="width:260px;padding:6px 8px;font-size:13px;margin-top:8px;border:1px solid #ccc;border-radius:6px">
+<select id="ns" style="width:280px;padding:6px 8px;font-size:13px;margin-top:8px;border:1px solid #ccc;border-radius:6px">
+  <option value="">默认库（校规）</option>
+</select>
 <button onclick="ask()">提问</button>
 <label style="margin-left:12px;font-size:13px"><input type="checkbox" id="rr" checked> 启用 rerank</label>
 <div class="box" id="ans" style="display:none"></div>
@@ -2672,12 +2689,26 @@ HTML_PAGE = """<!DOCTYPE html>
 <script>
 // ★ 命名空间：URL ?namespace=sunrun 优先，其次是上次用过的（localStorage）。
 //   不填就走默认库 —— 之前页面不传 namespace，所以"灌进 sunrun 的文档"在页面上查不到。
-(function(){
+(async function(){
+  // ★ 用户不该手填 namespace：下拉框自动列出已有分区；
+  //   URL ?namespace=xxx 优先，其次上次选的，再次"只有一个分区时自动选它"。
+  const el=document.getElementById('ns');
+  if(!el) return;
   const fromUrl=new URLSearchParams(location.search).get('namespace');
   const saved=localStorage.getItem('kb_namespace')||'';
-  const el=document.getElementById('ns');
-  if(el && (fromUrl||saved)) el.value=fromUrl||saved;
-  if(el) el.addEventListener('change',()=>localStorage.setItem('kb_namespace',el.value.trim()));
+  try{
+    const list=await (await fetch('/kb/namespaces')).json();
+    list.filter(x=>x.namespace!=='default').forEach(x=>{
+      const o=document.createElement('option');
+      o.value=x.namespace;
+      o.textContent=x.label+'（'+x.docs+' 份 / '+x.chunks+' 块）';
+      el.appendChild(o);
+    });
+    const extra=list.filter(x=>x.namespace!=='default');
+    const pick=fromUrl||saved||(extra.length===1?extra[0].namespace:'');
+    if(pick) el.value=pick;
+  }catch(e){/* 接口不可用就只剩默认库，不阻断问答 */}
+  el.addEventListener('change',()=>localStorage.setItem('kb_namespace',el.value));
 })();
 // ★ 不用 innerHTML 拼字符串：资料来源、理由都来自知识库文本，
 //   一旦知识库的 .md 里混进 <img onerror=...> 之类，innerHTML 会把它当标签执行（XSS）。
