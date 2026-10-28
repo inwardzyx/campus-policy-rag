@@ -100,3 +100,4 @@ agent/_tool_split_*.json
 
 # 企业语料上传目录（运行时生成，不入库）
 kb_data/
+demo-server.log
