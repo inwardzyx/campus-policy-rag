@@ -45,6 +45,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from kb.loopgate import apply_significance, decide  # noqa: E402
+from kb import runstate                             # noqa: E402
 
 HEADING = re.compile(r"^(#{1,6})\s*(.+?)\s*$", re.M)
 STOP = set("的 了 是 在 有 和 与 及 或 对 把 被 为 从 到 中 上 下 什么 哪些 怎么 如何 多少 哪 吗 呢 请 问 学校 学生 规定".split())
@@ -154,13 +155,69 @@ def save_registry(path: Path, reg: dict) -> None:
     path.write_text(json.dumps(reg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _state_of(report: dict) -> dict | None:
+    """从报告 meta 找回那次跑的 `state.json`。
+
+    meta 里有两个线索：`run_state`（相对仓库根目录的 run 目录）与 `run_id`。
+    前者优先（它指向的那份就是当时拍的原文），后者兜底（目录被清理过也能试一下）。
+    """
+    meta = report.get("meta") or {}
+    rel = meta.get("run_state")
+    if rel:
+        p = Path(str(rel))
+        p = p if p.is_absolute() else ROOT / p
+        sp = p / "state.json"
+        if sp.exists():
+            try:
+                return json.loads(sp.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return None
+    run_id = meta.get("run_id")
+    if run_id:
+        try:
+            return runstate.load(ROOT, str(run_id))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
 def gate_reports(before_path: Path, after_path: Path, candidates_path: Path,
-                 registry_path: Path, min_gain: int = 1, alpha: float | None = None) -> dict:
+                 registry_path: Path, min_gain: int = 1, alpha: float | None = None,
+                 allow_env: tuple[str, ...] = ("EXPAND_LEXICON",),
+                 require_state: bool = True) -> dict:
+    """配对裁决。**先验状态，再比题目。**
+
+    ★ 为什么状态要在题目之前判（2026-10-28 加）：
+      门禁原本只看"哪几题对错变了"。但两次跑如果**不是同一个系统**（代码改了、
+      语料漂了、`.env` 里某个旋钮没清），"变好"就可能是环境给的，不是候选给的。
+      本项目已经踩过这个：+1 的增益小于同日同配置基线的自身波动（41↔39），
+      于是诚实的结论只能是"没有证据"。
+      ⇒ 现在：两次跑的差异必须**只落在已声明的旋钮里**（`allow_env`），否则 reject。
+    """
     before = load_report(before_path)
     after = load_report(after_path)
     verdict = decide(before.get("rows") or [], after.get("rows") or [], min_gain=min_gain)
     if alpha is not None:
         verdict = apply_significance(verdict, alpha)
+
+    # ---- 状态判据（前置）----
+    state_info: dict = {"ok": True, "skipped": True, "reasons": []}
+    if require_state:
+        sb, sa = _state_of(before), _state_of(after)
+        if sb is None or sa is None:
+            state_info = {
+                "ok": False, "skipped": False,
+                "reasons": [f"缺少状态快照（{'before' if sb is None else 'after'} 找不到 state.json）"
+                            f"⇒ 无法证明两次跑的是同一个系统"],
+                "deltas": [], "unexpected": [], "allow_env": list(allow_env),
+            }
+        else:
+            state_info = runstate.state_match(sb, sa, allow_env=allow_env)
+            state_info["skipped"] = False
+        if not state_info["ok"]:
+            verdict = dict(verdict)
+            verdict["verdict"] = "reject"
+            verdict["reasons"] = list(verdict.get("reasons") or []) + state_info["reasons"]
 
     reg = load_registry(registry_path)
     loop_id = f"loop-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -172,6 +229,9 @@ def gate_reports(before_path: Path, after_path: Path, candidates_path: Path,
         "before": str(before_path),
         "after": str(after_path),
         "gate": verdict,
+        # ★ 状态判据单独留一份：以后要复盘"当时为什么拒"，看这里比看 reasons 快
+        "state": state_info,
+        "allow_env": list(allow_env),
         "status": "active" if accepted else "rejected",
     }
     # ★ 状态机：同一时刻只能有一个 active，其余 accepted 标记 superseded（盲审 P1-3）
@@ -275,6 +335,11 @@ def _run_eval(cases: str, out: Path, env_extra: dict, corpus: str | None, port: 
             srv.kill()
 
 
+def _allow_env(spec: str | None) -> tuple[str, ...]:
+    """`--allow-env` 解析：逗号分隔，空串 = 不声明任何干预。"""
+    return tuple(k.strip() for k in (spec or "").split(",") if k.strip())
+
+
 def cmd_run(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -312,10 +377,13 @@ def cmd_run(args) -> int:
               args.namespace)
 
     print("④ 门禁裁决")
-    entry = gate_reports(baseline, candidate, cands, registry, args.min_gain, args.alpha)
+    entry = gate_reports(baseline, candidate, cands, registry, args.min_gain, args.alpha,
+                         allow_env=_allow_env(args.allow_env),
+                         require_state=not args.no_state_gate)
     g = entry["gate"]
     print(json.dumps({"verdict": g["verdict"], "reasons": g["reasons"],
-                      "gains": g["gains"], "losses": g["losses"]}, ensure_ascii=False))
+                      "gains": g["gains"], "losses": g["losses"],
+                      "state_ok": entry["state"].get("ok")}, ensure_ascii=False))
     print(f"   registry → {registry}")
     return 0 if g["verdict"] == "accept" else 2
 
@@ -332,8 +400,10 @@ def cmd_mine(args) -> int:
 
 def cmd_gate(args) -> int:
     entry = gate_reports(Path(args.before), Path(args.after), Path(args.candidates),
-                         Path(args.registry), args.min_gain, args.alpha)
-    print(json.dumps(entry["gate"], ensure_ascii=False, indent=2))
+                         Path(args.registry), args.min_gain, args.alpha,
+                         allow_env=_allow_env(args.allow_env),
+                         require_state=not args.no_state_gate)
+    print(json.dumps({**entry["gate"], "state": entry["state"]}, ensure_ascii=False, indent=2))
     return 0 if entry["gate"]["verdict"] == "accept" else 2
 
 
@@ -362,6 +432,10 @@ def main() -> int:
     g.add_argument("--min-gain", type=int, default=1)
     g.add_argument("--alpha", type=float, default=None,
                    help="给值则启用严格模式：McNemar 不显著就拒（如 0.05）")
+    g.add_argument("--allow-env", default="EXPAND_LEXICON",
+                   help="声明本次干预会改动的环境键（逗号分隔）；差异不在此列 ⇒ 直接 reject")
+    g.add_argument("--no-state-gate", action="store_true",
+                   help="跳过状态判据（只用于复盘 run-state 之前产出的历史报告）")
     g.set_defaults(func=cmd_gate)
 
     r = sub.add_parser("run", help="完整闭环（会调模型）")
@@ -378,6 +452,10 @@ def main() -> int:
     r.add_argument("--min-gain", type=int, default=1)
     r.add_argument("--alpha", type=float, default=None,
                    help="给值则启用严格模式：McNemar 不显著就拒（如 0.05）")
+    r.add_argument("--allow-env", default="EXPAND_LEXICON",
+                   help="声明本次干预会改动的环境键（逗号分隔）；差异不在此列 ⇒ 直接 reject")
+    r.add_argument("--no-state-gate", action="store_true",
+                   help="跳过状态判据（不建议：那样门禁证明不了『只改了一处』）")
     r.set_defaults(func=cmd_run)
 
     b = sub.add_parser("rollback", help="回退 active")

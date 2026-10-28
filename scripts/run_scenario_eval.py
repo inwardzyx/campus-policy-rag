@@ -37,6 +37,7 @@ if str(ROOT) not in sys.path:
 
 from kb import evalkit                             # noqa: E402
 from kb import attribution                          # noqa: E402
+from kb import runstate                             # noqa: E402
 
 
 def _pick_transport(args) -> evalkit.transport.Transport:
@@ -124,6 +125,16 @@ def main() -> int:
         shown = path
     print(f"· 套件 {suite}（{shown}），{len(cases)} 题，transport={transport.name}")
 
+    # ★ 拍状态快照（run-state/1）：让这份报告能自证"我是在哪个系统上跑出来的"。
+    #   必须**开跑之前**拍 —— 跑完再拍的话，中途改了文件/prompt 就会记成改后的状态，
+    #   那正好是最需要它准确的那一刻出错。
+    #   为什么放在这里而不是"单独一个脚本让人记得跑"：忘记拍的代价是回到"数字是孤儿"，
+    #   而这恰好是本项目已经踩过的坑 ⇒ 自动做，不依赖记性。
+    rs = runstate.record(ROOT, namespace=args.namespace or "",
+                         note=f"suite={suite}",
+                         docs_dir=args.bootstrap_docs or "")
+    print(f"· 状态指纹 {rs['state_fingerprint']}（run {rs['run_id']}）")
+
     t0 = time.time()
     rows = []
     try:
@@ -149,13 +160,20 @@ def main() -> int:
                             if str(path).startswith(str(ROOT)) else str(path)),
               "namespace": args.namespace, "event_time": args.event_time,
               "limit": args.limit or None, "wall_clock_ms": elapsed,
+              # ★ 系统状态（三层 versioning 的第三层）：这两个字段让"这个数字属于哪个系统"
+              #   成为**机器可判**的事实，而不是靠人回忆。回滚/配对都靠它。
+              "run_id": rs["run_id"], "state_fingerprint": rs["state_fingerprint"],
+              "run_state": rs["run_dir"],
               "missing_responses": [r["id"] for r in rows if r["bucket"] == "no_response"]})
     out = Path(args.out) if args.out else ROOT / f"evalset/report-{suite}.json"
     evalkit.write_report(report, out)
+    # 报告复制进 run 目录：状态和它的结果待在同一个文件夹里，拷走就能复盘
+    runstate.attach_report(ROOT, rs["run_id"], out)
 
     print()
     print(evalkit.format_summary(report))
     print(f"\n✓ 报告：{out}（schema {evalkit.SCHEMA_VERSION}）")
+    print(f"✓ 状态：{rs['run_id']}（指纹 {rs['state_fingerprint']}，回滚用 scripts/rollback.py）")
     return 0
 
 

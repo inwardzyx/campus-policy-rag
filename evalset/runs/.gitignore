@@ -1,0 +1,4 @@
+# run 目录是**机器本地产物**：含 worktree.diff（可能是别人没提交的改动）与绝对路径，
+# 不该进仓库。要留证据就把 report.json 拷到 evalset/ 下（那份是给人看的）。
+*
+!.gitignore

@@ -19,11 +19,13 @@ def _index(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(r.get("id")): r for r in rows if r.get("id") is not None}
 
 
-def _ok(row: dict[str, Any] | None) -> bool:
+def is_ok(row: dict[str, Any] | None) -> bool:
     """这一题算不算"做对了"。
 
     ★ 用报告里的 bucket 判定，而不是自己再算一遍指标 ——
       否则门禁和报告会各有一套口径（本项目踩过的"两处各写一份判据"）。
+    ★ 2026-10-28：从 `_ok` 改名为公开的 `is_ok`，因为**它现在是两处的共同判据**
+      （门禁 + runstate 的逐题对比）。留 `_ok` 别名是为了不惊动已有调用方。
     """
     if not row:
         return False
@@ -35,6 +37,10 @@ def _ok(row: dict[str, Any] | None) -> bool:
     if typ == "refuse":
         return bucket == "refuse_ok"
     return bucket == "ok"
+
+
+#: 向后兼容：旧代码里用的是 `loopgate._ok`
+_ok = is_ok
 
 
 def mcnemar_exact(b: int, c: int) -> float:
