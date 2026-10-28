@@ -32,6 +32,7 @@
 
 | 场景 | 状态 | 题集 | 语料 |
 |---|---|---|---|
+| `sunrun` | ✅ 可跑（**真实校园通知**：阳光跑 + APP 指南 + 免跑申请表） | `sunrun.jsonl` 18 题（15 答 + 3 拒，含 1 道 boundary） | `evalset/fixtures/sunrun_corpus/`（3 份，扫描版 PDF 无文本层，正文取自通知文本）|
 | `company-52` | ✅ 可跑（外部生成的**52 题**多跳/陷阱/边界集） | `company-52.jsonl`（46 答 + 6 拒，39 题多条款 gold） | 同 `company`；由 `scripts/import_eval_jsonl.py` 从 WorkBuddy 产物导入 |
 | `company-hard` | ✅ 可跑（公司制度的口语化/跨条款难题，8 题） | `company-hard.jsonl`（8 题，全部应答类） | 同 `company` |
 | `company` | ✅ 可跑（**真实公司制度**：50 条，通用版/已脱敏） | `company.jsonl` 20 题（15 答 + 5 拒，含 3 道 boundary） | `evalset/fixtures/company_corpus/`（1 份，需先跑 `normalize_clause_headings.py` 把加粗条款转 ## 标题）|

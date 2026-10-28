@@ -1,0 +1,835 @@
+{
+  "schema_version": "request-eval/1",
+  "suite": "sunrun",
+  "mode": "http",
+  "n_cases": 18,
+  "generated_at": "2026-10-28T09:32:56+0800",
+  "meta": {
+    "cases_file": "evalset\\scenarios\\sunrun.jsonl",
+    "namespace": "sunrun",
+    "event_time": null,
+    "limit": null,
+    "wall_clock_ms": 48842,
+    "missing_responses": []
+  },
+  "metric_specs": {
+    "by_category": {
+      "desc": "按题型分组的指标（每类各自给 Wilson）",
+      "unit": "dict",
+      "missing": "没有行时为空 dict"
+    },
+    "answer_value": {
+      "desc": "答案值命中率（只统计配了 expect 的题；缺失≠0）",
+      "unit": "rate",
+      "missing": "没有配 expect 的 answer 题 ⇒ 不计算（缺失≠0）"
+    },
+    "answer": {
+      "desc": "应答类题目的**检索命中率**（bucket=ok；不是答案正确性）",
+      "unit": "rate",
+      "missing": "该套件没有 answer 题时为 None"
+    },
+    "refuse": {
+      "desc": "库外题的正确拒答率（bucket=refuse_ok）",
+      "unit": "rate",
+      "missing": "该套件没有 refuse 题时为 None"
+    },
+    "deny": {
+      "desc": "越权题的正确拒绝率（bucket=ok）",
+      "unit": "rate",
+      "missing": "该套件没有 deny 题时为 None"
+    },
+    "context_recall": {
+      "desc": "gold 覆盖率（命中 gold 条数 / gold 总条数）",
+      "unit": "rate",
+      "missing": "无 trace（docs/ 旧路径）或没有 gold 时为 None"
+    },
+    "context_precision": {
+      "desc": "喂进去的块里 gold 的占比（单 gold 粗口径）",
+      "unit": "rate",
+      "missing": "无 trace 或没有 gold 时为 None"
+    },
+    "ndcg@3": {
+      "desc": "按 sources 顺序算的 nDCG（二值相关）",
+      "unit": "rate",
+      "missing": "未装 ir_measures（评测依赖）时为 None，并在 notes 说明"
+    },
+    "budget_cut_rate": {
+      "desc": "answer 题里 gold 被预算裁掉的比例",
+      "unit": "rate",
+      "missing": "没有 answer 题时为 None"
+    },
+    "citation_validity": {
+      "desc": "合法引用编号 / 全部引用编号",
+      "unit": "rate",
+      "missing": "没有引用报告（未启用引用或旧路径）时为 None"
+    },
+    "uncited_paragraphs_per_answer": {
+      "desc": "每答案平均「未标注段落」数",
+      "unit": "count",
+      "missing": "没有引用报告时为 None"
+    },
+    "p95_ms": {
+      "desc": "端到端耗时 p95",
+      "unit": "ms",
+      "missing": "没有 took_ms 时为 None"
+    },
+    "compression_rows_active": {
+      "desc": "压缩启用的题数（0 = 这批没触发压缩）",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    },
+    "compression_dedup_total": {
+      "desc": "压缩去重丢弃的块数",
+      "unit": "count",
+      "missing": "压缩默认关，恒为 0 属于正常"
+    }
+  },
+  "aggregate": {
+    "n_cases": 18,
+    "by_category": {
+      "boundary": {
+        "n": 1,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 1,
+          "total": 1,
+          "rate": 1.0,
+          "wilson_95": [
+            0.2065,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "numeric": {
+        "n": 9,
+        "answer": {
+          "passed": 9,
+          "total": 9,
+          "rate": 1.0,
+          "wilson_95": [
+            0.7008,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "other": {
+        "n": 6,
+        "answer": {
+          "passed": 6,
+          "total": 6,
+          "rate": 1.0,
+          "wilson_95": [
+            0.6097,
+            1.0
+          ]
+        },
+        "refuse": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      },
+      "out_of_scope": {
+        "n": 2,
+        "answer": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "refuse": {
+          "passed": 2,
+          "total": 2,
+          "rate": 1.0,
+          "wilson_95": [
+            0.3424,
+            1.0
+          ]
+        },
+        "deny": {
+          "passed": 0,
+          "total": 0,
+          "rate": null,
+          "wilson_95": null
+        },
+        "answer_value": null
+      }
+    },
+    "answer_value": null,
+    "answer": {
+      "passed": 15,
+      "total": 15,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7961,
+        1.0
+      ]
+    },
+    "refuse": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385,
+        1.0
+      ]
+    },
+    "deny": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": null
+    },
+    "context_recall": 1.0,
+    "context_precision": 0.7778,
+    "ndcg@3": 1.0,
+    "budget_cut_rate": 0.0,
+    "citation_validity": 1.0,
+    "uncited_paragraphs_per_answer": 0.0667,
+    "p95_ms": 3675,
+    "compression_rows_active": 0,
+    "compression_dedup_total": 0,
+    "buckets": {
+      "ok": 15,
+      "refuse_ok": 3
+    },
+    "failure_buckets": {
+      "retrieval_miss": 0,
+      "rank_shift": 0,
+      "budget_cut": 0,
+      "gen_uncited": 0,
+      "acl_leak": 0,
+      "stale_version": 0,
+      "refuse_fabricated": 0,
+      "refuse_context_overreach": 0
+    },
+    "notes": [
+      "没有配 expect 的 answer 题 ⇒ 不计算值命中率（缺失≠0）",
+      "nDCG@3 由 ir-measures 现算（二值相关，键=doc｜clause）"
+    ]
+  },
+  "rows": [
+    {
+      "id": "s01",
+      "type": "answer",
+      "category": "other",
+      "scenario": "sunrun",
+      "question": "男生这学期要跑多少公里才算达标？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3137,
+      "context_recall": 1.0,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "阳光跑通知｜3. 锻炼标准",
+        "阳光跑通知｜4. 成绩评定"
+      ],
+      "source_keys": [
+        "阳光跑通知｜3. 锻炼标准",
+        "阳光跑通知｜4. 成绩评定"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "3. 锻炼标准"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "男生这学期要跑 80 公里及以上才算达标。[1][2]"
+    },
+    {
+      "id": "s02",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "一次跑不到 2 公里算不算？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2578,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "source_keys": [
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "3. 锻炼标准"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "一次跑不到 2 公里不算，低于 2.0 公里不计入成绩。[1]"
+    },
+    {
+      "id": "s03",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "单次最多能跑几公里？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2550,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "source_keys": [
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "3. 锻炼标准"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "单次最多能跑 4 公里。[1]"
+    },
+    {
+      "id": "s04",
+      "type": "answer",
+      "category": "other",
+      "scenario": "sunrun",
+      "question": "配速多少才算有效？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3052,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "source_keys": [
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "3. 锻炼标准"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "配速在 4—10 分/公里范围内才算有效。[1]"
+    },
+    {
+      "id": "s05",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "每天几点到几点可以跑？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2355,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜2. 时间与地点"
+      ],
+      "source_keys": [
+        "阳光跑通知｜2. 时间与地点"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "2. 时间与地点"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "每天 6:00-22:00 可以跑。[1]"
+    },
+    {
+      "id": "s06",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "发现代跑第一次怎么处理？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2234,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜5. 作弊处罚"
+      ],
+      "source_keys": [
+        "阳光跑通知｜5. 作弊处罚"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "5. 作弊处罚"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "发现代跑第一次会清零里程。[1]"
+    },
+    {
+      "id": "s07",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "作弊第二次会有什么后果？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2410,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜5. 作弊处罚"
+      ],
+      "source_keys": [
+        "阳光跑通知｜5. 作弊处罚"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "5. 作弊处罚"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "作弊第二次的后果是体育重修。[1]"
+    },
+    {
+      "id": "s08",
+      "type": "answer",
+      "category": "other",
+      "scenario": "sunrun",
+      "question": "没跑到 80 公里体育成绩会怎样？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3200,
+      "context_recall": 1.0,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "阳光跑通知｜4. 成绩评定",
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "source_keys": [
+        "阳光跑通知｜4. 成绩评定",
+        "阳光跑通知｜3. 锻炼标准"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "4. 成绩评定"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "没跑到 80 公里是否会影响体育成绩，资料中只对男生给出了明确结论：男生未达到 80 公里，体育期末总评不合格[1]。资料没有说明女生未达到 60 公里的后果，因此无法据此判断女生的情况。"
+    },
+    {
+      "id": "s09",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "免跑申请要什么时候交？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3024,
+      "context_recall": 1.0,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 1,
+      "included": 2,
+      "sources": [
+        "阳光跑通知｜8. 免跑申请",
+        "阳光跑通知｜9. 逾期伤病补办"
+      ],
+      "source_keys": [
+        "阳光跑通知｜8. 免跑申请",
+        "阳光跑通知｜9. 逾期伤病补办"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "8. 免跑申请"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "免跑申请的时间分两种情况：\n\n- 常规申请时间为 10 月 15 日—11 月 15 日。[1]\n- 如在免跑申请时间截止后出现意外、伤病等情况需申请免跑，则在 12 月 31 日前将纸质表交明德楼 308 李老师。[2]"
+    },
+    {
+      "id": "s10",
+      "type": "answer",
+      "category": "other",
+      "scenario": "sunrun",
+      "question": "免跑申请的审批流程是什么？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3738,
+      "context_recall": 1.0,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "阳光跑通知｜8. 免跑申请",
+        "闪动校园免跑申请表｜前言",
+        "阳光跑通知｜注 1. 学院审核时间"
+      ],
+      "source_keys": [
+        "阳光跑通知｜8. 免跑申请",
+        "闪动校园免跑申请表｜前言",
+        "阳光跑通知｜注 1. 学院审核时间"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "8. 免跑申请"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "免跑申请的审批流程为：校医务室盖章 → 班主任/带班辅导员签字 → 学院审批（明德楼 308 李老师）；审批后本人扫描上传至闪动校园 APP。[1]\n\n此外，申请时需本人提交申请及佐证，时间为 10 月 15 日—11 月 15 日。[1] 申请表还显示：校医务室意见栏需带上医院相关证明、病例等材料找各校区医务室医生填写意见并签字盖章；班主任（带班辅导员）审核栏由二级学院辅导员填写意见、签字；二级学院审批栏由二级学院院长/副院长/书记/副书记填写意见、签字、盖章；体育运动委员会栏无需填写，填写好以上流程后在闪动校园 APP 内免测申请模块上传签字完成后的免测申请表及医院证明扫描（拍图片），老师处理完后会将相关处理意见在 APP 内回复。[2]"
+    },
+    {
+      "id": "s11",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "错过免跑申请时间以后受伤了怎么办？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 3675,
+      "context_recall": 1.0,
+      "context_precision": 0.3333333333333333,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 3,
+      "sources": [
+        "阳光跑通知｜9. 逾期伤病补办",
+        "阳光跑通知｜8. 免跑申请",
+        "闪动校园免跑申请表｜前言"
+      ],
+      "source_keys": [
+        "阳光跑通知｜9. 逾期伤病补办",
+        "阳光跑通知｜8. 免跑申请",
+        "闪动校园免跑申请表｜前言"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "9. 逾期伤病补办"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "根据资料，错过免跑申请时间截止后出现伤病需申请免跑的，应在12月31日前将纸质表交到明德楼308李老师处[1]。资料中没有说明其他具体操作细节（如是否需要补交佐证材料、是否仍需医务室盖章等），这些不知道。"
+    },
+    {
+      "id": "s12",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "周四之前交的表什么时候能领回？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2635,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜注 1. 学院审核时间"
+      ],
+      "source_keys": [
+        "阳光跑通知｜注 1. 学院审核时间"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "注 1. 学院审核时间"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "周四之前提交的表，周四领回。[1]"
+    },
+    {
+      "id": "s13",
+      "type": "answer",
+      "category": "other",
+      "scenario": "sunrun",
+      "question": "APP 里客服中心在哪里？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2935,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜7. 问题反馈与进度跟踪"
+      ],
+      "source_keys": [
+        "阳光跑通知｜7. 问题反馈与进度跟踪"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "7. 问题反馈与进度跟踪"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "APP 里的客服中心在「我的－设置－客服中心」。[1]"
+    },
+    {
+      "id": "s14",
+      "type": "answer",
+      "category": "numeric",
+      "scenario": "sunrun",
+      "question": "免跑申请表打印的时候要注意删掉什么？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2603,
+      "context_recall": 1.0,
+      "context_precision": 0.5,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 2,
+      "sources": [
+        "阳光跑通知｜注 2. 免跑申请表填写",
+        "闪动校园免跑申请表｜前言"
+      ],
+      "source_keys": [
+        "阳光跑通知｜注 2. 免跑申请表填写",
+        "闪动校园免跑申请表｜前言"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "注 2. 免跑申请表填写"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "打印填写免跑申请表时，需要将红色说明字体删除。[1][2]"
+    },
+    {
+      "id": "s15",
+      "type": "answer",
+      "category": "other",
+      "scenario": "sunrun",
+      "question": "跑步范围限定在哪里？",
+      "bucket": "ok",
+      "reason": "gold 在喂给模型的块里",
+      "context_available": true,
+      "knowledge_hit": true,
+      "took_ms": 2783,
+      "context_recall": 1.0,
+      "context_precision": 1.0,
+      "citation_validity": 1.0,
+      "uncited_count": 0,
+      "included": 1,
+      "sources": [
+        "阳光跑通知｜2. 时间与地点"
+      ],
+      "source_keys": [
+        "阳光跑通知｜2. 时间与地点"
+      ],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": [
+        "阳光跑通知.md",
+        "2. 时间与地点"
+      ],
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "跑步范围限定在清远校区电子围栏内。[1]"
+    },
+    {
+      "id": "r01",
+      "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "sunrun",
+      "question": "阳光跑跑满 80 公里有奖金吗？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1949,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r02",
+      "type": "refuse",
+      "category": "out_of_scope",
+      "scenario": "sunrun",
+      "question": "学校食堂几点开饭？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1738,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    },
+    {
+      "id": "r03",
+      "type": "refuse",
+      "category": "boundary",
+      "scenario": "sunrun",
+      "question": "跑步受伤了学校赔多少钱？",
+      "bucket": "refuse_ok",
+      "reason": "库外题被正确拒答（答案里明说不知道）",
+      "context_available": true,
+      "knowledge_hit": false,
+      "took_ms": 1999,
+      "context_recall": null,
+      "context_precision": null,
+      "citation_validity": null,
+      "uncited_count": null,
+      "included": 0,
+      "sources": [],
+      "source_keys": [],
+      "compression": null,
+      "rewritten_query": null,
+      "gold": null,
+      "answer_value": null,
+      "session_id": null,
+      "turn_index": null,
+      "answer": "知识库里没有能回答这个问题的资料，我不编。"
+    }
+  ]
+}

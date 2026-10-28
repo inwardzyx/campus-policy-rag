@@ -1,0 +1,18 @@
+{"id": "s01", "type": "answer", "question": "男生这学期要跑多少公里才算达标？", "gold": ["阳光跑通知.md", "3. 锻炼标准"]}
+{"id": "s02", "type": "answer", "question": "一次跑不到 2 公里算不算？", "gold": ["阳光跑通知.md", "3. 锻炼标准"]}
+{"id": "s03", "type": "answer", "question": "单次最多能跑几公里？", "gold": ["阳光跑通知.md", "3. 锻炼标准"]}
+{"id": "s04", "type": "answer", "question": "配速多少才算有效？", "gold": ["阳光跑通知.md", "3. 锻炼标准"]}
+{"id": "s05", "type": "answer", "question": "每天几点到几点可以跑？", "gold": ["阳光跑通知.md", "2. 时间与地点"]}
+{"id": "s06", "type": "answer", "question": "发现代跑第一次怎么处理？", "gold": ["阳光跑通知.md", "5. 作弊处罚"]}
+{"id": "s07", "type": "answer", "question": "作弊第二次会有什么后果？", "gold": ["阳光跑通知.md", "5. 作弊处罚"]}
+{"id": "s08", "type": "answer", "question": "没跑到 80 公里体育成绩会怎样？", "gold": ["阳光跑通知.md", "4. 成绩评定"]}
+{"id": "s09", "type": "answer", "question": "免跑申请要什么时候交？", "gold": ["阳光跑通知.md", "8. 免跑申请"]}
+{"id": "s10", "type": "answer", "question": "免跑申请的审批流程是什么？", "gold": ["阳光跑通知.md", "8. 免跑申请"]}
+{"id": "s11", "type": "answer", "question": "错过免跑申请时间以后受伤了怎么办？", "gold": ["阳光跑通知.md", "9. 逾期伤病补办"]}
+{"id": "s12", "type": "answer", "question": "周四之前交的表什么时候能领回？", "gold": ["阳光跑通知.md", "注 1. 学院审核时间"]}
+{"id": "s13", "type": "answer", "question": "APP 里客服中心在哪里？", "gold": ["阳光跑通知.md", "7. 问题反馈与进度跟踪"]}
+{"id": "s14", "type": "answer", "question": "免跑申请表打印的时候要注意删掉什么？", "gold": ["阳光跑通知.md", "注 2. 免跑申请表填写"]}
+{"id": "s15", "type": "answer", "question": "跑步范围限定在哪里？", "gold": ["阳光跑通知.md", "2. 时间与地点"]}
+{"id": "r01", "type": "refuse", "question": "阳光跑跑满 80 公里有奖金吗？", "gold": null}
+{"id": "r02", "type": "refuse", "question": "学校食堂几点开饭？", "gold": null}
+{"id": "r03", "type": "refuse", "question": "跑步受伤了学校赔多少钱？", "gold": null, "tags": ["boundary"]}

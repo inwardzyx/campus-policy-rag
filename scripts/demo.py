@@ -79,6 +79,10 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--namespace", default="")
     ap.add_argument("--keep", action="store_true", help="检查完不杀服务（演示时用）")
+    ap.add_argument("--corpus", default=None, help="把该目录的 .md 灌进 namespace（换文档演示）")
+    ap.add_argument("--in-scope", default=IN_SCOPE, help="演示用的库内问题")
+    ap.add_argument("--out-scope", default=OUT_SCOPE, help="演示用的库外问题")
+    ap.add_argument("--clause-q", default=CLAUSE_Q, help="演示用的条款号查询")
     args = ap.parse_args()
 
     srv = None
@@ -100,9 +104,24 @@ def main() -> int:
             return 1
         print(f"✓ health：status={health.get('status')} chunks={health.get('chunks')} "
               f"rejected={health.get('rejected')}")
+        if args.corpus:
+            import urllib.parse
+            uploaded = 0
+            for md in sorted(Path(args.corpus).glob("*.md")):
+                q = urllib.parse.urlencode({"filename": md.name, "acl": "public"})
+                req = urllib.request.Request(
+                    f"{base}/kb/{args.namespace}/documents?{q}", data=md.read_bytes(),
+                    method="POST",
+                    headers={"Content-Type": "text/markdown; charset=utf-8"})
+                try:
+                    with urllib.request.urlopen(req, timeout=120) as r:
+                        uploaded += 1 if r.status in (200, 201) else 0
+                except Exception as exc:                # noqa: BLE001
+                    print(f"  · 上传失败 {md.name}: {exc}")
+            print(f"✓ 灌语料：{uploaded} 份 → namespace={args.namespace}")
 
         # ① 库内：答 + 出处
-        code, resp = _call(base, "/chat", {"question": IN_SCOPE, "namespace": args.namespace})
+        code, resp = _call(base, "/chat", {"question": args.in_scope, "namespace": args.namespace})
         if code == 200 and isinstance(resp, dict) and resp.get("knowledge_hit") and resp.get("sources"):
             src = resp["sources"][0]
             where = src.get("doc") or ""
@@ -114,7 +133,7 @@ def main() -> int:
             print(f"✗ 库内问题没答好（HTTP {code}）")
 
         # ② 库外：必须拒答
-        code, resp = _call(base, "/chat", {"question": OUT_SCOPE, "namespace": args.namespace})
+        code, resp = _call(base, "/chat", {"question": args.out_scope, "namespace": args.namespace})
         if code == 200 and isinstance(resp, dict) and not resp.get("knowledge_hit"):
             print(f"✓ 库外问题：拒答 →「{(resp.get('answer') or '')[:40]}」")
         else:
@@ -122,7 +141,7 @@ def main() -> int:
             print(f"✗ 库外问题没有被明确拒答（HTTP {code}）")
 
         # ③ 条款号检索
-        code, resp = _call(base, "/chat", {"question": CLAUSE_Q, "namespace": args.namespace})
+        code, resp = _call(base, "/chat", {"question": args.clause_q, "namespace": args.namespace})
         hit = code == 200 and isinstance(resp, dict) and resp.get("sources")
         print(("✓" if hit else "✗") + " 条款号查询：" +
               (f"命中 {resp['sources'][0].get('doc')}" if hit else "没命中"))
