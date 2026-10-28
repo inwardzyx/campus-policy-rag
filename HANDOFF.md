@@ -126,7 +126,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-421 passed, 27 skipped
+425 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
@@ -365,7 +365,9 @@ citation_validity 1.0、未标注段落 0.2）。新报告：`evalset/report-sce
 预算敏感性实验。设计稿在 `D:\dsh-work\_上下文工程-清单-20261023-v2.md`，路线图在
 `D:\dsh-work\_企业知识库-落地清单-20261023.md`。
 
-### P0.5：评测自进化层 v1 —— ✅ 已完成（2026-10-25）
+### P0.5：评测层 v1（归因 + 指标 + trace）—— ✅ 已完成（2026-10-25）
+
+> ⚠️ 这里完成的是**评测与归因**，**不含**自动改进。"闭环是否变好"的验收协议见 `experiments/closed-loop-protocol.md`；工具 `scripts/paired_eval.py`。
 
 - `kb/attribution.py`：六桶归因（`retrieval_miss / rank_shift / budget_cut / gen_uncited /
   acl_leak / stale_version`）；**依据是 trace 新增的 `candidates`** —— 没有它，
