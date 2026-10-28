@@ -28,10 +28,11 @@
 5. git log --oneline -5（最近改了什么）
 
 【可核对事实】
-- HEAD 9764611；工作区可能有另一个 agent 的未提交改动（kb/runstate.py、tests/test_runstate.py、
-  scripts/run_scenario_eval.py、evalset/runs/）—— 不要覆盖、不要擅自提交。
-- 已提交状态全量：421 passed / 27 skipped（命令见下）。
-- 工作区含未提交 runstate 测试时：430 passed（多 9 条）。
+- HEAD 以 `git log -1 --oneline` 为准（2026-10-28 收口时为 `eb1c520`）；工作树**应为干净**，
+  若出现未提交改动，先 `git status` 弄清是谁的，**不要覆盖、不要擅自提交**。
+- 全量测试：**453 passed / 27 skipped**（2026-10-28 实测；27 条 skip 全是"本机无 Redis"）。
+  命令：`D:\Python-project\.venv\Scripts\python.exe -m pytest -q --no-header`
+  ★ 别把这个数写死进文档 —— 加用例它就会变，以现跑为准。
 - 9 个评测套件：campus / hr / hr-deny / policy / policy-asof-2025 / company / company-hard /
   company-52 / sunrun。
 - 演示：scripts/demo.py 一条命令起服务 + 6 项自检（含 /admin 必须 403）。
@@ -78,9 +79,9 @@ D:\Python-project\.venv\Scripts\python.exe scripts\check_test_counts.py
 
 | 项 | 值 |
 |---|---|
-| HEAD | `9764611`（docs(memory): 项目记忆索引） |
-| 已提交测试 | **421 passed / 27 skipped** |
-| 工作区（含他人未提交 runstate） | 430 passed |
+| HEAD | `eb1c520`（feat(runstate): schema v3） |
+| 测试 | **453 passed / 27 skipped**（2026-10-28 工作树干净时实测；27 条 skip 全部是"本机无 Redis"，见 `test_limits` 22 条 + `test_session_multi_turn` 5 条） |
+| 工作树 | 干净 —— runstate / paired_eval 已于 2026-10-28 提交（`50d2dd2`→`eb1c520`），不再是"他人未提交 WIP" |
 | 评测套件 | 9 个（见上） |
 | 真实语料 | 公司制度 50 条（company）、校园阳光跑通知 3 份（sunrun） |
 | 公网 | 临时 Tunnel 验收过 6/6；**固定链接尚未买服务器** |

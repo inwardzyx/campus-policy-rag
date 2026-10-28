@@ -178,7 +178,7 @@ def test_未跟踪文件内容进指纹(tmp_path: Path):
     """**新写的文件改了，指纹必须变。**
 
     ★ 这条是 P1 的核心：`git diff` 只覆盖已跟踪文件，而本项目常态是"新模块还没 add"。
-      修之前：改 `kb/xxx.py` 的内容，`diff_sha256` 一动不动 ⇒ 门禁把"代码变了"
+      修之前：改 `kb/runstate.py` 这类"还没 add"的新模块内容，`diff_sha256` 一动不动 ⇒ 门禁把"代码变了"
       当成"什么都没改"。
     """
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)

@@ -12,6 +12,12 @@
 > ★ 旧版 `HANDOFF.md`（2026-10-14，校园政策 RAG 主线：限流/agent/旧评测）已归档为
 > **`HANDOFF-20261014.md`**；本文覆盖 2026-10-23 之后的企业知识库线。
 > `HANDOFF.wb.md` 是另一条 WorkBuddy 线，未改动。
+>
+> ★ **2026-10-28 收口核对（只读 + 只改文档，未动代码逻辑）**：当前 HEAD `eb1c520`、
+> 工作树干净（runstate / paired_eval 已由另一 agent 于当日提交：`50d2dd2`→`eb1c520`）；
+> 全量 **453 passed / 27 skipped**，27 条 skip **全部**是「本机无 Redis」（`test_limits` 22 条 +
+> `test_session_multi_turn` 5 条），与网络/依赖无关。上面写的「代码快照 HEAD `48d9e6e`」和
+> §2.3 的「421 passed / 27 skipped」都是旧快照，**以现跑为准**。
 
 ---
 
