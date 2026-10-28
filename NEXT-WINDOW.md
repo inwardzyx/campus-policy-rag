@@ -1,7 +1,8 @@
-# 新窗口说明书 — 企业知识库 RAG / Context Layer v1
+# 新窗口说明书（2026-10-28 版）
 
 > 用途：把下面「第一条消息」整段复制到新窗口，即可无历史接手。
-> 项目根：`D:\_review_rag-cs`　·　交接快照：`HANDOFF.md`（2026-10-25，代码 HEAD `48d9e6e`；说明书提交 `183eab6`）
+> 项目根：`D:\_review_rag-cs`　·　交接快照：`HANDOFF.md`　·　索引：`MEMORY.md`
+> 本文件自身随项目走；**过期就改它**，别另建第 N 份"入口"。
 
 ---
 
@@ -9,84 +10,108 @@
 
 ```text
 你是接手「企业知识库 RAG」项目的新窗口。工作目录：D:\_review_rag-cs。
-先不要写代码，第一轮只做只读核对和计划。
+先不要写代码，第一轮只做只读核对。
 
 【一句话背景】
-这是把校园制度问答 RAG 企业化后的服务：多 namespace 上传、块级 ACL/SSO、PDF/DOCX/扫描件 OCR、
-飞书 wiki 连接器、每语料质检与独立评测；目标是 HR/合规/客服可用的“带出处答案或明确拒答”。
-当前缺的不是功能数量，而是上下文层（分层/预算/Trace/降级）。
+一个带评测闭环的中文制度问答服务：混合检索（bge 向量 + BM25 + RRF + LLM 精排）+ 带出处回答 +
+不编造（答不出明确拒绝）+ 多租户/ACL + 评测集与失败归因 + 可交付部署。
 
-【必读，按顺序，不要整篇读大文件】
-1. HANDOFF.md：重点 §2 当前进度、§3 关键决定、§5 下一步、§7 约定。
-2. enterprise-kb.md：只读「ACL」「飞书 wiki 连接器」「复杂 PDF / 扫描件」三节。
-3. D:\dsh-work\_上下文工程-清单-20261023-v2.md：Context Layer 设计稿。
-4. 代码只按需定位：
-   - grep 找 service.py 的 handle_chat / _search_for_request / _request_roles / ChatResponse；
-   - 读 kb/source.py、kb/store.py 的公开类和函数签名；
-   - 不要一上来读完整 service.py/README。
+【当前阶段（2026-10-28）】
+代码侧已冻结。关键路径上只剩两件非代码的事：固定公网链接、第一个真实用户。
+不要在"加企业级功能"上花时间（SSO/观测/更多连接器都属拿到 offer 后再学）。
 
-【当前可核对事实】
-- HEAD 4635fd3；工作树应只有 samples/ 未跟踪；代码/文档干净。
-- 全量测试：196 passed, 27 skipped（命令见 HANDOFF §7）。
-- 已有：namespace/ACL/SSO、PDF/DOCX、Docling Docker OCR（镜像 docling-runner:2.142.1，2.86GB）、
-  飞书连接器代码、smoke 质检、独立评测模板/runner。
-- 未做：kb/context.py、版本/as-of、审计、公网部署、真实飞书同步（应用 scope 未开）、
-  真实扫描件/双栏/表格验收、真实 40+20+10 题集。
+【必读，按顺序，别整篇读大文件】
+1. MEMORY.md（15 行索引，先看它决定读哪份）
+2. HANDOFF.md（重点 §2 进度、§3 关键决定、§5 下一步）
+3. START.md（30 秒电梯稿 + 五个数字）
+4. enterprise-kb.md（只读你需要的节：评测/容量/部署）
+5. git log --oneline -5（最近改了什么）
 
-【本轮唯一任务：Context Layer v1】
-目标：新增 kb/context.py，做“不破坏旧路径”的最小上下文层。
-必须包含：
-1. 分层：system / policy / history / task / memory / retrieved / tool / output；
-2. 预算：按 chars 估算（不要假装是 token），记录每层占用、截断/压缩；
-3. ContextTrace：trace_id、blocks（source/clause/chars/included/reason）、excluded、degraded；
-4. 只对带 namespace 的 /chat 和 /chat/stream 启用；docs/ 默认语料的旧路径保持不变；
-5. 第一版可以只做“选块 + 预算 + Trace”，不改答案 prompt；v2 再模板化/压缩；
-6. 响应里给一个可选的 context 摘要（字段默认 None，不能破坏旧响应）。
+【可核对事实】
+- HEAD 9764611；工作区可能有另一个 agent 的未提交改动（kb/runstate.py、tests/test_runstate.py、
+  scripts/run_scenario_eval.py、evalset/runs/）—— 不要覆盖、不要擅自提交。
+- 已提交状态全量：421 passed / 27 skipped（命令见下）。
+- 工作区含未提交 runstate 测试时：430 passed（多 9 条）。
+- 9 个评测套件：campus / hr / hr-deny / policy / policy-asof-2025 / company / company-hard /
+  company-52 / sunrun。
+- 演示：scripts/demo.py 一条命令起服务 + 6 项自检（含 /admin 必须 403）。
 
-【硬约束】
-- 不重写检索/精排/六道入库把关；不改 docs/ 语料；不把设计文档放进 docs/。
-- 不新增连接器、多租户、前端、部署、70 题大评测。
-- 不把 Docling/MinerU 等重依赖塞进 requirements.txt；Docling 继续走 Docker。
-- 数字必须能指回产物；不要编 token 数/通过率。
-- 生产 ACL 不信任请求体：SSO 角色覆盖 acl；proxy 模式必须配 TRUST_PROXY_HEADERS=1。
-- 改 service.py 路由要同步 README 的 11 个端点清单，否则 pre-commit 会红。
-- 不绕过 pre-commit；一批改动一个中文 commit。
+【不要做】
+- 不要新增企业级功能（SSO/组织同步/告警/Langfuse/更多连接器）——已明确冻结。
+- 不要改另一个 agent 的未提交文件；不要 `git add -A`。
+- 不要手写数字：任何数字要能指回产物（report JSON / pytest 输出）。
+- 不要复述旧结论当收益：闭环 accept 那 +1 小于运行间波动 ±2、McNemar p=1.0，
+  文档已改成"机制跑通，不构成收益证据"。
+- 不要声称"断网可用"：文档与检索在本机，生成调用 DeepSeek（可换内网模型）。
 
 【第一轮只做这些，不改文件】
-1. git log -1 / git status；
-2. 按 HANDOFF §7 跑全量 pytest，确认 196/27（不一致就报告，不要删测试凑数）；
-3. 用 grep/read 定位 handle_chat、_search_for_request、ChatResponse、build_answer_prompt；
-4. 输出：
-   A. 现状核对（HEAD/测试/工作树，3 行内）
-   B. 5–8 行实现计划：新增/修改哪些文件、函数、测试
-   C. 3 个风险点（尤其“旧路径不变”怎么保证）
-   D. 需要我确认的 1–3 个问题
-等我确认后再改代码。
-
-【沟通】
-中文；技术术语保留英文；解释“为什么”而不是复述代码；给命令时用完整 venv 路径
-D:\Python-project\.venv\Scripts\python.exe；长任务用后台 job，不整段贴日志。
+1. git log -1 --oneline / git status --porcelain；
+2. 跑 pytest（命令见下），核对是否 421 passed / 27 skipped（27 条 skip 多与网络/依赖有关，别删测试凑数）；
+3. 读 MEMORY.md + HANDOFF.md §2/§5；
+4. 输出：现状核对（HEAD/测试/工作树，3 行）+ 你认为的下一步 3 件事（按价值排序）。
 ```
 
 ---
 
-## 新窗口第一轮验收标准
+## 验证命令（三条，都是真实跑过的）
 
-- 能准确说出三件事：当前 HEAD/测试数、Context Layer 要接哪条路径、为什么旧 `docs/` 路径不能动；
-- 计划里明确 `kb/context.py` 的数据结构、接入点、测试文件；
-- 没有在未确认前改任何文件；
-- 如果发现 `HANDOFF.md` 与代码冲突，先报告，以代码/测试为准。
+```powershell
+cd D:\_review_rag-cs
 
-## 之后每轮的验收
+# 1) 全量测试（约 2 分钟）
+D:\Python-project\.venv\Scripts\python.exe -m pytest -q --no-header
 
-- 全量 pytest 不低于 196 passed / 27 skipped；
-- namespace `/chat` 能看到 `context` 摘要：用了哪几块、多少 chars、丢了什么、是否降级；
-- `docs/` 默认路径的答案/响应字段不变；
-- commit 前 pre-commit 通过；README 端点数仍为 11。
+# 2) 演示自检（起服务 + 6 项真打接口；--keep 留着演示）
+D:\Python-project\.venv\Scripts\python.exe scripts\demo.py --port 8769 --keep `
+  --corpus evalset/fixtures/sunrun_corpus --namespace sunrun `
+  --in-scope "男生这学期要跑多少公里才算达标？" --out-scope "学校食堂几点开饭？"
 
-## 不要给新窗口做的事
+# 3) 仓库自带的三个检查（提交前钩子也跑它们）
+D:\Python-project\.venv\Scripts\python.exe scripts\check_readme_numbers.py
+D:\Python-project\.venv\Scripts\python.exe scripts\check_file_refs.py
+D:\Python-project\.venv\Scripts\python.exe scripts\check_test_counts.py
+```
 
-- 不要让它先做飞书/部署/新连接器/70 题；
-- 不要让它读整个 `service.py`、整个 README、整段历史日志；
-- 不要让它改 `docs/`、`kb_data/`、`.env`、`samples/` 里的 PDF；
-- 不要让它“顺手重构”检索/精排/拒答逻辑。
+---
+
+## 当前状态快照
+
+| 项 | 值 |
+|---|---|
+| HEAD | `9764611`（docs(memory): 项目记忆索引） |
+| 已提交测试 | **421 passed / 27 skipped** |
+| 工作区（含他人未提交 runstate） | 430 passed |
+| 评测套件 | 9 个（见上） |
+| 真实语料 | 公司制度 50 条（company）、校园阳光跑通知 3 份（sunrun） |
+| 公网 | 临时 Tunnel 验收过 6/6；**固定链接尚未买服务器** |
+| 真实用户 | **0** |
+
+## 下一步（按价值，不是按代码量）
+
+1. **谈第一个用户**（材料：`D:\dsh-work\首访材料包-2026-10-27.md`）：
+   辅导员/学工办/大创/电商；目标拿 3–5 个真实问题 + 一句"可以试"。
+2. **固定链接**（一晚 + 约 40 元/月）：`DEPLOY.md` 路线 B；上完用 `deploy_smoke.py` 复验。
+3. **真实语料第二批**：拿到真实问题后进评测集，跑 `eval_loop.py`（对比要看 `state_fingerprint`）。
+
+## 常见坑（都踩过）
+
+| 坑 | 现象 | 处理 |
+|---|---|---|
+| namespace 没传 | 页面问"怎么申请免跑"说没资料 | 页面选"全部分区（自动匹配）"或 `?namespace=sunrun` |
+| hosts 被改 | GitHub/`raw.githubusercontent.com` 解析到 127.0.0.1 | 注释 hosts 里 `github-fix by Buddy` 段，`ipconfig /flushdns` |
+| AGENTS.md 硬链接 | 改完只剩一个名字，DSH 读到旧内容 | `fsutil hardlink list ~/.dsh/AGENTS.md` 必须两个；用追加/字节替换，别 write+rename |
+| Auto Memory | 以为有 MEMORY.md 自动加载 | 本 harness **没有**；规则在 `~/.dsh/AGENTS.md`「记忆纪律」，索引是项目内 `MEMORY.md` |
+| 429 被当答错 | 连续跑评测，报告静默变 0/15 | 已修：退避重试 + `TransportError` 中断；跑前调高 `RATE_PER_MIN` |
+| DeepSeek 外发 | 以为"数据不出内网" | 文档与检索在本机，**生成调 DeepSeek**；要全内网换本地模型 |
+
+## 不要做（冻结清单）
+
+- 不加 SSO/组织同步、告警、Langfuse、更多连接器；
+- 不为"看到闭环 accept"人为制造失败；
+- 不把 `docs/` 里的数字和报告对不上仍写进 README；
+- 不 `git add -A`（工作区有另一个 agent 的 WIP）。
+
+---
+
+> 上一版（2026-10-25，Context Layer v1 任务）已作废，保留在 git 历史里：
+> `git log -p --follow NEXT-WINDOW.md` 可看。
