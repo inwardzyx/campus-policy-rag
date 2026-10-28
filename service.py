@@ -2664,11 +2664,21 @@ HTML_PAGE = """<!DOCTYPE html>
 <h2>校园政策问答（RAG）</h2>
 <p style="color:#666;font-size:14px">bge-small-zh 向量检索 + BM25 混合 + 入库把关 + 大模型精排 + DeepSeek 生成</p>
 <textarea id="q" placeholder="试试：学校对学生的处分有哪几种？ / 请假一天以内由谁审批？ / 图书馆几点关门？（最后一条库里没有，看它怎么拒答）"></textarea><br>
+<input id="ns" placeholder="命名空间（留空=默认库；例如 sunrun）" style="width:260px;padding:6px 8px;font-size:13px;margin-top:8px;border:1px solid #ccc;border-radius:6px">
 <button onclick="ask()">提问</button>
 <label style="margin-left:12px;font-size:13px"><input type="checkbox" id="rr" checked> 启用 rerank</label>
 <div class="box" id="ans" style="display:none"></div>
 <div id="src"></div>
 <script>
+// ★ 命名空间：URL ?namespace=sunrun 优先，其次是上次用过的（localStorage）。
+//   不填就走默认库 —— 之前页面不传 namespace，所以"灌进 sunrun 的文档"在页面上查不到。
+(function(){
+  const fromUrl=new URLSearchParams(location.search).get('namespace');
+  const saved=localStorage.getItem('kb_namespace')||'';
+  const el=document.getElementById('ns');
+  if(el && (fromUrl||saved)) el.value=fromUrl||saved;
+  if(el) el.addEventListener('change',()=>localStorage.setItem('kb_namespace',el.value.trim()));
+})();
 // ★ 不用 innerHTML 拼字符串：资料来源、理由都来自知识库文本，
 //   一旦知识库的 .md 里混进 <img onerror=...> 之类，innerHTML 会把它当标签执行（XSS）。
 //   全部改用 textContent / createTextNode —— 内容永远被当【纯文本】，不解析成标签。
@@ -2677,10 +2687,12 @@ async function ask(){
   const q=document.getElementById('q').value.trim();
   if(!q){alert('请输入问题');return;}
   const rr=document.getElementById('rr').checked;
+  const nsEl=document.getElementById('ns');
+  const ns=nsEl?nsEl.value.trim():'';
   const a=document.getElementById('ans'),s=document.getElementById('src');
   a.style.display='block';a.textContent='思考中…';s.replaceChildren();
   const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q,use_rerank:rr})});
+    body:JSON.stringify(Object.assign({question:q,use_rerank:rr}, ns?{namespace:ns}:{}))});
   const d=await r.json();
   a.textContent=d.answer;
   if(d.knowledge_hit===false){

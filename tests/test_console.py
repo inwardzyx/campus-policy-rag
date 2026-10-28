@@ -53,3 +53,13 @@ def test_console_page_carries_no_data() -> None:
     # ★ 只查"真的数据痕迹"：`session_id` 本身是页面代码里的参数名，不算数据。
     for marker in ("tk_", '"rows": [', '"tenants": ['):
         assert marker not in PAGE, f"页面里出现了数据痕迹：{marker}"
+
+def test_index_page_can_switch_namespace() -> None:
+    """根页面必须能把 namespace 传下去。
+
+    ★ 真实踩过：文档灌进 namespace=sunrun，页面却不传 namespace ⇒ 查默认库，
+      表现为"明明喂了却说资料里没有"。这个断言的正是那次事故。
+    """
+    html = client().get("/").text
+    assert 'id="ns"' in html, "页面缺命名空间输入框"
+    assert "namespace" in html, "请求体里没带 namespace 字段"
