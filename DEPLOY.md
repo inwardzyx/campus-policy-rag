@@ -1,6 +1,10 @@
 
 # 部署到公网：路线选择 + 上线前必查清单 + 回放式演示
 
+> **演示前一键自检**：`python scripts/demo.py --port 8765`——起服务、验 6 项
+> （health / 库内带出处 / 库外拒答 / 条款号 / `/metrics` / `/admin` 必须 403），
+> 跑完直接告诉你"可以开始讲了"。
+
 > **闭环候选的生效方式**：`eval_loop.py run` 门禁 accept 后会写 `evalset/loop/active.json`，
 > 服务启动时**自动加载**（也可用 `EXPAND_LEXICON` 显式覆盖）。回滚用
 > `python scripts/eval_loop.py rollback`，它会清掉/换掉这个文件；改完需重启服务。
