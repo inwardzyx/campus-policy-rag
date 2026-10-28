@@ -57,7 +57,16 @@ import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-STATE_SCHEMA = "run-state/1"
+#: 状态快照的 schema 版本。
+#:
+#: ★ 为什么要升版本（`run-state/1` → `run-state/2`，2026-10-28）：
+#:   这一版把 `docs/inbox` 也纳入了语料哈希。**旧快照没有这个字段** ⇒ 它缺的
+#:   恰好是"被拒的那批脏副本"。如果沿用同一个版本号，`run-state/1` 的旧 run 会
+#:   被当成"语料没变"而继续参与比较 —— 那正是最危险的一种假象。
+#:   ⇒ 换版本号，让旧 run **自动判不可比**（`state_match` 直接 reject），
+#:     代价是"要重跑一次基线"，收益是"不会拿缺了一半的证据下结论"。
+#:   ⚠️ 版本号进指纹 ⇒ 升版后**所有指纹都会变**，这是有意的：它们确实不是同一个东西了。
+STATE_SCHEMA = "run-state/2"
 
 #: 会改变评测结果的配置键（前缀/全名）。故意用白名单而不是"记全部环境变量"：
 #: 全量里混着 `PATH`、`TEMP`、一堆与结果无关的变量，每次都变 ⇒ 指纹永远不相等。
@@ -345,7 +354,14 @@ def corpus_state(root: Path, namespace: str = "") -> dict[str, Any]:
 #: **上传过**的语料才有；而 `--transport inproc`、`eval_loop run --corpus docs/kb`、
 #: 以及"服务启动时直接读 docs/ 的旧路径"都**不经过 manifest**。
 #: 只记 kb_data 的话，那几条路径下"改了 docs 里的制度文件"在指纹上是隐形的。
-DOC_DIRS: tuple[str, ...] = ("docs/kb",)
+#:
+#: ★★ 为什么必须有 `docs/inbox`（2026-10-28 补，评审 ②）：
+#:   `service.py:816` 的启动顺序是 **kb 先、inbox 后** —— inbox 里那批"待审副本"
+#:   与"明知是脏的标本"**真的会进库、真的会参与把关判定**（263 块里有被拒的那部分）。
+#:   只哈希 `docs/kb` 的话，往 inbox 扔一个近似重复的改写副本，指纹一动不动，
+#:   而实际入库结果会变（多一条被拦的、甚至挤掉正确的那一版）。
+#:   ⇒ 语料状态必须覆盖"实际被读的目录"，而不是"看起来干净的那个目录"。
+DOC_DIRS: tuple[str, ...] = ("docs/kb", "docs/inbox")
 
 
 def docs_state(root: Path, dirs: Sequence[str] = DOC_DIRS) -> dict[str, Any]:
@@ -578,49 +594,97 @@ def list_runs(root: str | Path) -> list[dict[str, Any]]:
     return sorted(out, key=lambda r: r["run_id"], reverse=True)
 
 
-def diff_states(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
-    """两份状态的差异，说人话。空列表 = **完全同一个系统**。"""
-    lines: list[str] = []
+def diff_state_items(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """两份状态的差异，**结构化的**：`[{"kind","key","before","after"}]`。空列表 = 同一个系统。
+
+    ★ 为什么不用"人话字符串"当判据（2026-10-28 改，评审 ③）：
+      门禁原来靠 `any(k in d for k in allow)` —— 在**给人看的**那行文字里做子串匹配。
+      于是判据的稳定性依赖文案：改一句措辞、加个括号、把"未设"改成"（未设）"，
+      都可能让一次应当拒绝的差异**误放行**（或反过来把合法差异误拒）。
+      ⇒ 结构化：`kind` 说"哪一块"，`key` 说"具体哪个键/命名空间/目录"。
+        门禁按 `(kind, key)` 精确比对，人话只用来打印。
+    """
+    items: list[dict[str, Any]] = []
+
+    def add(kind: str, key: str, before: Any, after: Any) -> None:
+        items.append({"kind": kind, "key": key, "before": before, "after": after})
+
+    # ---- 第一块：schema 本身 ----
+    # ★ 单独成一项：版本不同意味着**字段含义不同**，此时逐字段比较是没有意义的
+    #   （旧快照缺的那几块会被读成"无 → 有"，看起来像"语料变了"，其实是"当时没记"）。
+    if (old.get("schema") or "") != (new.get("schema") or ""):
+        add("schema", "schema", old.get("schema"), new.get("schema"))
+
+    # ---- 第二块：代码 ----
     og, ng = old.get("git") or {}, new.get("git") or {}
-
     if og.get("sha") != ng.get("sha"):
-        lines.append(f"代码 commit：{og.get('sha','?')[:8]} → {ng.get('sha','?')[:8]}")
+        add("git", "sha", og.get("sha"), ng.get("sha"))
     if (og.get("diff_sha256") or "") != (ng.get("diff_sha256") or ""):
-        lines.append(f"工作区改动变了（diff {og.get('diff_bytes',0)}B → {ng.get('diff_bytes',0)}B）"
-                     f"：{og.get('dirty_file_count',0)} → {ng.get('dirty_file_count',0)} 个文件")
+        add("git", "diff", og.get("diff_sha256"), ng.get("diff_sha256"))
     if (og.get("untracked_sha256") or "") != (ng.get("untracked_sha256") or ""):
-        lines.append(f"未跟踪文件内容变了：{og.get('untracked_count',0)} → "
-                     f"{ng.get('untracked_count',0)} 个（`git diff` 看不见这一半）")
+        add("git", "untracked", og.get("untracked_sha256"), ng.get("untracked_sha256"))
 
+    # ---- 第三块：配置（每个键一项，key 就是环境变量名）----
     oe, ne = old.get("env") or {}, new.get("env") or {}
     for k in sorted(set(oe) | set(ne)):
-        ov, nv = oe.get(k), ne.get(k)
-        if ov == nv:
-            continue
-        if ov is None:
-            lines.append(f"配置 {k}：未设 → {nv.get('value', '<secret>')}（{nv.get('source')}）")
-        elif nv is None:
-            lines.append(f"配置 {k}：{ov.get('value', '<secret>')} → 未设")
-        else:
-            lines.append(f"配置 {k}：{ov.get('value', '<secret>')} → {nv.get('value', '<secret>')}")
+        if oe.get(k) != ne.get(k):
+            add("env", k, oe.get(k), ne.get(k))
 
+    # ---- 第四块：语料（kb_data 命名空间）----
     oc = (old.get("corpus") or {}).get("namespaces") or {}
     nc = (new.get("corpus") or {}).get("namespaces") or {}
     for ns in sorted(set(oc) | set(nc)):
-        a, b = oc.get(ns), nc.get(ns)
-        if a == b:
-            continue
-        if a is None or b is None:
-            lines.append(f"语料 {ns}：{'新增' if a is None else '消失'}")
-            continue
-        lines.append(f"语料 {ns}：{a.get('docs',0)} 篇/{a.get('hash','-')} → "
-                     f"{b.get('docs',0)} 篇/{b.get('hash','-')}")
+        if oc.get(ns) != nc.get(ns):
+            add("corpus", ns, oc.get(ns), nc.get(ns))
 
+    # ---- 第五块：语料目录（docs/kb、docs/inbox 这种直接读的路径）----
     od, nd = _docs_hashes(old), _docs_hashes(new)
     for d in sorted(set(od) | set(nd)):
         if od.get(d) != nd.get(d):
-            lines.append(f"语料目录 {d}：{od.get(d) or '（无）'} → {nd.get(d) or '（无）'}")
-    return lines
+            add("docs", d, od.get(d), nd.get(d))
+
+    return items
+
+
+def render_state_item(it: Mapping[str, Any]) -> str:
+    """把一条结构化差异渲染成人话（**只用于打印/日志，不用于判定**）。"""
+    kind, key = str(it.get("kind")), str(it.get("key"))
+    before, after = it.get("before"), it.get("after")
+
+    if kind == "schema":
+        return f"状态 schema 不同：{before or '?'} → {after or '?'}（字段含义变了，不可直比）"
+    if kind == "git":
+        if key == "sha":
+            return f"代码 commit：{str(before or '?')[:8]} → {str(after or '?')[:8]}"
+        if key == "diff":
+            return "工作区改动变了（`git diff` 覆盖的那一半）" 
+        if key == "untracked":
+            return "未跟踪文件内容变了（`git diff` 看不见的那一半）"
+        return f"代码 {key} 变了"
+    if kind == "env":
+        fmt = lambda v: (v.get("value") if isinstance(v, Mapping) and "value" in v
+                         else ("<secret>" if isinstance(v, Mapping) else "未设"))
+        src = lambda v: (f"（{v.get('source')}）" if isinstance(v, Mapping) and v.get("source") else "")
+        if before is None:
+            return f"配置 {key}：未设 → {fmt(after)}{src(after)}"
+        if after is None:
+            return f"配置 {key}：{fmt(before)} → 未设"
+        return f"配置 {key}：{fmt(before)} → {fmt(after)}{src(after)}"
+    if kind == "corpus":
+        if not isinstance(before, Mapping):
+            return f"语料 {key}：新增（{after.get('docs', 0) if isinstance(after, Mapping) else '?'} 篇）"
+        if not isinstance(after, Mapping):
+            return f"语料 {key}：消失"
+        return (f"语料 {key}：{before.get('docs', 0)} 篇/{before.get('hash', '-')} → "
+                f"{after.get('docs', 0)} 篇/{after.get('hash', '-')}")
+    if kind == "docs":
+        return f"语料目录 {key}：{before or '（无）'} → {after or '（无）'}"
+    return f"{kind}/{key}: {before} → {after}"
+
+
+def diff_states(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
+    """两份状态的人话差异（**展示用**）。判定请用 `diff_state_items()`。"""
+    return [render_state_item(it) for it in diff_state_items(old, new)]
 
 
 def compare_reports(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any]:
@@ -664,8 +728,27 @@ def compare_reports(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+def _paths_equal(a: Any, b: Any, root: Any = None) -> bool:
+    """路径比较：接受"相对/绝对/反斜杠"混写；相对路径按 state 的 root 解析。"""
+    if not a or not b:
+        return False
+
+    def norm(p: Any) -> str:
+        s = str(p).replace("\\", "/").strip()
+        try:
+            pp = Path(s)
+            if not pp.is_absolute() and root:
+                pp = Path(str(root)) / pp
+            return os.path.normcase(str(pp.resolve()))
+        except (OSError, ValueError):
+            return os.path.normcase(s)
+
+    return norm(a) == norm(b)
+
+
 def state_match(before: Mapping[str, Any], after: Mapping[str, Any], *,
-                allow_env: Sequence[str] = ()) -> dict[str, Any]:
+                allow_env: Sequence[str] = (),
+                expect_env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """两份状态是不是"只差我声明要改的那一处"。**门禁的前置判据。**
 
     ★ 为什么不能简单地"要求指纹相等"：
@@ -680,6 +763,7 @@ def state_match(before: Mapping[str, Any], after: Mapping[str, Any], *,
     """
     deltas = diff_states(before, after)
     allow = list(allow_env)
+    expect = dict(expect_env or {})
     unexpected = [d for d in deltas if not any(k in d for k in allow)]
 
     reasons: list[str] = []
@@ -691,12 +775,22 @@ def state_match(before: Mapping[str, Any], after: Mapping[str, Any], *,
         # 声明了干预但状态一模一样 ⇒ 干预没生效（最典型：EXPAND_LEXICON 没被读到）
         reasons.append(f"两次状态完全相同 ⇒ 声明的干预（{'/'.join(allow)}）没有生效")
 
+    # ★ 2026-10-28：只校验"变了"不够 —— 必须校验"变成了候选文件"。
+    #   否则填一个不相干的词表也能被算成"候选生效"，增益会记到候选头上。
+    root = after.get("root") or before.get("root")
+    env_after = after.get("env") or {}
+    for k, want in expect.items():
+        got = (env_after.get(k) or {}).get("value")
+        if not _paths_equal(got, want, root):
+            reasons.append(f"声明的干预 {k} 没指向候选文件：期望 {want}，实际 {got!r}")
+
     return {
         "ok": not reasons,
         "reasons": reasons,
         "deltas": deltas,
         "unexpected": unexpected,
         "allow_env": allow,
+        "expect_env": expect,
         "before_fp": before.get("fingerprint"),
         "after_fp": after.get("fingerprint"),
     }

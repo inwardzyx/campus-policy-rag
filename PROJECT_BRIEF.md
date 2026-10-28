@@ -38,7 +38,7 @@ Get-ChildItem scripts\mutate_*.py | Measure-Object
 | 项 | 值（2026-10-26 实测） |
 |---|---|
 | HTTP 端点 | 16（`/chat`、`/chat/stream`、`/search`、`/console`、`/admin/*`、`/kb/*`、`/health`、`/limits`、`/guard-report`、`/`） |
-| 测试 | 收集 373 条；全量 **444 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
+| 测试 | 收集 373 条；全量 **447 passed / 27 skipped**（跳过的是 CI 无 Linux 轮子的 nDCG 真值测试） |
 | 测试文件 | 29 个，CI 全覆盖（`scripts/check_test_counts.py` 把关） |
 | 变异体脚本 | 17 个（每个关键判据都能被故意打坏、然后变红） |
 | 语料 | `docs/kb/` 10 篇（真实校规，263 块）+ `evalset/fixtures/policy_corpus/` 3 篇（合成制度，47 块） |

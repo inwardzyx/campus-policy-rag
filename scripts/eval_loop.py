@@ -212,7 +212,11 @@ def gate_reports(before_path: Path, after_path: Path, candidates_path: Path,
                 "deltas": [], "unexpected": [], "allow_env": list(allow_env),
             }
         else:
-            state_info = runstate.state_match(sb, sa, allow_env=allow_env)
+            # ★ 声明的干预必须真的指向候选文件：只校验"变了"会被无关词表蒙混过关
+            expect_env = ({"EXPAND_LEXICON": str(candidates_path)}
+                          if "EXPAND_LEXICON" in allow_env else {})
+            state_info = runstate.state_match(sb, sa, allow_env=allow_env,
+                                              expect_env=expect_env)
             state_info["skipped"] = False
         if not state_info["ok"]:
             verdict = dict(verdict)
