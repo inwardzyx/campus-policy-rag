@@ -163,6 +163,7 @@ def main() -> int:
               # ★ 系统状态（三层 versioning 的第三层）：这两个字段让"这个数字属于哪个系统"
               #   成为**机器可判**的事实，而不是靠人回忆。回滚/配对都靠它。
               "run_id": rs["run_id"], "state_fingerprint": rs["state_fingerprint"],
+              "state_schema": rs["state_schema"],
               "run_state": rs["run_dir"],
               "missing_responses": [r["id"] for r in rows if r["bucket"] == "no_response"]})
     out = Path(args.out) if args.out else ROOT / f"evalset/report-{suite}.json"

@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import subprocess
@@ -212,6 +213,29 @@ def test_docs默认语料进指纹(tmp_path: Path):
     assert any("docs/kb" in d for d in runstate.diff_states(s1, s2))
 
 
+def test_docs_inbox也进指纹(tmp_path: Path):
+    """**`docs/inbox` 必须一起哈希。**
+
+    ★ 为什么（评审 ②）：`service.py:816` 的启动顺序是 kb 先、inbox 后 ——
+      inbox 里那批"待审副本 / 明知是脏的标本"**真的会进库、真的参与把关判定**。
+      只哈希 `docs/kb` 的话，往 inbox 扔一个近似重复的改写副本，指纹一动不动，
+      而实际入库结果会变（多一条被拦的，甚至挤掉正确的那一版）。
+    """
+    for sub in ("kb", "inbox"):
+        d = tmp_path / "docs" / sub
+        d.mkdir(parents=True)
+        (d / f"{sub}.md").write_text(f"# {sub}\n内容\n", encoding="utf-8")
+
+    s1 = runstate.capture(tmp_path, env={})
+    assert s1["docs"]["dirs"]["docs/inbox"]["files"] == 1
+
+    (tmp_path / "docs" / "inbox" / "新副本.md").write_text("# 改写版\n近似重复\n", encoding="utf-8")
+    s2 = runstate.capture(tmp_path, env={})
+    assert s2["docs"]["dirs"]["docs/inbox"]["hash"] != s1["docs"]["dirs"]["docs/inbox"]["hash"]
+    assert s2["fingerprint"] != s1["fingerprint"], "inbox 变了，指纹必须变"
+    assert any("docs/inbox" in d for d in runstate.diff_states(s1, s2))
+
+
 # ------------------------------------------------------------------
 def test_状态判据_差异必须落在声明范围内():
     """门禁的前置判据：差集只能落在 `allow_env` 里。"""
@@ -241,6 +265,59 @@ def test_状态判据_差异必须落在声明范围内():
     r = runstate.state_match({"git": {}}, {"git": {}}, allow_env=())
     assert not r["ok"]
     assert any("缺状态指纹" in x for x in r["reasons"]), r["reasons"]
+
+
+def test_判据按kind与key精确比对_不看文案(tmp_path: Path):
+    """**判据不能依赖人话文案。**
+
+    ★ 评审 ③ 指出的脆点：旧实现是 `any(k in d for k in allow)` —— 在给人看的
+      那行文字里找子串。这条用例构造的正是它的反例：让某个**跟配置无关**的差异
+      文字里恰好出现被允许的键名（这里让 docs 的 hash 就写成 `EXPAND_LEXICON`），
+      旧实现会把它当成合法豁免而**放行**；新实现按 `kind/key` 判，必须拒绝。
+    """
+    base = {"schema": runstate.STATE_SCHEMA, "fingerprint": "aa",
+            "git": {}, "env": {}, "corpus": {"namespaces": {}},
+            "docs": {"dirs": {"docs/kb": {"hash": "h1"}}}}
+    after = copy.deepcopy(base)
+    after["fingerprint"] = "bb"
+    after["docs"]["dirs"]["docs/kb"]["hash"] = "EXPAND_LEXICON"   # 故意等于被允许的键名
+
+    r = runstate.state_match(base, after, allow_env=("EXPAND_LEXICON",))
+    assert not r["ok"], "只有 env/EXPAND_LEXICON 可以豁免，docs 变化必须拒"
+    assert [it["kind"] for it in r["unexpected_items"]] == ["docs"]
+    # 结构化字段齐备：机器消费的就是这两个
+    assert r["unexpected_items"][0]["key"] == "docs/kb"
+    assert "before" in r["unexpected_items"][0]
+
+
+def test_env差异是结构化的(tmp_path: Path):
+    """配置差异必须给出 `(kind="env", key=变量名)`，而不是一句拼好的中文。"""
+    a = {"schema": runstate.STATE_SCHEMA, "fingerprint": "aa", "git": {},
+         "env": {"RATE_PER_MIN": {"value": "20", "source": "env"}},
+         "corpus": {"namespaces": {}}, "docs": {}}
+    b = copy.deepcopy(a)
+    b["fingerprint"] = "bb"
+    b["env"]["RATE_PER_MIN"] = {"value": "200", "source": "env"}
+
+    items = runstate.diff_state_items(a, b)
+    assert items == [{"kind": "env", "key": "RATE_PER_MIN",
+                      "before": {"value": "20", "source": "env"},
+                      "after": {"value": "200", "source": "env"}}]
+    # 人话只用于展示，且必须能渲染出来
+    assert "RATE_PER_MIN" in runstate.render_state_item(items[0])
+
+
+def test_schema不同直接判不可比():
+    """旧 schema 的快照缺字段 ⇒ 必须 reject，而不是把它读成"无 → 有"。"""
+    a = {"schema": "run-state/1", "fingerprint": "aa", "git": {}, "env": {},
+         "corpus": {"namespaces": {}}}
+    b = {"schema": runstate.STATE_SCHEMA, "fingerprint": "bb", "git": {}, "env": {},
+         "corpus": {"namespaces": {}}, "docs": {"dirs": {"docs/inbox": {"hash": "x"}}}}
+
+    r = runstate.state_match(a, b, allow_env=())
+    assert not r["ok"]
+    assert any("schema" in x for x in r["reasons"]), r["reasons"]
+    assert any(it["kind"] == "schema" for it in r["unexpected_items"])
 
 
 # ------------------------------------------------------------------

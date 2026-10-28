@@ -66,7 +66,7 @@ from typing import Any, Mapping, Sequence
 #:   ⇒ 换版本号，让旧 run **自动判不可比**（`state_match` 直接 reject），
 #:     代价是"要重跑一次基线"，收益是"不会拿缺了一半的证据下结论"。
 #:   ⚠️ 版本号进指纹 ⇒ 升版后**所有指纹都会变**，这是有意的：它们确实不是同一个东西了。
-STATE_SCHEMA = "run-state/2"
+STATE_SCHEMA = "run-state/3"
 
 #: 会改变评测结果的配置键（前缀/全名）。故意用白名单而不是"记全部环境变量"：
 #: 全量里混着 `PATH`、`TEMP`、一堆与结果无关的变量，每次都变 ⇒ 指纹永远不相等。
@@ -273,6 +273,17 @@ def _read_dotenv(root: Path) -> dict[str, str]:
     return out
 
 
+def _env_effective(entry: Any) -> Any:
+    """参与比较/指纹的配置内容：**不含 `source`**。
+
+    ★ 依据：同一个 key 值从进程环境还是 `.env` 读到，是**来源**，不是系统差异。
+      旧实现把整个 entry 拿去比 ⇒ 同值不同源被判"配置变了"、指纹也不同（假拒）。
+    """
+    if not isinstance(entry, Mapping):
+        return entry
+    return {k: v for k, v in entry.items() if k != "source"}
+
+
 def env_state(root: Path, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """配置状态：白名单里的键 + 它们从哪来（进程环境 / .env）+ 密钥指纹。
 
@@ -414,7 +425,7 @@ def fingerprint(state: Mapping[str, Any]) -> str:
         "git_sha": g.get("sha") or "",
         "diff_sha": g.get("diff_sha256") or "",
         "untracked_sha": g.get("untracked_sha256") or "",   # 未跟踪文件的内容
-        "env": state.get("env") or {},
+        "env": {k: _env_effective(v) for k, v in (state.get("env") or {}).items()},
         "corpus": (state.get("corpus") or {}).get("namespaces") or {},
         "docs": _docs_hashes(state),
         "python": (state.get("runtime") or {}).get("python") or "",
@@ -534,6 +545,9 @@ def record(root: str | Path, *, namespace: str = "", note: str = "",
         "run_id": run_id,
         "run_dir": str(run_dir.relative_to(root)) if str(run_dir).startswith(str(root)) else str(run_dir),
         "state_fingerprint": state["fingerprint"],
+        # ★ 把 schema 也交出去：报告 meta 里带上它，门禁就能在**不打开 state.json** 时
+        #   先判"这报告是不是旧格式"（旧格式的快照天生缺字段，比较没有意义）。
+        "state_schema": state["schema"],
         "pruned": pruned,
         "keep": RUN_KEEP,
     }
@@ -627,7 +641,7 @@ def diff_state_items(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[dic
     # ---- 第三块：配置（每个键一项，key 就是环境变量名）----
     oe, ne = old.get("env") or {}, new.get("env") or {}
     for k in sorted(set(oe) | set(ne)):
-        if oe.get(k) != ne.get(k):
+        if _env_effective(oe.get(k)) != _env_effective(ne.get(k)):
             add("env", k, oe.get(k), ne.get(k))
 
     # ---- 第四块：语料（kb_data 命名空间）----
@@ -759,19 +773,38 @@ def state_match(before: Mapping[str, Any], after: Mapping[str, Any], *,
       +1 的增益小于基线自身的波动，最后只能诚实地结论"没有证据"）。
     ⇒ 正确判据是**差集必须落在已声明的旋钮里**（`allow_env`），其余一律 reject。
 
-    返回 `{"ok", "reasons", "deltas", "unexpected", "allow_env", "before_fp", "after_fp"}`。
+    返回 `{"ok", "reasons", "deltas", "items", "unexpected", "unexpected_items",
+           "allow_env", "expect_env", "before_fp", "after_fp"}`。
     """
-    deltas = diff_states(before, after)
+    items = diff_state_items(before, after)
     allow = list(allow_env)
     expect = dict(expect_env or {})
-    unexpected = [d for d in deltas if not any(k in d for k in allow)]
+
+    # ★ 判据本体：按 (kind, key) **精确**比对，不做字符串匹配（2026-10-28 改，评审 ③）。
+    #   旧写法 `any(k in d for k in allow)` 是在**给人看的**那行文字里找子串 ——
+    #   改一句文案（"未设"→"（未设）"、加个括号）就可能误放行或误拒。
+    #   现在只有 `kind == "env"` 且 `key` 正好命中的才豁免；其它 kind 一律不可声明豁免。
+    unexpected_items = [it for it in items
+                        if not (it["kind"] == "env" and it["key"] in allow)]
 
     reasons: list[str] = []
     if not (before.get("fingerprint") and after.get("fingerprint")):
-        reasons.append("报告缺状态指纹（run-state/1 之前跑的）⇒ 无法证明两次跑的是同一个系统")
-    if unexpected:
-        reasons.append("状态出现未声明的差异：" + "；".join(unexpected))
-    if not deltas and allow:
+        reasons.append("报告缺状态指纹（run-state 之前跑的）⇒ 无法证明两次跑的是同一个系统")
+
+    # ★ schema 不同单独判：字段含义变了，逐字段比较没有意义
+    #   （旧快照缺的那几块会被读成"无 → 有"，看起来像"语料变了"，其实是"当时没记"）。
+    schema_items = [it for it in items if it["kind"] == "schema"]
+    if schema_items:
+        reasons.append(render_state_item(schema_items[0])
+                       + " ⇒ 不可比：升级快照格式后必须重跑一次基线")
+
+    hard = [it for it in unexpected_items if it["kind"] != "schema"]
+    if hard:
+        shown = "；".join(render_state_item(it) for it in hard[:6])
+        more = f"（另有 {len(hard) - 6} 处）" if len(hard) > 6 else ""
+        reasons.append(f"状态出现未声明的差异：{shown}{more}")
+
+    if not items and allow:
         # 声明了干预但状态一模一样 ⇒ 干预没生效（最典型：EXPAND_LEXICON 没被读到）
         reasons.append(f"两次状态完全相同 ⇒ 声明的干预（{'/'.join(allow)}）没有生效")
 
@@ -787,8 +820,12 @@ def state_match(before: Mapping[str, Any], after: Mapping[str, Any], *,
     return {
         "ok": not reasons,
         "reasons": reasons,
-        "deltas": deltas,
-        "unexpected": unexpected,
+        # ---- 给人看 ----
+        "deltas": [render_state_item(it) for it in items],
+        "unexpected": [render_state_item(it) for it in unexpected_items],
+        # ---- 给机器判（判据本体，报告里也留一份便于复盘）----
+        "items": items,
+        "unexpected_items": unexpected_items,
         "allow_env": allow,
         "expect_env": expect,
         "before_fp": before.get("fingerprint"),

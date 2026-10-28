@@ -83,8 +83,8 @@ def _print_show(run_id: str) -> int:
         return 1
     g, rt = s.get("git") or {}, s.get("runtime") or {}
     print(f"run      : {run_id}")
+    print(f"schema   : {s.get('schema')}   指纹: {s.get('fingerprint')}")
     print(f"时间     : {s.get('created_at')}   说明: {s.get('note') or '-'}")
-    print(f"指纹     : {s.get('fingerprint')}")
     print(f"代码     : {g.get('sha','?')[:12]}（{g.get('branch','?')}）"
           f"{'  ⚠ 未提交改动 ' + str(g.get('dirty_file_count')) + ' 个文件' if g.get('dirty') else '  clean'}")
     print(f"Python   : {rt.get('python')}  ({rt.get('executable')})")

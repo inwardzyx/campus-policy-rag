@@ -100,7 +100,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 | 部署自检 | ✅ 可在坏情况下报红 | `scripts/preflight.py`：key / kb_data 可写 / 审计 / 租户表 / 模型缓存；CLI 退出码 1 |
 | 开通租户 CLI | ✅ | `scripts/create_tenant.py`：明文 key **只打印一次**，落盘只有 sha256 |
 | 自检判据的变异体 | ✅ | `scripts/mutate_preflight.py`：删 key 检查 / fail 也返回 0，**2/2 变红** |
-| **run-state 指纹闭环（2026-10-28）** | ✅ 实现 + 门禁接入 | 每次评测开跑前拍快照（git sha + 未跟踪文件内容 + .env 指纹 + 语料/docs 哈希 + python），12 位指纹进报告 meta；门禁 `state_match()` 只允许**声明过的旋钮**（默认 `EXPAND_LEXICON`）存在差异。**实现中抓到两个会毁掉指纹的 bug**：① `state.json` 自己被算进未跟踪文件（每跑一次指纹就变；已排除 `evalset/runs/`，实测连跑两次指纹相同 `6065a167470c`）；② `service.py` 派生改写 `LANGCHAIN_TRACING_V2` 造成假差异（已列 `ENV_DERIVED`，两键不进状态）。旧报告无 `meta.run_state` ⇒ 门禁 reject（`--no-state-gate` 显式跳过）。**已收紧**：`expect_env` 校验干预**指向候选文件**（相对/绝对路径都认），填无关词表会被拒（`tests/test_state_gate_paths.py` 3 条）；**仍缺**：`docs/inbox` 未纳入哈希 |
+| **run-state 指纹闭环（2026-10-28，schema run-state/3）** | ✅ 实现 + 门禁接入 | 每次评测开跑前拍快照（git sha + 未跟踪文件内容 + 有效配置 + kb_data 语料 + **docs/kb 与 docs/inbox** + python），12 位指纹进报告 meta。门禁 `state_match()`：差异必须落在声明旋钮里，且 `expect_env` 要求**干预指向候选文件**。实现中抓到并修掉三个会毁判据的 bug：① `state.json` 自指（每跑指纹都变）；② 派生键 `LANGCHAIN_TRACING_V2` 假差异；③ **配置来源被当差异**（同值 env vs dotenv ⇒ 指纹不同；已把 `source` 排除出比较）。判据已结构化（`diff_state_items()`），人话只用于打印。**已知边界**：并发跑评测时若另一进程在重置同一 namespace，快照会拍到中间态（实测 sunrun 曾"消失"一次，稍后恢复） |
 | **真实校园通知套件（2026-10-28）** | ✅ 可跑 | `广东交通职业技术学院 2026 秋季阳光跑` 通知 + 闪动 APP 指南 + 免跑申请表：**应答 15/15、拒答 3/3（含 1 道 boundary）、recall 1.0、nDCG 1.0**；扫描版通知 PDF 无文本层（明确报错），正文取自通知文本；`scripts/demo.py --corpus/--namespace` 可直接用它演示 |
 | **闭环端到端跑通（2026-10-27）** | ✅ 机制跑通；**不构成收益证据** | 52 题：基线 39/46（同日另一次 41/46——**运行间波动 ±2**）→ 候选 40/46（gain `c50-E1`，0 loss），**McNemar p=1.0 不显著**，且候选只对那一句逐字问题生效（泛化性未验证）。仍成立的两条：**门禁会拦坏候选**（6 gain / 11 loss 那次 reject）、**闭环可端到端执行**。盲审与响应：`experiments/blind-review-2026-10-27.md` + `-response-` 同名文件 |
 | **闭环 accept 分支（2026-10-27）** | ⏳ 真实数据未触发（只有单测） | 四种真实场景都没有失败：company **15/15**、company-hard **8/8**、`INDEX_TEXT_MODE=plain` 降级 **8/8**、company+hr 混库 **8/8** ⇒ 闭环如实停（"无事可做"）。accept 分支目前只有单测覆盖；要触发需要更难的题集或真实失败 |
@@ -127,7 +127,7 @@ listwise（0–10，<5 硬短路拒答，`VEC_REJECT_THRESHOLD=0.55`）；生成
 **测试**（2026-10-25，最后一次全量）：
 
 ```text
-447 passed, 27 skipped
+453 passed, 27 skipped
 ```
 
 命令见 §7。跳过的 27 项是需要 Redis/外部服务的旧测试。
