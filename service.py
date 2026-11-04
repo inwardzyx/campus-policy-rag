@@ -1940,7 +1940,7 @@ def chat_stream(req: ChatStreamRequest, request: Request):
 
 
 def _gated(request: Request, pipeline, *, who_override: str | None = None,
-          tenant_id: str | None = None):
+          tenant_id: str | None = None, skip_limit: bool = False):
     """`/chat` 与 `/search` 共用的**闸门 + 记账**：先问一次，干完再记账。
 
     ★★ 记账必须**无条件**发生（盲审 R4）：第一版把 `LIMITER.record(...)` 写在
@@ -1972,12 +1972,20 @@ def _gated(request: Request, pipeline, *, who_override: str | None = None,
         request.client.host if request.client else None,
         {k.lower(): v for k, v in request.headers.items()},
         LIMITER.limits)
-    decision = LIMITER.check(who)
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=decision.http_status(),
-            detail={"reason": decision.reason, "detail": decision.detail},
-            headers={"Retry-After": str(decision.retry_after)})
+    # ★ 2026-11-04：`skip_limit` 只给 `/internal/*` 用（Java 是唯一上游）。
+    #   为什么不干脆让内部调用也过闸：`limits_mod.client_id()` 是按**来源**认人的，
+    #   而 Java 之后所有终端用户共享 Java 容器一个 IP ⇒ 全部挤进同一个
+    #   burst=10 / 20-per-min 的桶，10 个人同时提问就开始互相 429，
+    #   而配额语义（每人每天多少次）在 Java 侧用 Redis 做才成立。
+    #   ⚠️ 跳过的是**闸**，不是**账**：下面的 `LIMITER.record()` 照旧执行，
+    #   否则 /limits 与 /metrics 会看不见这批真实流量（那就成了"可证明的 0"被写反）。
+    if not skip_limit:
+        decision = LIMITER.check(who)
+        if not decision.allowed:
+            raise HTTPException(
+                status_code=decision.http_status(),
+                detail={"reason": decision.reason, "detail": decision.detail},
+                headers={"Retry-After": str(decision.retry_after)})
 
     led = UsageLedger()
     token = set_current_ledger(led)          # ★ 账本随这次请求走（见 UsageLedger 的注释）
@@ -2075,6 +2083,37 @@ def _admin_guard(request: Request) -> None:
     _kb_admin_guard(request)
 
 
+def _internal_guard(request: Request) -> None:
+    """`/internal/*` 的闸：只认 `X-Internal-Token`（给 Java 业务层用）。
+
+    ★ **fail-closed**：没配 `INTERNAL_TOKEN` 时整组接口返回 **503**，而不是放行。
+      理由：配置遗漏是最常见的事故，而"漏配 ⇒ 公网裸奔"是最贵的那种事故。
+      用 503 而不是 401 是为了让运维一眼分清"凭证错了"（401）和"根本没部署好"（503）。
+
+    ★ 这组接口**不新造鉴权语义**：角色仍走 `_request_roles()`
+      （`AUTH_MODE=proxy` 读 `X-Auth-Roles`、`jwt` 验 HS256，v1 已有并有测试）。
+      Java 只需要把 `users.role` 塞进 `X-Auth-Roles` 头，Python 侧一行认证代码都不用改。
+    """
+    expected = os.environ.get("INTERNAL_TOKEN") or ""
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="未配置 INTERNAL_TOKEN：/internal/* 一律不可用（fail-closed）")
+    got = request.headers.get("x-internal-token") or ""
+    if not hmac.compare_digest(got, expected):
+        raise HTTPException(status_code=401, detail="缺少或错误的 X-Internal-Token")
+    # ★ 2026-11-04：`AUTH_MODE=none` 时**内部接口也必须拒**（不是警告，是 503）。
+    #   理由：none 模式下没有任何角色来源，于是 `handle_chat` 会退回去读**请求体里的 acl**
+    #   —— 那等于把权限交给调用方。这条路径本身在单进程 demo 里可以接受（README 已写明
+    #   "只做本地演示"），但一旦经由 Java 暴露给公网就是**越权读**。
+    #   也就是说：这组接口的存在本身就要求"角色必须有来源"，缺了就拒绝启动这条链路。
+    if AUTH_CONFIG.mode == "none":
+        raise HTTPException(
+            status_code=503,
+            detail="内部接口要求 AUTH_MODE=proxy 或 jwt：AUTH_MODE=none 时没有角色来源，"
+                   "请求体里的 acl 会被当成权限（等于把权限交给调用方）")
+
+
 @app.get("/admin/tenants")
 def admin_tenants(request: Request):
     """列出租户（**不含 key 哈希**）与多租户开关状态。"""
@@ -2152,6 +2191,33 @@ def admin_audit(request: Request, tenant: str = "", session_id: str = "",
     return {"n": len(rows), "rows": rows}
 
 
+def _kb_store_upload(namespace: str, filename: str, body: bytes, *,
+                     acl: str = "public", version: str | None = None,
+                     title: str | None = None) -> dict:
+    """上传的**实际动作**（公开端点与内部端点共用）。
+
+    ★ 抽成一个函数，是为了不重演本仓踩过几次的病：同一段逻辑两个入口各抄一份，
+      改了一边忘了另一边 —— 于是"热更索引"或"错误码映射"在一条路上悄悄消失。
+    """
+    if not body:
+        raise HTTPException(status_code=400, detail="请求体为空")
+    acl_list = [a.strip() for a in acl.split(",") if a.strip()] or ["public"]
+    try:
+        rec = rag.store.upload(namespace, filename, body,
+                               title=title, version=version, acl=acl_list)
+    except UnsupportedFormat as e:
+        raise HTTPException(status_code=415, detail=str(e)) from e
+    except ParseError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    rag.reload_enterprise()
+    return {
+        "document": rec,
+        "namespace_chunks": sum(1 for c in rag.chunks if c.get("namespace") == namespace),
+    }
+
+
 @app.post("/kb/{namespace}/documents")
 async def kb_upload(
     namespace: str,
@@ -2171,23 +2237,8 @@ async def kb_upload(
     if not rag.ready:
         raise HTTPException(status_code=503, detail="服务还在加载模型，请稍后再试")
     body = await request.body()
-    if not body:
-        raise HTTPException(status_code=400, detail="请求体为空")
-    acl_list = [a.strip() for a in acl.split(",") if a.strip()] or ["public"]
-    try:
-        rec = rag.store.upload(namespace, filename, body,
-                               title=title, version=version, acl=acl_list)
-    except UnsupportedFormat as e:
-        raise HTTPException(status_code=415, detail=str(e)) from e
-    except ParseError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    rag.reload_enterprise()
-    return {
-        "document": rec,
-        "namespace_chunks": sum(1 for c in rag.chunks if c.get("namespace") == namespace),
-    }
+    return _kb_store_upload(namespace, filename, body,
+                            acl=acl, version=version, title=title)
 
 
 @app.get("/kb/namespaces")
@@ -2756,6 +2807,69 @@ async function ask(){
   });
 }
 </script></body></html>"""
+
+
+# ==================================================================
+# 内部接口（给 Java 业务层调用）—— 2026-11-04 加
+# ==================================================================
+# ★ 为什么要单独一组端点，而不是让 Java 直接打 `/chat`：
+#   `/chat` 把两件事**耦在一起** —— 限流身份（`limits.client_id` 按来源 IP/头认人）
+#   和认证（`AUTH_MODE`）。Java 成为唯一上游后，所有终端用户共享 Java 容器那一个
+#   来源 IP ⇒ 全站挤进同一个 burst=10/min 的桶（10 人同时提问就互相 429）；
+#   而真正的"每人每天几次"只有 Java 侧按 user_id 记 Redis 才成立。
+#   ⇒ 这里把两者拆开：`/internal/*` 认内部 token、**不限流但照旧记账**。
+#
+# ★ 为什么不让 Java 复用公开写接口（`/kb/{ns}/documents`）：
+#   那条的闸是 `KB_ADMIN_TOKEN` / 回环判断，和 `INTERNAL_TOKEN` 是**两套凭证**。
+#   多一套凭证就多一处会配错的地方，而且"哪套管哪个入口"这种事没人记得住。
+#
+# ★ 这一组**不新增任何鉴权语义**：角色仍走 `_request_roles()`。
+#   Java 把 `users.role` 塞进 `X-Auth-Roles`（`AUTH_MODE=proxy`）或直接签 HS256
+#   （`AUTH_MODE=jwt`）即可 —— v1 那套代码和测试一行都不用改。
+
+
+@app.post("/internal/chat", response_model=ChatResponse)
+def internal_chat(req: ChatRequest, request: Request):
+    """内部问答入口：内部 token 鉴权、**不限流**、照旧记账与审计。"""
+    _internal_guard(request)
+    roles = _request_roles(request)          # ← 复用 v1：proxy 头 / JWT，不新造 X-ACL
+    tenant = _tenant(request)
+    _assert_tenant_namespace(tenant, req.namespace)
+    quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
+    resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
+                  who_override=quota_key, tenant_id=tenant.id, skip_limit=True)
+    payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
+    audit_mod.record_response(req, payload, route="/internal/chat", roles=roles,
+                              tenant=tenant.id)
+    return resp
+
+
+@app.post("/internal/kb/{namespace}/documents")
+async def internal_kb_upload(
+    namespace: str,
+    request: Request,
+    filename: str,
+    acl: str = "public",
+    version: str | None = None,
+    title: str | None = None,
+):
+    """内部上传：语义与 `/kb/{ns}/documents` 完全一致（raw body + query 参数）。"""
+    _internal_guard(request)
+    if not rag.ready:
+        raise HTTPException(status_code=503, detail="服务还在加载模型，请稍后再试")
+    body = await request.body()
+    return _kb_store_upload(namespace, filename, body,
+                            acl=acl, version=version, title=title)
+
+
+@app.delete("/internal/kb/{namespace}/documents/{doc_id}")
+def internal_kb_delete(namespace: str, doc_id: str, request: Request):
+    """内部软删除：语义与 `/kb/{ns}/documents/{doc_id}` 一致。"""
+    _internal_guard(request)
+    ok = rag.store.delete(namespace, doc_id)
+    if ok:
+        rag.reload_enterprise()
+    return {"deleted": ok, "doc_id": doc_id, "namespace": namespace}
 
 
 @app.get("/", response_class=HTMLResponse)

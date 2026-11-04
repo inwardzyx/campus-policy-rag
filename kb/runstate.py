@@ -104,6 +104,7 @@ ENV_REGISTRY: dict[str, str] = {
     "LLM_TIMEOUT_SEC": "模型超时 —— 太小会把『慢』记成『错』，直接改分数",
     "CACHE_ENABLED": "缓存开关 —— 开着会改掉重复请求的延迟与 token",
     "KB_ADMIN_TOKEN": "上传接口管理口令 —— 决定『能不能写库』（只记指纹）",
+    "INTERNAL_TOKEN": "内部接口口令（`/internal/*`，给 Java 业务层用）—— 没配则整组不可用（只记指纹）",
     # ---- 追踪 ----
     # ★ 注意 `LANGSMITH_TRACING` / `LANGCHAIN_TRACING_V2` **不在这里**：它们是派生键
     #   （`service.py` 的 `_guard_tracing_env()` 会按有无 key 强制改写），记它们只会
