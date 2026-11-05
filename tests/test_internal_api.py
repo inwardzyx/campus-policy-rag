@@ -195,3 +195,25 @@ def test_internal_upload_reuses_the_public_error_mapping(client, kb_store):
     r = client.post("/internal/kb/demo/documents?filename=x.docx", content=b"not a zip",
                     headers={"X-Internal-Token": "t0ken"})
     assert r.status_code == 422
+
+
+# ------------------------------------------------------------------ 5. 内部列文档
+def test_internal_list_requires_token_and_returns_rows(client, kb_store):
+    """列表也要过内部闸；过了之后返回的字段与公开端点一致（同一份 manifest）。"""
+    md = "---\ndoc: FAQ\n---\n## Q1\n七天无理由退货。\n"
+    client.post("/internal/kb/demo/documents?filename=faq.md&acl=hr",
+                content=md.encode("utf-8"), headers={"X-Internal-Token": "t0ken"})
+
+    r = client.get("/internal/kb/demo/documents", headers={"X-Internal-Token": "nope"})
+    assert r.status_code == 401
+
+    r = client.get("/internal/kb/demo/documents", headers={"X-Internal-Token": "t0ken"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["namespace"] == "demo"
+    assert len(body["documents"]) == 1
+    row = body["documents"][0]
+    # ★ 只断言"前端要用的字段"存在：多断言会让将来加字段时必须改测试
+    assert {"doc_id", "title", "acl", "tombstone"} <= set(row)
+    assert row["acl"] == ["hr"]
+    assert row["tombstone"] is False

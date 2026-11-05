@@ -2872,6 +2872,20 @@ def internal_kb_delete(namespace: str, doc_id: str, request: Request):
     return {"deleted": ok, "doc_id": doc_id, "namespace": namespace}
 
 
+@app.get("/internal/kb/{namespace}/documents")
+def internal_kb_list(namespace: str, request: Request, include_deleted: bool = False):
+    """内部列文档：语义与 `/kb/{ns}/documents` 一致。
+
+    ★ 为什么公开那条不够：它走 `_write_guard`（`KB_ADMIN_TOKEN` 或回环判断），
+      Java 作为独立进程既不是回环、也不该再持一把 admin 口令 ——
+      那会变成"两套凭证管两个入口"的老问题。这里复用同一个 `INTERNAL_TOKEN`。
+    """
+    _internal_guard(request)
+    rows = rag.store.list_documents(namespace, include_deleted=include_deleted)
+    return {"namespace": namespace, "documents": rows}
+
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return HTML_PAGE
