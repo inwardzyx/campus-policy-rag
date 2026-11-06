@@ -195,8 +195,18 @@ PAYLOAD_TRIM_JSON = "evalset/report-payload-trim.json"
 PAYLOAD_TRIM_FIELDS = ("tokens_total", "tokens_calls", "tokens_input",
                        "tokens_output", "tokens_cache_hit")
 
+# ---- 类型七：语料质检（onboard）报告 ----
+#   2026-11-06 补：这份报告 2026-10-26 就落盘了，但一直**没登记**，
+#   于是 pre-push 的反查把它揪了出来（"有产物在磁盘上但没进 ARTIFACTS"）。
+#   ★ 它不测 Recall@5（它测的是"上传的语料能不能被检索到并被引用"），
+#     硬套检索判据只会产出一堆假错 —— 所以单独一类，配三条真正的不变量：
+#       ① 汇总「命中 N/M」的分母 M == 表格数据行数（对不上 ⇒ 题集变了而报告没重跑）
+#       ② 分子 N == 表格里 ✓ 的行数（对不上 ⇒ 汇总与明细矛盾，典型的字段读串位）
+#       ③ 引用合法率 ∈ [0,1]（越界 ⇒ 字段读串位或口径变了）
+ONBOARD_REPORT = "evalset/report-onboard-sisu.md"
+
 EXTRA_ARTIFACTS = [REFUSAL_REPORT, TOKEN_REPORT, CACHE_REPORT, SEARCH_AB_MD,
-                   PAYLOAD_TRIM_MD]
+                   PAYLOAD_TRIM_MD, ONBOARD_REPORT]
 ARTIFACTS = ARTIFACTS + EXTRA_ARTIFACTS
 
 
@@ -267,6 +277,47 @@ def _extract(text):
     if "漏答率" in out:
         out["miss_ok"], out["miss_den"] = out.pop("漏答率")
     return out
+
+
+def _check_onboard_report(rel: str, text: str) -> list[str]:
+    """语料质检（onboard）报告的判据。
+
+    ★ 与检索评测的判据不同：这类报告测的是"上传的语料能不能被检索到并被引用"，
+      本来就没有 Recall@5 —— 硬套检索判据只会产生假错，而假错会教人关掉检查。
+
+    三条不变量都对着真实的失效模式：
+      ① 分母对不上 ⇒ 题集换了、报告没重跑（最隐蔽的一种：数字看起来完全正常）
+      ② 分子对不上 ⇒ 汇总与逐题表矛盾（字段读串位的典型）
+      ③ 合法率越界 ⇒ 字段读串位，或口径被悄悄改过
+    """
+    errs: list[str] = []
+    m = re.search(r"命中 \*\*(\d+)/(\d+)\*\*", text)
+    if not m:
+        return [f"✗ {rel}：抽不到「命中 N/M」—— 格式可能变了。"
+                f"⚠️ 不要直接改判据，先确认新格式"]
+    hit, total = int(m.group(1)), int(m.group(2))
+
+    # 逐题表的数据行：以 "| 数字 |" 开头
+    rows = re.findall(r"^\|\s*(\d+)\s*\|(.+)$", text, re.M)
+    if len(rows) != total:
+        errs.append(
+            f"✗ {rel}：汇总说共 {total} 题，但表格里有 {len(rows)} 行 —— "
+            f"分母对不上（题集变了而报告没重跑？）"
+        )
+
+    ticked = sum(1 for _, body in rows if "✓" in body)
+    if ticked != hit:
+        errs.append(
+            f"✗ {rel}：汇总说命中 {hit}，但表格里 ✓ 有 {ticked} 行 —— 汇总与明细矛盾"
+        )
+
+    m2 = re.search(r"引用合法率：\*\*([0-9.]+)\*\*", text)
+    if not m2:
+        errs.append(f"✗ {rel}：抽不到「引用合法率」")
+    elif not 0.0 <= float(m2.group(1)) <= 1.0:
+        errs.append(f"✗ {rel}：引用合法率 {m2.group(1)} 不在 [0,1] 内")
+
+    return errs
 
 
 def _check_refusal_report(rel: str, text: str) -> list[str]:
@@ -665,6 +716,8 @@ def check_one(rel: str) -> list[str]:
         return _check_search_ab(rel, text)
     if rel == PAYLOAD_TRIM_MD:
         return _check_payload_trim(rel, text)
+    if rel == ONBOARD_REPORT:
+        return _check_onboard_report(rel, text)
 
     d = _extract(text)
     errs: list[str] = []
