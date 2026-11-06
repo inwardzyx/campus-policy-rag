@@ -62,7 +62,19 @@ def ci_jobs() -> dict[str, list[str]]:
       而 `ci.yml` 的注释里恰好写满了文件名（那些注释是在解释"为什么"）。
       ⇒ 只在 `jobs.<id>.steps[].run` 里找 `pytest`，才等于"真的会执行"。
     """
-    import yaml                                   # PyYAML 在 requirements.txt 里（有实测确认）
+    # ★ 2026-11-06 真实事故：这里原来是裸 `import yaml`，注释写着"PyYAML 在
+    #   requirements.txt 里（有实测确认）"—— 那句话只对**慢 job** 成立。
+    #   快 job 刻意只装 pytest + redis（不装 requirements.txt，免得拖进模型依赖），
+    #   于是 CI 上这里直接 ModuleNotFoundError，而本机 venv 有 yaml ⇒ 一直是绿的。
+    #   ⇒ 依赖缺失是**可预期的配置问题**，要给出"改哪一行"的指令，而不是一条 traceback。
+    try:
+        import yaml
+    except ModuleNotFoundError as e:               # pragma: no cover - 只在缺依赖时走
+        raise SystemExit(
+            "✗ 缺 PyYAML —— 本检查要解析 .github/workflows/ci.yml。\n"
+            "  ★ 快 job 只装 pytest + redis，不含 requirements.txt ⇒ 它必须显式装 pyyaml。\n"
+            "  ⇒ 修法：在 .github/workflows/ci.yml 里那个 job 的 pip install 行加上 pyyaml。"
+        ) from e
 
     doc = yaml.safe_load(CI.read_text(encoding="utf-8"))
     jobs: dict[str, list[str]] = {}

@@ -66,7 +66,13 @@ jobs:
         #   而下面那步是 `REQUIRE_REDIS=1` ⇒ 直接失败。
         #   ★ 这是**开关按设计工作**的样子：缺 Redis 不再静默跳过一半用例，
         #     而是当场红。只是"客户端没装"这个原因看起来会像"服务没起来"。
-        run: python -m pip install --upgrade pip pytest "redis==8.1.0"
+        # ★ 为什么要装 pyyaml（2026-11-06 栽过一次，红了两周没人看）：
+        #   这个 job 里有一步跑 `mutate_check_test_counts.py`，它会调用
+        #   `check_test_counts.py`，而后者要**解析 ci.yml**（import yaml）。
+        #   本地 venv 装了 requirements.txt 所以有 yaml，CI 这个 job 只装 pytest+redis
+        #   ⇒ 线上 ModuleNotFoundError，本地永远绿。**"依赖没在这个 job 里声明"，
+        #     症状却长得像代码 bug。** 加一行就好，但必须加。
+        run: python -m pip install --upgrade pip pytest "redis==8.1.0" pyyaml
 
       - name: 验证 install_hooks.py 在 Linux 上也能用（不只是在 Windows 上）
         # ★ 为什么放在这个 job：它的环境**最接近「别人 clone 下来的样子」** ——
