@@ -65,13 +65,21 @@ def test_rerank_hit_skips_model_call(monkeypatch) -> None:
     assert first == second
 
 
-def test_cache_is_on_by_default_with_rollback_switch() -> None:
+def test_cache_is_on_by_default_with_rollback_switch(monkeypatch) -> None:
     """默认开（配对实验采纳）；`CACHE_ENABLED=0` 是回滚开关。"""
     assert svc.CACHE_ENABLED is True
     assert svc.rag._cache is not None
 
     # 回滚路径：没有缓存对象时，精排必须照常工作（不能因为 None 炸掉）
-    import cache as cache_mod
+    #
+    # ★ 2026-11-06 修：这条原来直接调 `_rerank_uncached`，而它会**真的联网**打 DeepSeek
+    #   （CI 上没 key ⇒ 401；本地有 key ⇒ 每次跑测试都在花钱，而且结果依赖外部服务）。
+    #   它要证明的是"缓存为 None 时精排不炸"，与模型答得好不好无关
+    #   ⇒ 把模型调用换成固定返回，这条测试才是**封闭的**。
+    class _FakeResp:
+        content = '{"scores":[{"id":1,"score":7,"reason":"测试替身"}]}'
+
+    monkeypatch.setattr(svc, "_invoke_llm", lambda *a, **k: _FakeResp())
 
     cands = [({"doc": "a.md", "clause": "第一条", "text": "正文", "text_full": "正文"}, 0.1)]
     out = svc.rag._rerank_uncached("q", cands)

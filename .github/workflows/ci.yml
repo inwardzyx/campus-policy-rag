@@ -152,6 +152,16 @@ jobs:
       HF_ENDPOINT: https://huggingface.co
       # 测试不调生成模型，不需要往 LangSmith 上报 trace
       LANGSMITH_TRACING: "false"
+      # ★★ 2026-11-06 实测纠正了上面那句「刻意不配 DEEPSEEK_API_KEY」：
+      #    事实是有 15 个用例会**构造真的 ChatDeepSeek**，而构造即要求 key
+      #    （`If using default api base, DEEPSEEK_API_KEY must be set`）——
+      #    那句话不成立，慢 job 因此红了三周。
+      #    这里给的是**假 key**，不是 secret：
+      #      · 构造能过 ⇒ 那 15 条用例恢复覆盖；
+      #      · 万一哪条测试真发了请求，会立刻 401 —— 比构造期就崩**更接近真实故障**，
+      #        也保证「CI 不联网打 API」这个承诺仍然可验证（假 key 打不通）。
+      #    ⇒ 承诺照旧成立：**CI 里没有任何真实密钥**。
+      DEEPSEEK_API_KEY: sk-ci-dummy-not-a-real-key
     steps:
       - uses: actions/checkout@v4
 
