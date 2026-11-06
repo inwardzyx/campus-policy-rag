@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / "README.md"
 CHECK = REPO_ROOT / "scripts" / "check_readme_numbers.py"
 PY = sys.executable
+
+# ★ 2026-11-06 修：端点个数那条变异原来**硬编码** "现在一共 **7 个**"。
+#   端点从 7 涨到 21 之后，这串原文就逐字节匹配不上了 ⇒ 变异"没注入"被算成失败，
+#   而它一红就是两周（10-18 起 CI 一直红，没人看）。**这就是"数字不许手写"那条规矩
+#   在变异脚本自己身上的翻版**：判据要现算，那"用来打判据的原文"也得现算。
+#   ⇒ 从 README 现读当前数再 +1；端点增减都不会让这条变异静默失效。
+#   ⚠️ 若 README 改了措辞，这里会当场抛错（宁可炸，也不要"没注入却算通过"）。
+_EP_N = int(re.search(r"现在一共 \*\*(\d+) 个\*\*", README.read_text(encoding="utf-8")).group(1))
 
 # ★ 每个变异：(说明, 要替换的原文, 替换成什么)
 #   ⚠️ 原文必须真的存在于 README 里 —— 否则"变异没生效"会被误读成"检出成功"
@@ -247,10 +256,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     #   ★ 保留 ①②③ 的理由：它们各自验的是"上一轮修掉的假红不会回来"
     #     （①验计数、②验名单集合、③验方法），不是充数。
     (
-        "端点个数：README 7→8（代码里还是 7 个）",
+        f"端点个数：README {_EP_N}→{_EP_N + 1}（代码里还是 {_EP_N} 个）",
         "README.md",
-        "现在一共 **7 个**",
-        "现在一共 **8 个**",
+        f"现在一共 **{_EP_N} 个**",
+        f"现在一共 **{_EP_N + 1} 个**",
     ),
     (
         "端点名单：从 README 声明段里删掉 `GET /health`（个数不改，仍写 7）",
