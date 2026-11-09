@@ -1,5 +1,13 @@
 # 校园政策问答：一个不会瞎说的 RAG 服务
 
+[![CI](https://github.com/inwardzyx/campus-policy-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/inwardzyx/campus-policy-rag/actions/workflows/ci.yml)
+&nbsp;
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.141-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+
+> 业务层与前端在另一个仓库：[policy-desk](https://github.com/inwardzyx/policy-desk)（Spring Boot + Vue 3）。
+> 本仓库只做**算法层**：检索 / 精排 / 拒答 / 评测门禁，不认识"用户"，只认 ACL。
+
 > 仓库名 2026-10-19 从 `rag-customer-service` 改成了 `campus-policy-rag`
 > （早期版本做的是客服知识库，后来换成校园政策场景，名字直到这天跟上）。
 > 旧地址会**自动跳转**到新地址；内容以本 README 为准。
