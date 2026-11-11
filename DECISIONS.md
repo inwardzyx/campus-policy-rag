@@ -138,7 +138,7 @@ A（按文件白名单）表达不了这种区分；B 更通用，代价是要�
 
 ### 噪声地板：gate 的比较基准要能指出处
 
-`eval/noise_floor.py` 用"同配置重跑 N 次"量出极差，写 `reports/noise-floor.md` + `.json`，
+`eval/noise_floor.py` 用"同配置重跑 N 次"量出极差，写 `reports/noise-floor.md`（实测记录，非当前结论）+ `.json`，
 每次跑的**逐题结论**落在 `reports/noise/run-*.json`（表里每一格都能指回去）。
 `eval/gate.py` 读那份 JSON 打印地板；没量过就明说"未量"（缺失 ≠ 0）。
 

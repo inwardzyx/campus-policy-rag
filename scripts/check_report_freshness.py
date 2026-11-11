@@ -99,6 +99,8 @@ NON_AFFECTING = re.compile(
     r"|\.github/.*"                    # CI 配置（不改判分逻辑）
     r"|tests/.*"                       # 测试
     r"|scripts/.*"                     # 检查器 / 变异脚本（都不参与判分，改它们不影响基线数字）
+    r"|requirements-optional\.txt"     # 可选依赖声明（文档性质，不影响测量结果）
+    r"|eval/noise_floor\.py"           # 量噪声地板：它只读跑批 JSON，不参与基线判分
     r"|docs?/.*\.md$"                  # 文档
     r"|.*\.md$"                        # 任何 markdown（README/START/DECISIONS/HANDOFF/报告说明）
     r"|eval/(?:repro_old_code|agreement|gate)\.py"  # 评测周边工具，不参与判分
