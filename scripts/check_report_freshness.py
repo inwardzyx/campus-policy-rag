@@ -154,6 +154,14 @@ def code_changed_since(sha: str) -> tuple[bool, list[str], str]:
     r = subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"], cwd=str(ROOT),
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
+        # ★ 区分两种"不认识"：手改成不存在的 sha（报告坏了）vs 浅克隆（环境不完整）。
+        #   后者是**假红**，原因必须说清楚 —— 否则人会去改报告，而真正该做的是 git fetch --unshallow。
+        shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"], cwd=str(ROOT),
+                                 capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace").stdout.strip()
+        if shallow == "true":
+            return True, [], (f"拿不到 {sha[:12]}… 这个提交（本地是浅克隆）⇒ 判 STALE；"
+                              f"先 `git fetch --unshallow` 再跑")
         return True, [], f"git 不认识这个 sha：{sha[:12]}…（可能被手改过）"
     r = subprocess.run(["git", "diff", "--name-only", f"{sha}..HEAD"], cwd=str(ROOT),
                        capture_output=True, text=True, encoding="utf-8", errors="replace")

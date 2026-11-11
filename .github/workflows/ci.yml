@@ -53,6 +53,12 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # ★ 必须拉全历史：`check_report_freshness.py` 要
+          #   `git diff <报告头里的 sha>..HEAD` 才能判「代码变没变」。
+          #   默认 fetch-depth=1 时拿不到祖先提交 ⇒ 两份基线全被判 STALE ⇒ **假红**。
+          #   （2026-11-11 加这道时就踩过一次：本地绿、CI 必红，只是还没推上去。）
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
