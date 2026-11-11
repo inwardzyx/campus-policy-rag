@@ -239,8 +239,12 @@ def main() -> int:
         print(f"[FAIL] 拿不到当前状态：{e}", file=sys.stderr)
         return 2
 
-    reports = sorted(ROOT.glob(BASELINE_GLOB))
-    reports += [ROOT / h for h in HISTORICAL if (ROOT / h).exists()]
+    # ★ 去重：`repro-old-code.md` 既在 glob 里、又在 HISTORICAL 里，
+    #   不去重会打印两遍，"历史快照 N 份"这个数也会跟着虚高（自己算的数先别撒谎）。
+    seen: dict[str, Path] = {}
+    for p in sorted(ROOT.glob(BASELINE_GLOB)) + [ROOT / h for h in HISTORICAL if (ROOT / h).exists()]:
+        seen.setdefault(p.resolve().as_posix(), p)
+    reports = list(seen.values())
     if not reports:
         print("[FAIL] 一份报告都没扫到 —— 扫到 0 条不许报绿", file=sys.stderr)
         return 2
