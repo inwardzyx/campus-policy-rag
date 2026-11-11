@@ -141,7 +141,7 @@ D:\Python-project\.venv\Scripts\python.exe eval\repro_old_code.py --variant curr
 | 层 | `recall5` | `no_miss` | `refuse_ok` | 题数 | 产物 |
 |---|---|---|---|---|---|
 | offline | 30/44 | 42/44 | 12/61 | 105 | `reports/promptfoo-offline.json` |
-| online | 41/44 | 43/44 | 39/61 | 105 | `reports/promptfoo-online.json` |
+| online | 40/44 | 43/44 | 39/61 | 105 | `reports/promptfoo-online.json` |
 
 > 口径定义见 `eval/summarize.py` 的 `METRICS`；本表来自 2 份跑批 JSON。
 > ⚠️ 层 `offline` 的 `refuse_ok` 不能用来谈「系统的拒答能力」：offline 层拒答只靠向量分 0.55 一道闸，那是已知边界。
