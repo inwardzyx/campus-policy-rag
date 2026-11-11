@@ -262,6 +262,9 @@ def render_index(md_path: Path) -> int:
     if bad:
         out.append(f"> ⚠️ 层 `{'`、`'.join(bad)}` 的 `refuse_ok` 不能用来谈「系统的拒答能力」："
                    "offline 层拒答只靠向量分 0.55 一道闸，那是已知边界。")
+    out.append("")
+    out.append("报告文件（**被引用就该是 FRESH**，由 `scripts/check_report_freshness.py` 守）："
+               + "、".join(f"`reports/BASELINE-{layer}.md`" for layer, _, _, _ in rows))
     out.append(END)
 
     txt = md_path.read_text(encoding="utf-8")

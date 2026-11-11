@@ -103,6 +103,15 @@ jobs:
         #     而 CLAUDE.md 按 .gitignore 不进仓库 ⇒ 在 CI 里它会**正确地报红**。）
         run: python scripts/check_file_refs.py
 
+      - name: 核「报告新鲜度」—— 被引用的结论是不是还对应当前代码与语料
+        # ★ 补的是另一半：`check_readme_numbers.py` 比的是「README ↔ 产物」，
+        #   **两份一起过期就是"一致"= 绿**。2026-10-10 的 35/44 就是这样躲了两周。
+        #   这一步比的是「产物 ↔ 当前 HEAD 与当前语料哈希」。
+        # ★ 为什么能进快 job：只用标准库 + git + kb/runstate（不装模型、不联网）。
+        # ⚠️ 必须在**干净 checkout** 里跑：`git diff` 与 `git rev-parse HEAD` 才有意义。
+        #   判据：被引用（且引用行没标历史快照）的报告不是 FRESH ⇒ exit 1。
+        run: python scripts/check_report_freshness.py --strict
+
       - name: 跑"判据的判据"：变异测试（这四个不需要模型，也不需要 gitignored 的数据）
         # ★ 起因（2026-10-13）：发现 `mutate_check_numbers.py` **红了一整天没人知道** ——
         #   README 的 token 表从 1906 改成 1900 之后，它三条变异的原文串失效、当场报红，
