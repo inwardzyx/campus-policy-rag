@@ -1,0 +1,39 @@
+# 制度问答台 · held-out 105 题基线（promptfoo）
+#
+# ★ 层的开关**不在这个文件里**，在 case_server 的环境变量 EVAL_LAYER（offline / online）。
+#   理由：层是"服务怎么跑"的属性，不是"断言怎么判"的属性；写在这里会让人以为
+#   换一个配置文件就换了评测对象，而实际上还要重启服务。
+#
+# 跑法（仓库根目录，两个终端）：
+#   终端 1：python eval/case_server.py
+#   终端 2：cd eval ; npx promptfoo eval -c promptfooconfig.yaml -o reports/promptfoo.json
+#
+# 判据本身在 eval/assert_case.js，逐题定义在 eval/tests.yaml（由 gen_tests.py 生成）。
+
+description: "制度问答台 · held-out 105 题基线"
+
+prompts:
+  # promptfoo 的"提示词"在这里就是题面本身。提供商只把它当参数转发。
+  - "{{question}}"
+
+providers:
+  - id: http
+    label: "policy-desk / case_server"
+    config:
+      url: "http://127.0.0.1:8091/case"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        qid: "{{qid}}"
+        # 题面一起发过去，服务端会与 questions.json 对一遍 —— 不一致就报 drift，
+        # 断言那边一律判红（旧 tests.yaml 的分数是假的）。
+        question: "{{question}}"
+      # ★ 不要 transformResponse：默认行为是把 JSON 响应体解析成对象交给断言。
+      #   截断成某个字段反而会让断言拿不到 gold_rank / cands 这些诊断信息。
+
+tests: file://tests.yaml
+
+# ★ 跑的时候必须带 --no-cache：本地跑批的价值在于"这一次真的调了"，
+#   而 promptfoo 的缓存键不包含"被评测服务的内容"，服务改了它也可能直接命中旧结果
+#   —— 那会得到一个与本次改动无关、却看着很合理的分数。

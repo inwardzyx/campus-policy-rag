@@ -1,0 +1,12 @@
+{
+  "name": "policy-desk-eval",
+  "private": true,
+  "description": "held-out 105 题的 promptfoo 评测壳（判据在 eval/assert_case.js，题目由 eval/gen_tests.py 生成）",
+  "scripts": {
+    "gen": "python gen_tests.py",
+    "eval": "promptfoo eval -c promptfooconfig.yaml --no-cache"
+  },
+  "devDependencies": {
+    "promptfoo": "0.125.1"
+  }
+}

@@ -120,9 +120,19 @@ USE_REWRITE = True          # 由 --no-rewrite 置 False（见 main）
 
 
 def knowledge_hit(q, with_llm):
-    resp = svc.chat(svc.ChatRequest(question=q["question"], use_rerank=with_llm,
-                                    use_rewrite=USE_REWRITE if with_llm else False))
-    return resp.knowledge_hit
+    # ★ 2026-11-11 修：这里原来调 `svc.chat(req)`，而 `chat()` 自 2026-10-13 起是
+    #   FastAPI 端点（签名 **chat(req, request)**）⇒ 本脚本整条跑不起来，
+    #   一跑就抛 `TypeError: chat() missing 1 required positional argument: 'request'`。
+    #   ⇒ 改调 `handle_chat()`：那正是 service.py 为"直连管道"的调用方（评测集/脚本）
+    #     留的入口 —— 不带限流闸门、不记账（见 `service.py:2467` 的 docstring）。
+    #   ⚠️ 这个 bug 的症状特别隐蔽：脚本崩了，但 README 与 report-*.md 里的旧数字还在，
+    #     没人重跑就没人发现「这些数已经算不出来了」。而它一直在 CI 之外
+    #     （CI 只跑 pytest，没有一条用例真的执行本脚本）。
+    #   ★ 用 E501 换行保持与文件里其它长行一致的风格。
+    resp = svc.handle_chat(svc.ChatRequest(question=q["question"], use_rerank=with_llm,
+                                           use_rewrite=USE_REWRITE if with_llm else False))
+    # handle_chat 成功时返回 pydantic 模型，但「模型还没加载好」那条分支返回的是 dict
+    return resp["knowledge_hit"] if isinstance(resp, dict) else resp.knowledge_hit
 
 
 def main():

@@ -1,0 +1,26 @@
+# 评测壳自身的依赖与派生物（都不是"结论"，不该入库）
+
+node_modules/
+# ★ 锁文件也不入库（有意的取舍）：promptfoo 在 package.json 里钉的是精确版本号，
+#   而它的传递依赖有 500+ 个包 —— 把锁文件搬进这个 Python 仓库，
+#   换来的可复现性边际收益远小于它带来的噪音。要完全复现就装同一个版本号。
+package-lock.json
+
+# gen_tests.py 的产物：每次从 evalset/heldout/questions.json 重新生成。
+# ★ 故意不入库：它一旦入库就会和 questions.json 漂移，
+#   而漂移的症状是"分数变了"而不是"文件对不上"（见 eval/README.md 的 drift 检查）。
+tests.yaml
+
+# promptfoo 的本地状态（缓存/日志/分享设置）
+.pfhome/
+.promptfoo/
+
+# promptfoo 的 UI 缓存
+*.promptfoo.yaml
+
+# ★ 原始跑批结果（每份 ~900KB，跑一次覆盖一次）—— 沿用仓库既有口径：
+#   「判定逻辑（脚本）在仓库里，原始数据不在 —— 读者跑一遍就能得到自己的数字」
+#   （见根目录 .gitignore 里 agent/_*.json 那几条的说明）。
+#   要长期保留的是 reports/BASELINE-*.md（结论），它每个数字都写明来源 JSON。
+#   ⚠️ offline 层重跑免费（3 秒）；online 层重跑要花 DeepSeek 的 token（约 6 分钟）。
+reports/*.json

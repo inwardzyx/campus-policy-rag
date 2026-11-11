@@ -174,3 +174,35 @@ def test_clear_refusals_held(rag, monkeypatch):
         f"清晰拒答题的放行集合变了：实际 {bad}，钉住的是 {KNOWN_LEAK}\n"
         f"  · 多出来的 → 新回归，去看 evalset/probe_threshold.py 与 RESULTS.md\n"
         f"  · 少了的   → 可能是真修好了，那就把 KNOWN_LEAK 改小（别让它悄悄变好）")
+
+
+# ==================================================================
+# ⑤ 评测脚本自己的入口：run_eval.py 必须走 handle_chat（不是 HTTP 端点）
+# ==================================================================
+def test_run_eval_uses_handle_chat(monkeypatch):
+    """守一种"屏幕上看不见的坏"：脚本崩了，而文档里的旧数字还好好躺着。
+
+    ★ 2026-11-11 加：`evalset/run_eval.py::knowledge_hit()` 原来调 `svc.chat(req)`，
+      而 `chat()` 自 2026-10-13 起是 FastAPI 端点（签名 **chat(req, request)**）⇒
+      **整个 run_eval.py 跑不起来**（`TypeError: missing 1 required positional
+      argument: 'request'`）。CI 里没有一条用例真的执行过那个脚本，于是
+      README 与 `evalset/report-*.md` 引的那些数一直"看着还在"。
+    ★ 本用例**不加载模型、不建库**：只把 `handle_chat` 换成假的，看 run_eval 走不走它。
+      反向验证：把 `run_eval.knowledge_hit` 改回 `svc.chat(req)` ⇒ 本用例必红（TypeError）。
+    """
+    from types import SimpleNamespace
+
+    sys.path.insert(0, os.path.join(REPO_ROOT, "evalset"))
+    import run_eval                                    # noqa: E402
+
+    seen = {}
+
+    def fake_handle_chat(req, led=None, roles=None):
+        seen["question"] = req.question
+        seen["use_rerank"] = req.use_rerank
+        return SimpleNamespace(knowledge_hit=True)
+
+    monkeypatch.setattr(run_eval.svc, "handle_chat", fake_handle_chat)
+    assert run_eval.knowledge_hit({"id": "x", "question": "请假一天找谁批"}, False) is True
+    # 传下去的参数也得对：with_llm=False ⇒ use_rerank=False（离线层不许偷偷开精排）
+    assert seen == {"question": "请假一天找谁批", "use_rerank": False}
