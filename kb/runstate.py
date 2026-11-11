@@ -318,6 +318,11 @@ def corpus_state(root: Path, namespace: str = "") -> dict[str, Any]:
     """语料状态：每个命名空间的文档内容哈希集合。
 
     ★ 取的是 `manifest.json` 里各文档的 `content_hash`，不是文件字节（见模块 docstring 边界）。
+    ★★ **已知边界（2026-11-11 盲审点名，这里明写）**：语料走的是「manifest 信任制」——
+      绕过上传 API 直接改 `kb_data/*/files/` 里的文件，`content_hash` 不会变，
+      ⇒ 指纹**不会变**，本函数也发现不了。要查这种改动只能用文件对账
+      （`sha256(文件字节)` vs manifest 里的 `content_hash`），那是一条**尚未实现**的判据；
+      当前用法规避它：`kb_data/` 只由上传 API 或 docker compose 初始化写入。
     ★ 命名空间为空时，把 `kb_data/` 下所有命名空间都记上 —— 因为"跑评测时用的是哪个 ns"
       这件事本身也常常记错，全记下来能当场对质。
     """

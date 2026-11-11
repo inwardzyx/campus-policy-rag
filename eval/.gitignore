@@ -24,3 +24,6 @@ tests.yaml
 #   要长期保留的是 reports/BASELINE-*.md（结论），它每个数字都写明来源 JSON。
 #   ⚠️ offline 层重跑免费（3 秒）；online 层重跑要花 DeepSeek 的 token（约 6 分钟）。
 reports/*.json
+# ★ 例外：这是「旧报告能不能复现 / 两组数能不能相减」的证据（shas + 数字，十几 KB），
+#   重跑一次要 3 分钟且要 git worktree ⇒ 让它入库。
+!reports/repro-old-code.json

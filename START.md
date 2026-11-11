@@ -19,7 +19,7 @@
 | 制度语料验收（20 题） | 应答 **17/17**、拒答 **3/3**、引用合法率 **1.0** | `evalset/report-scenario-policy.json` |
 | as-of 版本裁决（3 题） | **3/3**（按 2025 时点答 500 元 / 60 日 / 100 元） | `evalset/report-scenario-policy-asof-2025.json` |
 | 会话级（10 会话 / 22 轮） | 整会话全对 **8/10**、指代补全 **4/4** | `evalset/report-sessions-campus-followups.json` |
-| 工程判据 | **462 passed / 27 skipped**；**24 个变异体脚本** | `pytest` + `scripts/mutate_*.py` |
+| 工程判据 | **473 passed / 27 skipped**（合计 500 条）；**24 个变异体脚本**（★ CI 只跑其中 **4** 个，其余需模型/gitignored 数据，见下注） | `pytest` + `scripts/mutate_*.py` |
 | 重复问题（缓存） | p95 **6.7s → 4.0s**、token **-73%**、检索结果 10/10 一致 | `experiments/cache-ab.json` |
 | 容量（部署形态，单进程） | 并发 1/4/8 → p95 **3.7s / 3.3s / 6.5s**；**≈730 token/问** | `experiments/load-test.json` + `experiments/cost-report.md` |
 
@@ -29,6 +29,14 @@ D:\Python-project\.venv\Scripts\python.exe -m pytest -q --no-header
 D:\Python-project\.venv\Scripts\python.exe scripts\run_scenario_eval.py `
   --cases policy --namespace policy_eval --event-time 2026-06-01 --base-url http://127.0.0.1:8028
 ```
+
+> ★ **24 个变异体脚本，CI 只跑 4 个**（`mutate_check_numbers` / `mutate_check_artifact` /
+> `mutate_check_refs` / `mutate_check_test_counts`）—— 这 4 个只用标准库，其余的需要装模型、
+> 或需要按 `.gitignore` 不进仓库的数据（如 `agent/_token_cost.json`），在干净 checkout 里会**正确地报缺数据**。
+> 所以"24 个变异"是**本机全量**的口径，CI 的守护范围是那 4 个；要全量就本机跑
+> `Get-ChildItem scripts\mutate_*.py | % { python $_.FullName }`。
+> （2026-11-11 盲审指出"宣传强于守护范围"，这里如实标出来，而不是把 24 改成 4 —— 两者说的不是一件事。）
+
 
 ## 3 分钟看到效果
 

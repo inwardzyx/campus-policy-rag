@@ -18,7 +18,8 @@
     $env:EVAL_LAYER='online' ; python eval/case_server.py   # 在线层（要 DEEPSEEK_API_KEY）
 
 接口：
-    GET  /health -> {"ready": bool, "chunks": int, "rejected": int, "layer": str}
+    GET  /health -> {"ready": bool, "docs_chunks": int, "enterprise_chunks": int,
+                     "rejected": int, "layer": str}
     POST /case   <- {"qid": "h1", "question": "（可选，用于查 tests.yaml 是否过期）"}
                  -> 见下面 _payload()
 """
@@ -46,6 +47,32 @@ if LAYER not in ("offline", "online"):
 _LOCK = threading.Lock()          # RAG 对象不是线程安全的；promptfoo 默认并发 4，这里排成队
 _BY_ID: dict[str, dict] = {}
 _READY = False
+_RUNSTATE: dict = {}
+
+
+def _snapshot_runstate() -> dict:
+    """拍一次运行指纹（kb/runstate.py）—— 报告头要靠它回答"这是同一个系统吗"。
+
+    ★ 为什么必须接在**这条**路径上（2026-11-11 盲审）：旧的 `run_eval.py` 路径早就有指纹，
+      而新加的 promptfoo 路径原来只落款日期 —— 等于"最严的门装在旧门上"。
+      指纹里含 git sha / worktree diff / 逐文件语料 sha256 / python 版本，
+      ⇒ 换了代码或换了语料，报告头就不一样，不需要人肉记。
+    ★ 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数，
+      所以"指纹即索引版本"。索引真落盘对 2104 块的 brute-force numpy 反而是负担。
+    """
+    import kb.runstate as rs
+    st = rs.capture(REPO_ROOT, note="eval/case_server")
+    git = st.get("git") or {}
+    return {
+        "fingerprint": st.get("fingerprint"),
+        "git_sha": git.get("sha"),
+        "git_dirty": git.get("dirty"),
+        "dirty_file_count": git.get("dirty_file_count"),
+        "docs": {k: (v or {}).get("hash") for k, v in ((st.get("docs") or {}).get("dirs") or {}).items()},
+        "corpus": {k: (v or {}).get("hash")
+                   for k, v in ((st.get("corpus") or {}).get("namespaces") or {}).items()},
+        "python": (st.get("runtime") or {}).get("python"),
+    }
 
 
 def _load_index() -> None:
@@ -84,7 +111,15 @@ def _payload(case: dict) -> dict:
         "layer": LAYER,
         "drift": drift,
         "question": q["question"],
-        "boot": {"chunks": len(R.svc.rag.chunks), "rejected": len(R.svc.rag.rejected)},
+        # ★ 2026-11-11 修：这里原来报 `len(rag.chunks)`（**合计**），读起来像"评测用的索引有 332 块"。
+        #   实际 332 = 263（docs/ 默认语料）+ 69（kb_data/ 里 company / sunrun 两个 demo namespace）。
+        #   而评测请求不带 namespace ⇒ search() 只查 default 语料（见 rag.search 的 docstring），
+        #   那 69 块**根本不参与**。报合计会让人误以为语料规模变过 —— 我第一版就这么误读过一次。
+        "boot": {"docs_chunks": len(R.svc.rag._doc_chunks),
+                 "enterprise_chunks": len(getattr(R.svc.rag, "enterprise_chunks", []) or []),
+                 "rejected": len(R.svc.rag.rejected),
+                 # 运行指纹：报告头靠它判"是不是同一个系统"（见 _snapshot_runstate）
+                 "runstate": _RUNSTATE},
     }
 
     # ① 检索层：gold 条款有没有进粗捞 top-5（只有应答题有 gold）
@@ -128,7 +163,8 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path.split("?")[0] != "/health":
             self._send(404, {"error": "not found"})
             return
-        self._send(200, {"ready": _READY, "chunks": len(R.svc.rag.chunks),
+        self._send(200, {"ready": _READY, "docs_chunks": len(R.svc.rag._doc_chunks),
+                         "enterprise_chunks": len(getattr(R.svc.rag, "enterprise_chunks", []) or []),
                          "rejected": len(R.svc.rag.rejected), "layer": LAYER})
 
     def do_POST(self):
@@ -157,7 +193,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    global _READY
+    global _READY, _RUNSTATE
     _load_index()
     print(f"[boot] 题目 {len(_BY_ID)} 道，层={LAYER}，正在加载模型 + 建库……", flush=True)
     t0 = time.time()
@@ -165,9 +201,14 @@ def main() -> None:
     if LAYER == "offline":
         # 与 run_eval.py 离线层同款：注入人偶模型，保证一个生成调用都不发（也就不需要 key）
         R.svc.rag._llm = R._OfflineLLM()
+    _RUNSTATE = _snapshot_runstate()
     _READY = True
-    print(f"[boot] 就绪 {time.time() - t0:.1f}s：入库 {len(R.svc.rag.chunks)} 块 / "
-          f"拦下 {len(R.svc.rag.rejected)} 块，监听 127.0.0.1:{PORT}", flush=True)
+    print(f"[boot] 就绪 {time.time() - t0:.1f}s：docs 入库 {len(R.svc.rag._doc_chunks)} 块 / "
+          f"拦下 {len(R.svc.rag.rejected)} 块（另有企业 demo "
+          f"{len(getattr(R.svc.rag, 'enterprise_chunks', []) or [])} 块，本评测不查），"
+          f"监听 127.0.0.1:{PORT}", flush=True)
+    print(f"[boot] 运行指纹 {_RUNSTATE.get('fingerprint')}（git "
+          f"{str(_RUNSTATE.get('git_sha'))[:12]} dirty={_RUNSTATE.get('git_dirty')}）", flush=True)
     ThreadingHTTPServer(("127.0.0.1", PORT), _Handler).serve_forever()
 
 

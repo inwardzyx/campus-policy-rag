@@ -1,5 +1,19 @@
 # 评测报告（在线层(rerank)）
 
+> ⚠️ **历史快照（2026-10-10，commit `a9e4f85`）—— 引用前必读**
+> 用**今天的代码 + 今天的 `run_eval.py`** 跑同一套 105 题，**复现不出**本文件的数；
+> 当前基线见 `eval/reports/BASELINE-offline.md`（或 `.gitignore` 里那份 JSON 重跑）。
+> 本文件的数只对应 `a9e4f85` 那一刻的旧代码 —— 它在**当时**是可复现的：
+> `eval/reports/repro-old-code.md` 的 `old` / `current-shim` 两行（同题、同语料、旧代码）= 本文件的数。
+> 此后 `service.py` 有 65 个 commit，而 `evalset/heldout/questions.json` 与 `docs/` 语料
+> **逐字节未变**（sha256 见该报告）⇒ 差异来自**代码**（检索/判据），不是题目或语料。
+> 规则：**本文件的数不得与 `eval/` 的基线混引**；要引就同时写明「a9e4f85 旧代码」这个条件。
+>
+> 另：本文件在 2026-11-11 之前是**裸的**（没有版本、没有校验和），
+> 这正是盲审指出"数据集内容变了版本没变也发现不了"的实例 —— 现已补
+> `evalset/heldout/questions.sha256` + `scripts/check_heldout_sha.py`。
+
+
 - 应答题数：44　Recall@5：42/44
 - 漏答率：1/44（knowledge_hit==false 才算漏答）
 - 拒答题数：61　拒答准确率：39/61

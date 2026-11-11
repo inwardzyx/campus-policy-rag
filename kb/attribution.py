@@ -6,7 +6,7 @@
 可能是排在第 4 名没进 top3、也可能是答了却没标引用。这四类失败要改的地方完全不同：
 换切块 / 调预算 / 改排序 / 改模板。不归因就去"调优"，等于随机改参数。
 
-## 桶的定义（只有 6 个失败桶，其余是"正常结果"）
+## 桶的定义（只有 8 个失败桶：6 主桶 + 2 个拒答细分；其余是"正常结果"）
 | 桶 | 判据 | 该改哪层 |
 |---|---|---|
 | `retrieval_miss` | gold 既不在 trace 的候选里、也不在 included/excluded 里 | 数据层（切块）或检索 |
@@ -19,6 +19,10 @@
 正常结果：`ok`（应答/越权按预期）、`refuse_ok`（拒答题正确拒答）、
 `answered_unexpectedly`（拒答题却答了）。
 
+★ 2026-11-11：本节原来写「只有 6 个失败桶」，而 `FAILURE_BUCKETS` 早已是 8 个
+  （2026-10-27 加了两个拒答细分）。docstring 自己过期了整整两周 ——
+  这正是本仓「数字/描述要能指回产物」这条纪律该抓的东西。
+
 ★ 缺失不伪装：没有 `context`（`docs/` 旧路径没有 trace）时，`context_available=False`
   会如实报出来，此时"答错但不知道原因"不会被硬塞进 `retrieval_miss`。
 """
@@ -26,7 +30,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-#: 6 个失败桶（可行动的那些）。`ok` / `refuse_ok` / `answered_unexpectedly` 是结果，不算桶。
+#: 8 个失败桶（可行动的那些）：6 主桶 + 2 个拒答细分。
+#: `ok` / `refuse_ok` / `answered_unexpectedly` 是结果，不算桶。
 FAILURE_BUCKETS: tuple[str, ...] = (
     "retrieval_miss", "rank_shift", "budget_cut", "gen_uncited", "acl_leak", "stale_version",
     # ★ 2026-10-27 加：拒答题"答了"必须再细分，否则 boundary 题失败无法行动

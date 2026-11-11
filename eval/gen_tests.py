@@ -20,17 +20,19 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from summarize import METRICS, TYPE_ANSWER, TYPE_REFUSE   # noqa: E402  ★ 指标名只从那里来
+
 # 仓库根 = eval/ 的上一级；本机把 eval/ 放在别处调试时用 POLICY_RAG_REPO 指过去
 REPO_ROOT = Path(os.environ.get("POLICY_RAG_REPO") or HERE.parent)
 QUESTIONS = REPO_ROOT / "evalset" / "heldout" / "questions.json"
 OUT = HERE / "tests.yaml"
 
-# 每类题挂哪些判据：应答题看「检索到没到」+「有没有被误拒」，拒答题只看「有没有被误答」
-CHECKS_BY_TYPE = {
-    "answer": [("recall5", "gold 条款进了粗捞 top-5（Recall@5）"),
-               ("no_miss", "knowledge_hit==true（没被误拒）")],
-    "refuse": [("refuse_ok", "knowledge_hit==false（拒对了）")],
-}
+# 每类题挂哪些判据：由 summarize.METRICS 决定（应答题两条、拒答题一条）。
+# ★ 不在这里抄名字：抄一份就会出现"断言挂的 metric 名"和"summarize 统计的名字"对不上，
+#   而对不上的症状是某一行永远 0/N 或 N/N，看着像结论，其实是接线错。
+CHECKS_BY_TYPE = {t: [n for n, m in METRICS.items() if m["type"] == t]
+                  for t in (TYPE_ANSWER, TYPE_REFUSE)}
 
 
 def q(v) -> str:
@@ -66,9 +68,9 @@ def main() -> int:
             f"    question: {q(x['question'])}",
             "  assert:",
         ]
-        for name, desc in CHECKS_BY_TYPE[x["type"]]:
+        for name in CHECKS_BY_TYPE[x["type"]]:
             lines += [
-                f"    # {desc}",
+                f"    # {METRICS[name]['desc']}",
                 "    - type: javascript",
                 "      value: file://assert_case.js",
                 f"      metric: {name}",
@@ -78,9 +80,9 @@ def main() -> int:
     OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     n = {t: sum(1 for x in qs if x["type"] == t) for t in CHECKS_BY_TYPE}
-    n_assert = n["answer"] * 2 + n["refuse"]
+    n_assert = sum(n[t] * len(CHECKS_BY_TYPE[t]) for t in n)
     print(f"[ok] 已写 {OUT}：{len(qs)} 题 "
-          f"= answer {n['answer']} + refuse {n['refuse']}；断言 {n_assert} 条")
+          f"= answer {n[TYPE_ANSWER]} + refuse {n[TYPE_REFUSE]}；断言 {n_assert} 条")
     return 0
 
 

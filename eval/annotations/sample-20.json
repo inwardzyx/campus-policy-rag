@@ -1,0 +1,232 @@
+[
+  {
+    "id": "h1",
+    "type": "answer",
+    "question": "宿舍里偷偷用个电热毯、电饭锅煮点东西，被查到了会挨什么处分？",
+    "gold": [
+      "学生纪律处分管理规定.md",
+      "第三章-第十九条（三）"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h2",
+    "type": "answer",
+    "question": "一个学期翘课翘到多少节，学校会直接把我开除？",
+    "gold": [
+      "学生纪律处分管理规定.md",
+      "第三章-第二十一条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h3",
+    "type": "answer",
+    "question": "考试的时候去抢别人的卷子抄，或者硬要旁边的人给我看答案，是不是就直接开掉了？",
+    "gold": [
+      "学生纪律处分管理规定.md",
+      "第三章-第二十五条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h4",
+    "type": "answer",
+    "question": "之前被记了个处分，得熬多久才能申请把它撤掉啊？",
+    "gold": [
+      "学生纪律处分管理规定.md",
+      "第四章-第二十七条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h5",
+    "type": "answer",
+    "question": "被选去外面打比赛，这种假条得谁签字才算数？",
+    "gold": [
+      "学生请销假制度.md",
+      "总则-第五条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h6",
+    "type": "answer",
+    "question": "班里想组织大家出去玩，得提前几天跟学校打报告？",
+    "gold": [
+      "关于规范学生集体外出活动安全管理的规定（试行）.md",
+      "第八条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h7",
+    "type": "answer",
+    "question": "有同学在群里帮旅行社拉人卖旅游套餐，学校会管这种事吗？",
+    "gold": [
+      "关于规范学生集体外出活动安全管理的规定（试行）.md",
+      "第二十一条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h8",
+    "type": "answer",
+    "question": "在图书馆做勤工助学，一个月最多能排多少个小时的班？",
+    "gold": [
+      "学生勤工助学管理办法.md",
+      "第十八条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h9",
+    "type": "answer",
+    "question": "六级考过了，综合测评能加几分？",
+    "gold": [
+      "学生综合素质测评实施办法.md",
+      "第十条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h10",
+    "type": "answer",
+    "question": "评上优秀毕业生除了发张证书，还有钱拿吗？多少钱？",
+    "gold": [
+      "学生奖励管理办法.md",
+      "第十八条"
+    ],
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h15",
+    "type": "refuse",
+    "question": "图书馆平时几点关门啊，周末开不开？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h16",
+    "type": "refuse",
+    "question": "宿舍晚上几点熄灯停电？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h17",
+    "type": "refuse",
+    "question": "咱们学校一学年的学费到底是多少钱？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h18",
+    "type": "refuse",
+    "question": "学生证弄丢了要去哪儿补办，要交钱吗？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h19",
+    "type": "refuse",
+    "question": "食堂几点开饭？饭卡去哪儿充钱？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "h20",
+    "type": "refuse",
+    "question": "今年的校历在哪看，寒假大概什么时候放？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "r21",
+    "type": "refuse",
+    "question": "学校周边哪家奶茶店好喝？有没有学长学姐推荐一下？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "r22",
+    "type": "refuse",
+    "question": "从学校去广州南站坐地铁要坐几号线？大概要多久？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "r23",
+    "type": "refuse",
+    "question": "清远校区这两天天气怎么样？要不要带伞？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  },
+  {
+    "id": "r24",
+    "type": "refuse",
+    "question": "我们班想搞个毕业聚餐，学校附近哪家饭店性价比高、能坐二十人的？",
+    "gold": null,
+    "answer": "",
+    "label_a": null,
+    "label_b": null,
+    "note": ""
+  }
+]

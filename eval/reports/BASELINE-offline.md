@@ -2,14 +2,21 @@
 
 - 评测层：**offline**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 语料：入库 332 块 / 拦下 23 块
-- 生成时间：2026-11-11 14:58
+- 生成时间：2026-11-11 15:34
 - 数据来源：`reports/promptfoo-offline.json`（本报告由 `eval/summarize.py` 生成，数字不手抄）
 
-| 指标 | 通过/总数 | 口径 |
-|---|---|---|
-| `recall5` | 30/44 | gold 条款进了粗捞 top-5 |
-| `no_miss` | 42/44 | 应答题没被误拒（knowledge_hit==true） |
-| `refuse_ok` | 12/61 | 拒答题拒对了（knowledge_hit==false） |
+| 指标 | 通过/总数 | 口径 | 分母 |
+|---|---|---|---|
+| `recall5` | 30/44 | gold 条款进了粗捞 top-5（Recall@5） | 应答题数 |
+| `no_miss` | 42/44 | 应答题没被误拒（knowledge_hit == true） | 应答题数 |
+| `refuse_ok` | 12/61 | 拒答题拒对了（knowledge_hit == false） | 拒答题数 |
+
+**口径纪律**（定义见 `eval/metrics_spec.py`，别在这份报告里另立一套）：
+- 漏答率 ≠ Recall 的补集：一个看 gold 有没有进前 5，一个看管道最后有没有拒答。
+- 拒答正确率只能用 online 层；offline 的拒答数是单闸（向量分 0.55）边界，不代表系统能力。
+- 两层数字不可比，只能并列。
+
+> ⚠️ 本层是 `offline` ⇒ **`refuse_ok` 这一行不能用来谈「系统的拒答能力」**，它是单闸（向量分 0.55）边界；要谈拒答请跑 `EVAL_LAYER=online`。
 
 ## 与 run_eval.py 对账（`reports/run_eval-offline-heldout.log`）
 
