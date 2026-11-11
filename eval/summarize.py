@@ -155,6 +155,8 @@ def _fingerprint_lines(boot: dict) -> list[str]:
         f" dirty=`{rs.get('git_dirty')}`，python {rs.get('python')}）",
         f"- 语料哈希：{docs}；企业 demo：{corp}（不参与本评测）",
         "- 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。",
+        "- ⚠️ 指纹里含**工作区未提交文件**（报告文件本身也算）⇒ 同一批产出的两份报告指纹会不同。"
+        "判「是不是同一个系统」请看 `git_sha` 与语料哈希这两行；完整指纹只标识「这一次跑批的状态」。",
     ]
 
 
@@ -183,6 +185,10 @@ def render_case_report(cases: list[dict], src: Path, compare: Path | None) -> st
         f"- 数据来源：`{src.as_posix()}`（本报告由 `eval/summarize.py` 生成，数字不手抄）",
         "",
         *_metric_table(n),
+        "",
+        "> ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，"
+        "同配置重跑也会有 ±1~3 题的抖动；**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar），"
+        "不要直接比两个百分比。**",
         "",
         "**口径纪律**（定义见 `eval/summarize.py` 的 `METRICS`，别在这份报告里另立一套）：",
     ]

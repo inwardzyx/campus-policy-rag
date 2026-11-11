@@ -37,7 +37,7 @@ eval/summarize.py（出报告，数字全现算）──▶ eval/reports/BASELIN
 
 | # | 判据 | 状态 | 证据 / 缺口 |
 |---|---|---|---|
-| ① | 改清洗规则 → 自动算出影响哪些评测集 | **假绿** | 「规则 → 评测集 → 结论」的依赖映射不存在。真实形态是「runstate 指纹 diff + 全量重跑才发现」。案例：旧报告 35/44 与今天 30/44 的差异，是**重跑才发现的**，不是算出来的（见 `DECISIONS.md`） |
+| ① | 改清洗规则 → 自动算出影响哪些评测集 | **假绿** | 「规则 → 评测集 → 结论」的依赖映射不存在。真实形态是「runstate 指纹 diff + 全量重跑才发现」。案例：旧报告的数字与今天同一套题跑出来的**不一样**，而这件事是**重跑才发现的**、不是算出来的（三组合对照见 `reports/repro-old-code.md`，叙事见 `DECISIONS.md` §5） |
 | ② | 结论可追到 数据集 → 切块 → 索引 → 模型/prompt 版本 | **旧路径真绿；新路径 2026-11-11 起接上** | `BASELINE-*.md` 报告头现在带 `kb/runstate.py` 指纹；切块/索引是（语料哈希 × 代码版本）的派生量、**不物化** ⇒ 指纹即索引版本 |
 | ③ | 改「命中」定义 → 报告自动跟着变 | **半绿** | 判分单源 + 报告全脚本生成 + `check_readme_numbers` 对账；但「自动」不成立：每份报告要手动重跑，且两份 2026-10-10 的旧报告曾挂着过期数（已加历史快照声明） |
 | ④ | 数据集内容变了但版本没变 → 报错 | **接近真绿 → 2026-11-11 补上最后一环** | run 级已真绿（改评测集必然换指纹，`tests/test_runstate.py` 守着）；缺的是 held-out 自己的校验和，已补 `evalset/heldout/questions.sha256` + `scripts/check_heldout_sha.py`（pre-push 跑）+ `tests/test_heldout_sha.py` 的变异用例 |
@@ -141,20 +141,22 @@ D:\Python-project\.venv\Scripts\python.exe eval\repro_old_code.py --variant curr
 | 层 | `recall5` | `no_miss` | `refuse_ok` | 题数 | 产物 |
 |---|---|---|---|---|---|
 | offline | 30/44 | 42/44 | 12/61 | 105 | `reports/promptfoo-offline.json` |
-| online | 40/44 | 42/44 | 41/61 | 105 | `reports/promptfoo-online.json` |
+| online | 41/44 | 43/44 | 39/61 | 105 | `reports/promptfoo-online.json` |
 
-> 口径定义见 `eval/metrics_spec.py`；本表来自 2 份跑批 JSON。
+> 口径定义见 `eval/summarize.py` 的 `METRICS`；本表来自 2 份跑批 JSON。
 > ⚠️ 层 `offline` 的 `refuse_ok` 不能用来谈「系统的拒答能力」：offline 层拒答只靠向量分 0.55 一道闸，那是已知边界。
 <!-- END:BASELINE -->
 
 ## 能读出的结论（只到"方向"这一级）
 
-- 查询改写 + 精排明显提高了应答题的**检索命中**（`recall5`），而 `no_miss`（漏答）
-  在两层上一样 —— 也就是说"多捞回来的题"里没有一道改变漏答；漏掉的那几道在检索层就没捞到
-  （看两份报告的逐题明细，说明列写着「gold 没进前 5 → 检索问题」）。
+- 查询改写 + 精排明显提高了应答题的**检索命中**（`recall5`）；而 `no_miss`（漏答）两层只差
+  一两题，且 online 层本身有抖动 —— 具体数看上面那张表（它由 `summarize.py` 现算），
+  别在散文里二次引用。
+- 漏掉的那几道在检索层就没捞到（看两份报告的逐题明细，说明列写着「gold 没进前 5 → 检索问题」）。
 - 离线层的 `refuse_ok` **不能**用来谈拒答能力（只有向量分 0.55 一道闸）。要谈拒答用 online 层。
-  这条纪律写在 `metrics_spec.py`，`summarize.py` 遇到 offline 层会在报告里主动打警告。
-- 配对显著性还没做（待办 2 的 `eval/gate.py`）：上面两条都只是**方向**，不是"显著"。
+  这条纪律的代码级来源是 `summarize.py` 的 `METRICS`；`summarize.py` 遇到 offline 层会在报告里主动打警告。
+- 上面几条都只是**方向**，不是"显著"：要谈显著，用 `eval/gate.py` 做配对 McNemar
+  （同层两次跑批；跨层它会直接拒绝比较）。
 
 ## 对账：证明"接线是忠实的"，以及退出码必须红
 
@@ -163,7 +165,7 @@ D:\Python-project\.venv\Scripts\python.exe eval\repro_old_code.py --variant curr
 
 - 同刻对账（2026-11-11）：promptfoo 与 `run_eval.py` 逐项一致。
   这一致**只证明接线对**（两边共用 `run_eval.py` 的同一份函数），**不证明指标本身是对的**。
-- 反向验证：把日志里的 `30/44` 改成 `35/44`、`12/61` 改成 `9/61` 两处，
+- 反向验证：把 run_eval 日志里的**任意两个通过数**各改一位（例如 30→35、12→9），
   对账立刻 2 项 ❌ 且退出码 1。（这条变异用例当场抓出了"只 print 红字、退出码却是 0"
   的假绿，见坑 6。）
 - 常驻判据（不依赖 node）：`tests/test_eval_reconcile.py` 直接比

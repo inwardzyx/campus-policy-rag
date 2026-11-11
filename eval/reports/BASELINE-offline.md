@@ -1,8 +1,12 @@
 # promptfoo 基线（held-out 105 题）
 
 - 评测层：**offline**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
-- 语料：入库 332 块 / 拦下 23 块
-- 生成时间：2026-11-11 15:34
+- 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
+- 生成时间：2026-11-11 16:04
+- 运行指纹：`4b8ec43aaea8`（`kb/runstate.py`；git `f6bc6980734f` dirty=`False`，python 3.14.6）
+- 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
+- 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。
+- ⚠️ 指纹里含**工作区未提交文件**（报告文件本身也算）⇒ 同一批产出的两份报告指纹会不同。判「是不是同一个系统」请看 `git_sha` 与语料哈希这两行；完整指纹只标识「这一次跑批的状态」。
 - 数据来源：`reports/promptfoo-offline.json`（本报告由 `eval/summarize.py` 生成，数字不手抄）
 
 | 指标 | 通过/总数 | 口径 | 分母 |
@@ -11,7 +15,9 @@
 | `no_miss` | 42/44 | 应答题没被误拒（knowledge_hit == true） | 应答题数 |
 | `refuse_ok` | 12/61 | 拒答题拒对了（knowledge_hit == false） | 拒答题数 |
 
-**口径纪律**（定义见 `eval/metrics_spec.py`，别在这份报告里另立一套）：
+> ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，同配置重跑也会有 ±1~3 题的抖动；**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar），不要直接比两个百分比。**
+
+**口径纪律**（定义见 `eval/summarize.py` 的 `METRICS`，别在这份报告里另立一套）：
 - 漏答率 ≠ Recall 的补集：一个看 gold 有没有进前 5，一个看管道最后有没有拒答。
 - 拒答正确率只能用 online 层；offline 的拒答数是单闸（向量分 0.55）边界，不代表系统能力。
 - 两层数字不可比，只能并列。
