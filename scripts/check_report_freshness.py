@@ -39,16 +39,20 @@
 ⚠️ `NON_AFFECTING` 是**排除清单**：清单外的一切都算"影响结果"。
 ⇒ 新增一个代码文件而忘了登记，检查会**误报 STALE**（宁可误报，不可漏报）。
 
-## 引用判定
+## 引用判定（豁免挂在【引用】上，不挂在【报告】上）
 
 扫 `README.md` / `START.md` / `DECISIONS.md` / `HANDOFF.md` / `eval/README.md` 里出现的报告路径：
 
-- 被引用（且该行**没有**标注历史快照的记号）+ 非 FRESH ⇒ **失败**（exit 1）
-- 被引用 + 该行标了记号（`历史快照` / `旧代码` / `已过期` / `复现不出` / `不可复现`）⇒ 只打印
+- 被引用（该行**没有**历史标记）+ 非 FRESH ⇒ **失败**（exit 1），并点出 `文件:行号`
+- 被引用 + 该行有标记（`历史快照` / `勿引用` / `旧代码` / `已过期` / `复现不出` / `不可复现`）⇒ 只打印
 - 未被引用 ⇒ 只打印，不影响退出码（**历史快照合法存在**）
 
-★ `HISTORICAL` 清单里的报告（`evalset/report-*-heldout.md`）**永不阻断** —— 它们就是"过期的历史快照"
-  这个类别本身；但仍然打印状态与被引用次数，方便人看。
+★★ 2026-11-11 修过一处真洞：豁免原来挂在**报告**上（在 `HISTORICAL` 清单里就永不放行），
+  于是「一份 UNVERIFIABLE 的报告被未标历史地引用了两次」也能 exit 0 —— 「未标历史」那列成了装饰。
+  规格要的是：
+    · 报告过期      → 合法（历史快照本来就该过期）
+    · 引用过期报告  → 不合法（这正是 README 引用不可复现数字的那个坑）
+  ⇒ `HISTORICAL` 现在只有"这是历史快照（预期会过期）"这个**展示**含义，**不再授予任何豁免**。
 
 ## 用法
 
@@ -75,13 +79,18 @@ BASELINE_GLOB = "eval/reports/*.md"
 HISTORICAL = (
     "evalset/report-vector-heldout.md",      # 2026-10-10 的 held-out 快照（旧代码）
     "evalset/report-rerank-heldout.md",      # 同上（rerank 层）
-    # ★ 一次性复现记录：它是"旧代码能不能复现"的证据，本来就不该新鲜，也没有报告头字段。
+    # ★ 一次性复现记录：它是"旧代码能不能复现"的证据，本来就不该新鲜。
     "eval/reports/repro-old-code.md",
+    # ★ 记录类：噪音地板度量的是**模型抖动**，不是"某版本的结论"；它过期是正常的
+    #   （换模型/prompt 之后本来就该重量）。引用它必须标「实测记录」。
+    "eval/reports/noise-floor.md",
 )
 #: 扫引用的文档
 DOCS = ("README.md", "START.md", "DECISIONS.md", "HANDOFF.md", "eval/README.md")
 #: 引用行里出现这些词 ⇒ 认为作者是在**引用一段历史**，不算"拿它当当前结论"
-MARKERS = ("历史快照", "旧代码", "已过期", "复现不出", "不可复现", "过期声明")
+#: 引用行里出现这些词 ⇒ 作者是在**明确引用一段历史**，不算"拿它当当前结论"。
+#: 规格写法：`（历史快照，勿引用）`。
+MARKERS = ("历史快照", "勿引用", "实测记录", "旧代码", "已过期", "复现不出", "不可复现", "过期声明")
 #: ★ 改了也**不影响**基线数字的路径（排除清单；清单外一律算"影响结果"）
 NON_AFFECTING = re.compile(
     r"^(?:"
@@ -93,6 +102,11 @@ NON_AFFECTING = re.compile(
     r"|docs?/.*\.md$"                  # 文档
     r"|.*\.md$"                        # 任何 markdown（README/START/DECISIONS/HANDOFF/报告说明）
     r"|eval/(?:repro_old_code|agreement|gate)\.py"  # 评测周边工具，不参与判分
+    # ★ `summarize.py` 只把已记录的跑批折成 md（数字来自 JSON，不来自它自己的运行）：
+    #   改它不改变一次测量的结果，只改变渲染。**代价**：md 与渲染器是否同步，本判据不管
+    #   —— 改过渲染逻辑就自己重生成 md；数字定义的正确性由 tests/test_eval_reconcile.py 与
+    #   `summarize --compare` 守。
+    r"|eval/summarize\.py"
     r")$"
 )
 
@@ -270,8 +284,8 @@ def main() -> int:
             return 2
         use = refs.get(rel, [])
         live = [u for u in use if not u[3]]
-        is_hist = rel in hist
-        blocking_here = bool(live) and status != "FRESH" and not is_hist
+        is_hist = rel in hist       # 仅用于展示（"预期会过期"），**不再豁免任何引用**
+        blocking_here = bool(live) and status != "FRESH"
         if blocking_here:
             blocking.append((rel, status))
         rows.append({
@@ -294,12 +308,16 @@ def main() -> int:
     print()
     if n_block:
         print(f"✗ {n_block} 份**被引用**的报告不是 FRESH —— 引用它们的地方必须改成指向新鲜产物，"
-              f"或把引用行标成历史快照：", file=sys.stderr)
+              f"或把引用行标成历史快照（如 `（历史快照，勿引用）`）：", file=sys.stderr)
         for rel, st in blocking:
             print(f"    {rel}  →  {st}", file=sys.stderr)
+            for f, line_no, text, _marked in [u for u in refs.get(rel, []) if not u[3]]:
+                snippet = text if len(text) <= 110 else text[:110] + "…"
+                print(f"        {f}:{line_no}  {snippet}", file=sys.stderr)
     else:
         print("✓ 没有「被引用的过期/不可证报告」"
-              f"（历史快照 {sum(1 for r in rows if r['hist'])} 份允许过期，只打印）")
+              f"（历史快照 {sum(1 for r in rows if r['hist'])} 份：报告本身允许过期，"
+              f"但引用它们必须带历史标记）")
 
     if args.strict and n_block:
         return 1

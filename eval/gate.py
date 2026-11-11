@@ -47,6 +47,24 @@ from kb.loopgate import apply_significance, decide, is_ok, mcnemar_exact   # noq
 #: 低于这个题数就提醒"别把方向当结论"（不拒绝出数 —— 精确检验本身会给出很大的 p）
 SMALL_N = 20
 
+#: 噪声地板（由 `eval/noise_floor.py` 量出来，不是手写的印象值）
+NOISE_FLOOR = HERE / "reports" / "noise-floor.json"
+
+
+def _noise_floor_lines(layer: str) -> list[str]:
+    """读量出来的地板；没量过就明说"未量"（缺失 ≠ 0）。"""
+    if not NOISE_FLOOR.exists():
+        return ["- 噪声地板：**未量**（缺 `reports/noise-floor.json`）—— 这时别解释小幅差异，"
+                "先跑 `eval/noise_floor.py` 把地板量出来。"]
+    nf = json.loads(NOISE_FLOOR.read_text(encoding="utf-8"))
+    rng = nf.get("observed_range") or {}
+    txt = "、".join(f"{k} ±{v.get('range')}" for k, v in rng.items()) or "（空）"
+    lines = [f"- 噪声地板（{nf.get('layer')} 层，{len(nf.get('runs') or [])} 次同配置实测）：{txt}"
+             f" ⇒ 小于等于这个幅度的差异**不解释**（出处 `reports/noise-floor.md`）"]
+    if nf.get("layer") != layer:
+        lines.append(f"  ⚠️ 地板量的是 `{nf.get('layer')}` 层，本次比的是 `{layer}` 层 —— 层不同，地板不适用")
+    return lines
+
 
 def _bucket(case: dict, metric: str) -> str:
     """把一条 case 的判据结果翻成 loopgate 的 bucket 语义（is_ok 只认 bucket）。
@@ -113,6 +131,7 @@ def main() -> int:
         f"> `decide()` 的 verdict 参考值：`{res['verdict']}`（理由：{res['reasons'] or '无'}）"
         " —— 那是 loopgate 的默认规则，不是发布建议。",
     ]
+    lines += _noise_floor_lines(la)
     if res["n_common"] < SMALL_N:
         lines.append(f"> ⚠️ 可比题数 {res['n_common']} < {SMALL_N}：即使 p 很小，也只是**方向性证据**，"
                      "别写成结论。")

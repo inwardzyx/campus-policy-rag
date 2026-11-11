@@ -61,6 +61,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))   # ★ 仓库根：要用 kb.runstate（同一把尺子算语料哈希）
 
 import summarize                              # noqa: E402  ★ 复用同一把尺子解析数字
 
@@ -191,11 +192,25 @@ def prepare(worktree: Path, variant: str) -> tuple[Path, dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", required=True, choices=["old", "current-shim", "current"])
+    ap.add_argument("--variant", required=False, choices=["old", "current-shim", "current"],
+                    help="跑哪一路；配合 --render-only 时可省略")
     ap.add_argument("--worktree", default=r"D:\_repro")
     ap.add_argument("--questions", default="evalset/heldout/questions.json")
     ap.add_argument("--reset", action="store_true", help="清空历史记录（重做一整套时用）")
+    ap.add_argument("--render-only", action="store_true",
+                    help="只从已有 JSON 重渲染 md（不重跑；改文档/报告头时用）")
     args = ap.parse_args()
+
+    if not args.render_only and not args.variant:
+        ap.error("--variant 是必需的（除非用 --render-only）")
+
+    if args.render_only:
+        if not RECORD_JSON.exists():
+            raise SystemExit(f"[FAIL] 没有记录可渲染：{RECORD_JSON}")
+        history = json.loads(RECORD_JSON.read_text(encoding="utf-8"))
+        render(history)
+        print(f"[ok] 已重渲染 {RECORD_MD}（{len(history)} 条记录，未重跑）")
+        return 0
 
     wt = Path(args.worktree)
     if not (wt / "service.py").exists():
@@ -227,6 +242,15 @@ def main() -> int:
     log.unlink(missing_ok=True)
     # ★ 索引单独量（见 PROBE 的注释）：不能用日志里那句合计
     idx = probe_index(root)
+    # ★ 逐目录语料哈希（docs/kb、docs/inbox）：报告头三字段之一。
+    #   用今天的 `kb.runstate.docs_state()` 去哈希**这个 root 的文件** —— 同一把尺子，
+    #   对象是那一版的语料；两份语料若有差异，它会如实给出不同的值。
+    try:
+        from kb.runstate import docs_state
+        _ds = docs_state(Path(root))
+        docs_dirs = {k: str((v or {}).get("hash") or "") for k, v in (_ds.get("dirs") or {}).items()}
+    except Exception as e:                             # noqa: BLE001
+        docs_dirs = {"error": f"{type(e).__name__}: {e}"}
 
     rec = {
         "variant": args.variant,
@@ -235,7 +259,8 @@ def main() -> int:
         "code": {"commit": before["commit"], "root": str(root),
                  "worktree_clean_before": before["status_clean"],
                  "worktree_clean_after": git(["status", "--porcelain"], root) == ""},
-        "data": {"questions_sha256": q_sha, "docs_tree_sha256": data_sha, "docs_files": n_files},
+        "data": {"questions_sha256": q_sha, "docs_tree_sha256": data_sha, "docs_files": n_files,
+                 "docs_dirs": docs_dirs},
         "index": idx,
         "script": {"path": str(script) if not str(script).startswith(str(wt))
                    else str(script.relative_to(wt)),
@@ -259,10 +284,43 @@ def main() -> int:
     return 0 if r.returncode == 0 else 1
 
 
+def _header_lines(history: list[dict]) -> list[str]:
+    """报告头的 git / 语料哈希三行（取**旧代码**那一跑：本文件讲的就是旧 commit）。
+
+    ★ 三组跑的 docs 语料哈希是相同的（同一个 worktree / 同一份 docs），
+      所以这里取哪一组都不影响"数据是哪一版"的结论；git 取 `old`（= worktree 的 commit）。
+    """
+    if not history:
+        return []
+    old = next((r for r in history if r["variant"] == "old"), history[0])
+    data = old.get("data") or {}
+    sha = (old.get("code") or {}).get("commit") or ""
+    dirs = data.get("docs_dirs") or {}
+    if not dirs:                                       # 旧记录：按 code.root 现算一次（便宜，不跑模型）
+        try:
+            from kb.runstate import docs_state
+            root = (old.get("code") or {}).get("root") or ""
+            dirs = {k: str((v or {}).get("hash") or "")
+                    for k, v in (docs_state(Path(root)).get("dirs") or {}).items()} if root else {}
+        except Exception:                              # noqa: BLE001
+            dirs = {}
+    kb, inbox = str(dirs.get("docs/kb") or "")[:8], str(dirs.get("docs/inbox") or "")[:8]
+    lines = ["- 说明：本文件描述 **旧代码**（worktree 里那个 commit）下的测量，**不是**当前基线。"]
+    if kb and inbox:
+        lines.append(f"- 运行指纹相关三字段：git `{sha[:40]}`；`docs/kb`={kb}；`docs/inbox`={inbox}"
+                     f"（用于 `scripts/check_report_freshness.py` 比对；缺失则会被判 UNVERIFIABLE）")
+    else:
+        lines.append("- ⚠️ 拿不到逐目录语料哈希 ⇒ 本文件会被新鲜度检查判 UNVERIFIABLE（缺失≠新鲜）")
+    return lines
+
+
 def render(history: list[dict]) -> None:
     """把 JSON 渲染成 md —— 报告里一个数都不手写。"""
     lines = ["# 旧报告能不能复现 / 两组数能不能相减（脚本生成，别手改）", "",
-             "> 生成者：`eval/repro_old_code.py`；数据来源：`eval/reports/repro-old-code.json`。", ""]
+             "> 生成者：`eval/repro_old_code.py`；数据来源：`eval/reports/repro-old-code.json`。", "",
+             # ★ 报告头三字段：让 `scripts/check_report_freshness.py` 能判"它属于哪个代码/语料版本"，
+             #   而不是只能判 UNVERIFIABLE（"说不清"本身也是丢信息：它其实说得清）。
+             ] + _header_lines(history) + [""]
 
     # 汇总表：一眼看"同不同路"。变体的语义见脚本顶部 docstring。
     lines += ["| 变体 | 代码 | 判分脚本 | docs 块 | 企业 demo 块 | chunk 文本 sha | recall5 | no_miss | refuse_ok |",

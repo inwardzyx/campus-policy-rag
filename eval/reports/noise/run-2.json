@@ -1,0 +1,697 @@
+{
+ "run": "run2",
+ "source": "online-run1.json",
+ "at": "2026-11-11 19:05",
+ "layer": "online",
+ "n_cases": 105,
+ "tally": {
+  "recall5": {
+   "pass": 42,
+   "total": 44
+  },
+  "no_miss": {
+   "pass": 44,
+   "total": 44
+  },
+  "refuse_ok": {
+   "pass": 38,
+   "total": 61
+  }
+ },
+ "cases": {
+  "h1": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h10": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h11": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h12": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h13": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h14": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h15": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "h16": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "h17": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "h18": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "h19": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "h2": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h20": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "h21": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h22": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h23": {
+   "type": "answer",
+   "scores": {
+    "recall5": 0,
+    "no_miss": 1
+   }
+  },
+  "h24": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h25": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h3": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h4": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h5": {
+   "type": "answer",
+   "scores": {
+    "recall5": 0,
+    "no_miss": 1
+   }
+  },
+  "h6": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h7": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h8": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "h9": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r1": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r10": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r11": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r12": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r13": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r14": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r15": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r16": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r17": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r18": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r19": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r2": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r20": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r21": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r22": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r23": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r24": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r25": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r26": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r27": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r28": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r29": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r3": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r30": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r31": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r32": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r33": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r34": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r35": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r36": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r37": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r38": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r39": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r4": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r40": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r41": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r42": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r43": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r44": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r45": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r46": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r47": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "r48": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r49": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r5": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r50": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "r6": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r7": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r8": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "r9": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "s1": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s10": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s11": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s12": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s13": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s14": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s15": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s16": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s17": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s18": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s19": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s2": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s20": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s21": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s22": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s23": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s24": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s25": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s26": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "s27": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "s28": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "s29": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "s3": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s30": {
+   "type": "answer",
+   "scores": {
+    "recall5": 1,
+    "no_miss": 1
+   }
+  },
+  "s4": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 0
+   }
+  },
+  "s5": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s6": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s7": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s8": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  },
+  "s9": {
+   "type": "refuse",
+   "scores": {
+    "refuse_ok": 1
+   }
+  }
+ }
+}

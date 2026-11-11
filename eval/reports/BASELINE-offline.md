@@ -2,7 +2,7 @@
 
 - 评测层：**offline**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
-- 生成时间：2026-11-11 18:23
+- 生成时间：2026-11-11 19:03
 - 运行指纹：`361a83ed6a50`（`kb/runstate.py`；git `8e29d78fe9b3` dirty=`False`，python 3.14.6）
 - 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
 - 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。
@@ -15,7 +15,7 @@
 | `no_miss` | 42/44 | 应答题没被误拒（knowledge_hit == true） | 应答题数 |
 | `refuse_ok` | 12/61 | 拒答题拒对了（knowledge_hit == false） | 拒答题数 |
 
-> ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，同配置重跑也会有 ±1~3 题的抖动；**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar），不要直接比两个百分比。**
+> ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，同配置重跑会有抖动；**地板是量出来的**（`eval/noise_floor.py` → `reports/noise-floor.md`），本报告不手写这个数。**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar，它会读那份地板），不要直接比两个百分比。**
 
 **口径纪律**（定义见 `eval/summarize.py` 的 `METRICS`，别在这份报告里另立一套）：
 - 漏答率 ≠ Recall 的补集：一个看 gold 有没有进前 5，一个看管道最后有没有拒答。

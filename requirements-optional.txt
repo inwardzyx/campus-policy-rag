@@ -1,0 +1,19 @@
+# 可选依赖（CI **不**装；本机按需装）
+
+> `requirements.txt` 是"装了就一定能跑 CI 与产品路径"的最小集。
+> 这份是**会改变行为**的可选项 —— 装与不装，同一条判据走不同分支，所以单独列出来。
+
+## 版面解析后端（扫描版 PDF）
+
+```powershell
+D:\Python-project\.venv\Scripts\python.exe -m pip install docling
+```
+
+- **为什么列进来**：`kb/source.py::_read_pdf` 的 `auto` 分支是「先 pypdf；失败再试已安装的
+  Docling / MinerU」。所以**装不装 docling 会让行为不同**：
+  - 不装（= CI 的环境）：扫描版 PDF 抛 `ParseError("PDF 没有可提取文本…扫描件…")`
+  - 装了（= 本机 2026-11-11 的环境）：扫描版 PDF 被版面解析接管，能解析出正文
+- **判据怎么办**：`tests/test_pdf_samples.py::test_scanned_pdf_never_silently_empty`
+  按环境分派断言，但**不变量不变**——扫描件**不许「返回空文本且不报错」**。
+  用 `skipif` 把它跳掉是假的：那会让这条不变量在有后端的机器上永久消失。
+- **MinerU 不走 pip**：它是外部命令，用 `MINERU_CMD` / `MINERU_ARGS` 指定（见 `kb/layout.py`）。

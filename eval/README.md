@@ -37,7 +37,7 @@ eval/summarize.py（出报告，数字全现算）──▶ eval/reports/BASELIN
 
 | # | 判据 | 状态 | 证据 / 缺口 |
 |---|---|---|---|
-| ① | 改清洗规则 → 自动算出影响哪些评测集 | **假绿** | 「规则 → 评测集 → 结论」的依赖映射不存在。真实形态是「runstate 指纹 diff + 全量重跑才发现」。案例：旧报告的数字与今天同一套题跑出来的**不一样**，而这件事是**重跑才发现的**、不是算出来的（三组合对照见 `reports/repro-old-code.md`，叙事见 `DECISIONS.md` §5） |
+| ① | 改清洗规则 → 自动算出影响哪些评测集 | **假绿** | 「规则 → 评测集 → 结论」的依赖映射不存在。真实形态是「runstate 指纹 diff + 全量重跑才发现」。案例：旧报告的数字与今天同一套题跑出来的**不一样**，而这件事是**重跑才发现的**、不是算出来的（三组合对照见 `reports/repro-old-code.md`（历史快照，勿引用），叙事见 `DECISIONS.md` §5） |
 | ② | 结论可追到 数据集 → 切块 → 索引 → 模型/prompt 版本 | **旧路径真绿；新路径 2026-11-11 起接上** | `BASELINE-*.md` 报告头现在带 `kb/runstate.py` 指纹；切块/索引是（语料哈希 × 代码版本）的派生量、**不物化** ⇒ 指纹即索引版本 |
 | ③ | 改「命中」定义 → 报告自动跟着变 | **半绿** | 判分单源 + 报告全脚本生成 + `check_readme_numbers` 对账；但「自动」不成立：每份报告要手动重跑，且两份 2026-10-10 的旧报告曾挂着过期数（已加历史快照声明） |
 | ④ | 数据集内容变了但版本没变 → 报错 | **接近真绿 → 2026-11-11 补上最后一环** | run 级已真绿（改评测集必然换指纹，`tests/test_runstate.py` 守着）；缺的是 held-out 自己的校验和，已补 `evalset/heldout/questions.sha256` + `scripts/check_heldout_sha.py`（pre-push 跑）+ `tests/test_heldout_sha.py` 的变异用例 |
@@ -173,9 +173,9 @@ D:\Python-project\.venv\Scripts\python.exe eval\repro_old_code.py --variant curr
 - 常驻判据（不依赖 node）：`tests/test_eval_reconcile.py` 直接比
   `case_server._payload` 与 `run_eval` 的逐题结论 + 汇总，把"两把尺子分叉"变成一条会红的用例。
 
-## 两组数能不能相减（2026-11-11 实测，证据在 `reports/repro-old-code.md`）
+## 两组数能不能相减（2026-11-11 实测，证据在 `reports/repro-old-code.md`（历史快照，勿引用））
 
-`evalset/report-vector-heldout.md`（2026-10-10，commit `a9e4f85`）与今天的基线数字不同。
+`evalset/report-vector-heldout.md`（历史快照，勿引用）（2026-10-10，commit `a9e4f85`）与今天的基线数字不同。
 在说任何"退化/提升"之前，必须先证明它们在同一条测量路上。
 
 做法：`git worktree` 把 `a9e4f85` 拿出来，用**三种组合**各跑一次（产物里记 commit sha、
@@ -187,7 +187,7 @@ questions sha、docs 语料树 sha、判分脚本 sha、入库块数）：
 | 当前脚本 + 旧代码 | 当前（复制进 worktree，带 `handle_chat = chat` shim） | 263 | 0 | 三组相同 | **与上一行完全一致** |
 | 当前脚本 + 当前代码 | 当前 | 263 | 69 | 三组相同 | 今天基线 |
 
-> 具体数字与 sha 见 `reports/repro-old-code.md`（脚本生成，本文件不手抄）。
+> 具体数字与 sha 见 `reports/repro-old-code.md`（历史快照，勿引用）（脚本生成，本文件不手抄）。
 > ⚠️ **别拿「合计块数」比**：本机 `kb_data/` 里有 69 块 demo 企业语料，
 > `len(rag.chunks)` 会把它算进去（263+69），而评测请求不带 namespace、`search()` 只查 default
 > ⇒ 那 69 块**根本不参与**。我第一版就是拿合计 332 去跟 263 比，误读成"切分变了"。
@@ -209,6 +209,38 @@ questions sha、docs 语料树 sha、判分脚本 sha、入库块数）：
 第一次跑还踩过两次：漏了 `sys.path`、以及 `run_eval` 的 `logging.basicConfig` 只在
 `__main__` 下执行 ⇒ 退出码 0、一个字都没有（"全绿"其实是全空）。产物里对空结果写的是
 「没解析出任何数字」，不是 0。
+
+## 新鲜度保鲜：哪条判据守哪一件事
+
+| 谁 | 比什么 | 抓什么 |
+|---|---|---|
+| `scripts/check_readme_numbers.py` | README ↔ 产物 | README 的数字与产物不一致 |
+| `scripts/check_report_freshness.py` | 产物 ↔ **当前 HEAD + 当前语料** | 报告过期，而**有人还在引用它** |
+| `tests/test_eval_reconcile.py` | case_server ↔ run_eval | 两把尺子分叉 |
+| `eval/summarize.py --compare` | 自己 ↔ run_eval 同刻跑批 | 接线错 |
+
+**引用级豁免**：报告过期是合法的（历史快照本来就该过期）；不合法的是**引用过期报告而不标注**。
+所以标记写在**引用行**上，不是挂在报告上：`（历史快照，勿引用）` / `（实测记录…）`。
+没标的引用 ⇒ exit 1，并点出 `文件:行号`。
+
+## 这套检查如果坏掉，会怎样
+
+> 这一节是给人看的"怎么怀疑它"。写下来的原因：**假绿比没有检查更坏**。
+
+1. **报告全变 UNVERIFIABLE，程序仍 exit 0** ⇒ 坏。标准形态：指纹来源失效（`capture()` 返回空），
+   而比较用了 `"abc".startswith("")` 恒真 ⇒ 语料被判"没变" ⇒ 反而 FRESH。
+   （2026-11-11 自测判据 ⑥ 就是这么抓出来的；现在拿不到当前语料哈希 ⇒ 一律 UNVERIFIABLE。）
+2. **两份基线一直 FRESH，可 `service.py` 已改过好几轮** ⇒ 坏。要么 `NON_AFFECTING` 写太宽，
+   要么 `git diff` 在浅克隆里静默返回空。
+3. **「未标历史」那一列是装饰**（一份 UNVERIFIABLE 的报告被未标历史地引用，检查器仍绿）⇒ 坏。
+   这是豁免挂错地方的症状：豁免必须挂在**引用**上，不能挂在**报告**上。
+   （2026-11-11 实跑发现并修过；现在红的时候会点名到 `文件:行号`。）
+4. **CI 绿、本地红（或反过来）** ⇒ 多半是 fetch-depth / 浅克隆 / 工作区脏，不是报告真的老。
+5. **`gate.py` 报出一个"显著改善"，但幅度小于噪声地板** ⇒ 坏。地板来自
+   `reports/noise-floor.md`（实测记录，由 `eval/noise_floor.py` 量出来，不是手写）；
+   读不到地板时 gate 会明说"未量"，这时**不要**解释小幅差异。
+6. **它永远红** ⇒ 语义又被写成了不可满足的口径（`--strict-sha` 就是那个反例：已入库报告一出生就 STALE）。
+   常红 = 把警报贴住。
 
 ## 坑（全部实测踩到）
 

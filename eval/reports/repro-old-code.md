@@ -2,6 +2,9 @@
 
 > 生成者：`eval/repro_old_code.py`；数据来源：`eval/reports/repro-old-code.json`。
 
+- 说明：本文件描述 **旧代码**（worktree 里那个 commit）下的测量，**不是**当前基线。
+- 运行指纹相关三字段：git `a9e4f85e3d07a513ea70e6efc5f6c58559f93c3e`；`docs/kb`=d39a8542；`docs/inbox`=cb62f2bf（用于 `scripts/check_report_freshness.py` 比对；缺失则会被判 UNVERIFIABLE）
+
 | 变体 | 代码 | 判分脚本 | docs 块 | 企业 demo 块 | chunk 文本 sha | recall5 | no_miss | refuse_ok |
 |---|---|---|---|---|---|---|---|---|
 | `old` | 旧代码 `a9e4f85e` | 旧（worktree） | 263 | 0 | `9f35434c857c…` | 35/44 | 42/44 | 9/61 |

@@ -186,9 +186,9 @@ def render_case_report(cases: list[dict], src: Path, compare: Path | None) -> st
         "",
         *_metric_table(n),
         "",
-        "> ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，"
-        "同配置重跑也会有 ±1~3 题的抖动；**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar），"
-        "不要直接比两个百分比。**",
+        "> ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，同配置重跑会有抖动；"
+        "**地板是量出来的**（`eval/noise_floor.py` → `reports/noise-floor.md`），本报告不手写这个数。"
+        "**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar，它会读那份地板），不要直接比两个百分比。**",
         "",
         "**口径纪律**（定义见 `eval/summarize.py` 的 `METRICS`，别在这份报告里另立一套）：",
     ]
