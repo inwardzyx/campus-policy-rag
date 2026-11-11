@@ -16,10 +16,20 @@
 - `test_payload_matches_run_eval_on_sample`：真·跨实现比较 —— `case_server._payload` 的结论
   对上 `run_eval.recall_gold` / `run_eval.knowledge_hit`。
 
-★ 为什么第二个只抽样：全量要把每道题搜两遍，实测会把 pytest 拖成半分钟量级；
-  抽样是**确定性**的（固定 stride），不是随机 —— 随机抽样会让"这条用例今天红明天绿"。
-★ 反向验证（2026-11-11 实测）：把 `case_server.py` 里的 `k=5` 改成 `k=4`，
-  两条用例都会红（第一条由"候选必须是 5 条"抓住，第二条由 Recall@5 结论不一致抓住）。
+★ 抽样是**确定性**的（固定 stride），不是随机 —— 随机抽样会让"这条用例今天红明天绿"。
+  recall5 那一维**不抽样**（44 道应答题全比），多花约 4 秒换"改了命中定义就一定红"。
+
+★★ 反向验证矩阵（2026-11-11 实测，三种变异各跑一遍；每条都是**跑出来的**，不是推的）：
+
+| 变异 | 第一条（自洽） | 第二条（跨实现） |
+|---|---|---|
+| `k=5 → k=4` | ❌ 红（"候选只有 4 条（应 ≥5）"） | ✅ 绿 |
+| gold 比对只留 `doc`、丢掉 `clause` | ❌ 红（`gold_rank` 与 `gold_hit` 不自洽） | ✅ 绿 |
+| `gold_hit = True`（逻辑写反） | ❌ 红 | ❌ 红 |
+
+为什么第二条只对最后一种敏感：`gold_hit` 本来就是 `R.recall_gold()` 算出来的，
+前两种改的是它**周边**（k、rank 的比较），只有把那个调用本身换掉才会出现"跨实现分歧"。
+⇒ 两条分工：第一条守"公式与形状"，第二条守"与 run_eval 的电路没被换掉"。**第一条是主判据。**
 """
 
 import os
@@ -100,8 +110,18 @@ def test_payload_gold_hit_is_consistent(prepared, payloads):
 
 
 def test_payload_matches_run_eval_on_sample(prepared, payloads):
-    """跨实现抽样比较：payload 的结论必须等于 run_eval 自己算出来的结论。"""
-    qids = sorted(payloads)[::10]                    # 确定性抽样，不随机
+    """跨实现抽样比较：payload 的结论必须等于 run_eval 自己算出来的结论。
+
+    ★ 抽样是**确定性**的（`sorted(...)[::10]`），不是随机 —— 随机会让"今天红明天绿"。
+    ★ recall5 这一维**不抽样**（44 道应答题全比）：多花 44 次检索（约 4 秒），
+      换来"改了命中定义就一定红"。实测（2026-11-11）：把 gold 的比对从 `(doc, clause)`
+      改成"只比 doc"时，**抽样版本抓不到**（抽到的那几题恰好没有同文档不同条款），
+      全比版本才红 —— 抽样抽的是"看起来均匀"，不是"判据的敏感点"。
+    ★ 反例边界：把 `k=5` 改成 `k=4` 时**任何版本都抓不到结论差异**，因为当前这版 105 题里
+      没有一道"gold 恰好排第 5"；那种改法由**第一条**用例（候选必须 ≥5 条）守。
+    """
+    qids = sorted(payloads)[::10]                    # knowledge_hit 的确定性抽样
+    qids += [q for q, p in payloads.items() if p["type"] == "answer" and q not in qids]
     bad = []
     for qid in qids:
         q, p = prepared._BY_ID[qid], payloads[qid]
