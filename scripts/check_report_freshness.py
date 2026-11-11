@@ -115,10 +115,15 @@ def current_state() -> dict:
     import kb.runstate as rs
     st = rs.capture(ROOT, note="check_report_freshness")
     dirs = (st.get("docs") or {}).get("dirs") or {}
+    docs = {k: str((v or {}).get("hash") or "") for k, v in dirs.items()}
+    # ★ 关键防线：拿不到当前语料哈希时，**不许**用它去比 ——
+    #   `"abc…".startswith("")` 恒为 True，会把"语料没变"凭空判成真（假绿）。
+    docs_ok = bool(docs.get("docs/kb")) and bool(docs.get("docs/inbox"))
     return {
         "sha": _git("rev-parse", "HEAD"),
         "dirty": bool((st.get("git") or {}).get("dirty")),
-        "docs": {k: str((v or {}).get("hash") or "") for k, v in dirs.items()},
+        "docs": docs,
+        "docs_ok": docs_ok,
         "fingerprint": st.get("fingerprint"),
     }
 
@@ -170,6 +175,9 @@ def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
     missing = [k for k in ("git", "docs_kb", "docs_inbox") if not h.get(k)]
     if missing:
         return "UNVERIFIABLE", f"报告头缺字段：{' / '.join(missing)}"
+
+    if not cur.get("docs_ok", True):
+        return "UNVERIFIABLE", "拿不到当前语料哈希（kb.runstate 没给出 docs/kb 或 docs/inbox）"
 
     cur_kb, cur_inbox = cur["docs"].get("docs/kb", ""), cur["docs"].get("docs/inbox", "")
     data_same = (h["docs_kb"].startswith(cur_kb) or cur_kb.startswith(h["docs_kb"])) and \

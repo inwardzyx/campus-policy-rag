@@ -2,7 +2,7 @@
 
 - 评测层：**online**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
-- 生成时间：2026-11-11 16:04
+- 生成时间：2026-11-11 18:22
 - 运行指纹：`6ca9b834a467`（`kb/runstate.py`；git `f6bc6980734f` dirty=`True`，python 3.14.6）
 - 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
 - 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。
