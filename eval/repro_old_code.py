@@ -114,11 +114,16 @@ sys.path.insert(0, os.getcwd())
 import service as svc
 
 svc.rag.startup()
-docs = svc.rag._doc_chunks
+rag = svc.rag
+# ★ `_doc_chunks` 是 2026-10-12 才加的属性，旧 commit 上没有 —— 用 namespace 兜底，
+#   否则旧版本探出来的数是 None，而 None 会被读成"那个版本没有语料"（缺失≠零，这里要的是真值）。
+docs = getattr(rag, "_doc_chunks", None)
+if docs is None:
+    docs = [c for c in rag.chunks if (c.get("namespace") or "default") == "default"]
 print("PROBE:" + json.dumps({
     "docs_chunks": len(docs),
-    "enterprise_chunks": len(getattr(svc.rag, "enterprise_chunks", []) or []),
-    "rejected": len(svc.rag.rejected),
+    "enterprise_chunks": len(rag.chunks) - len(docs),
+    "rejected": len(rag.rejected),
     "chunk_text_sha256": hashlib.sha256(
         "\\n".join(sorted(c["text"] for c in docs)).encode("utf-8")).hexdigest(),
 }, ensure_ascii=False))

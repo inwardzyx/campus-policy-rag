@@ -1,7 +1,7 @@
 [
   {
     "variant": "old",
-    "at": "2026-11-11 15:38:35",
+    "at": "2026-11-11 16:17:08",
     "exit_code": 0,
     "code": {
       "commit": "a9e4f85e3d07a513ea70e6efc5f6c58559f93c3e",
@@ -15,7 +15,10 @@
       "docs_files": 16
     },
     "index": {
-      "error": "加载时清洗了 10 块：截断丢字 8 处（丢 4195 字）、剥离网页页脚 2 处（丢 563 字）\nTraceback (most recent call last):\n  File \"<string>\", line 13, in <module>\n    docs = svc.rag._doc_chunks\n           ^^^^^^^^^^^^^^^^^^^\nAttributeError: 'RAG' object has no attribute '_doc_chunks'\n"
+      "docs_chunks": 263,
+      "enterprise_chunks": 0,
+      "rejected": 23,
+      "chunk_text_sha256": "9f35434c857cc2f9ac263a60f0c1caa6332c2e743f620a9d097acb9d99b02133"
     },
     "script": {
       "path": "evalset\\run_eval.py",
@@ -38,11 +41,11 @@
         61
       ]
     },
-    "raw_tail": "2026-11-11 15:38:15,119 [INFO] __main__: 入库 263 块，拦下 23 块\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？\n2026-11-11 15:38:18,974 [INFO] __main__: 耗时 18.2s"
+    "raw_tail": "2026-11-11 16:16:40,987 [INFO] __main__: 入库 263 块，拦下 23 块\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？\n2026-11-11 16:16:42,787 [INFO] __main__: 耗时 23.5s"
   },
   {
     "variant": "current-shim",
-    "at": "2026-11-11 15:39:13",
+    "at": "2026-11-11 16:18:07",
     "exit_code": 0,
     "code": {
       "commit": "a9e4f85e3d07a513ea70e6efc5f6c58559f93c3e",
@@ -56,7 +59,10 @@
       "docs_files": 16
     },
     "index": {
-      "error": "加载时清洗了 10 块：截断丢字 8 处（丢 4195 字）、剥离网页页脚 2 处（丢 563 字）\nTraceback (most recent call last):\n  File \"<string>\", line 13, in <module>\n    docs = svc.rag._doc_chunks\n           ^^^^^^^^^^^^^^^^^^^\nAttributeError: 'RAG' object has no attribute '_doc_chunks'\n"
+      "docs_chunks": 263,
+      "enterprise_chunks": 0,
+      "rejected": 23,
+      "chunk_text_sha256": "9f35434c857cc2f9ac263a60f0c1caa6332c2e743f620a9d097acb9d99b02133"
     },
     "script": {
       "path": "evalset\\_shim_run_current.py",
@@ -87,14 +93,14 @@
         61
       ]
     },
-    "raw_tail": "2026-11-11 15:38:51,333 [INFO] _run_eval_current: 入库 263 块，拦下 23 块\n- s22: 误答 [clear]  生源地助学贷款毕业后多久要开始还？有没有宽限期？\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？"
+    "raw_tail": "2026-11-11 16:17:32,022 [INFO] _run_eval_current: 入库 263 块，拦下 23 块\n- s22: 误答 [clear]  生源地助学贷款毕业后多久要开始还？有没有宽限期？\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？"
   },
   {
     "variant": "current",
-    "at": "2026-11-11 15:40:05",
+    "at": "2026-11-11 18:09:40",
     "exit_code": 0,
     "code": {
-      "commit": "76f64a106e6627d8acc532645c81307fec123de5",
+      "commit": "466d368cb0e4a408d42d6c7d883fc8f04b9df849",
       "root": "D:\\_review_rag-cs",
       "worktree_clean_before": false,
       "worktree_clean_after": false
@@ -131,6 +137,50 @@
         61
       ]
     },
-    "raw_tail": "2026-11-11 15:39:36,052 [INFO] __main__: 入库 332 块，拦下 23 块\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？\n2026-11-11 15:39:40,170 [INFO] __main__: 耗时 24.6s"
+    "raw_tail": "2026-11-11 18:09:05,756 [INFO] __main__: 入库 332 块，拦下 23 块\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？\n2026-11-11 18:09:10,627 [INFO] __main__: 耗时 39.2s"
+  },
+  {
+    "variant": "current",
+    "at": "2026-11-11 18:12:39",
+    "exit_code": 0,
+    "code": {
+      "commit": "466d368cb0e4a408d42d6c7d883fc8f04b9df849",
+      "root": "D:\\_review_rag-cs",
+      "worktree_clean_before": false,
+      "worktree_clean_after": false
+    },
+    "data": {
+      "questions_sha256": "45b72e253a7ccd421ac44744fe0367b9e6bf9eccfa292c65db62f9b88c8f97df",
+      "docs_tree_sha256": "6beb6f5968481a5fe787344f9fd66741655150886385727158c95af213ecea44",
+      "docs_files": 16
+    },
+    "index": {
+      "docs_chunks": 263,
+      "enterprise_chunks": 69,
+      "rejected": 23,
+      "chunk_text_sha256": "9f35434c857cc2f9ac263a60f0c1caa6332c2e743f620a9d097acb9d99b02133"
+    },
+    "script": {
+      "path": "D:\\_review_rag-cs\\evalset\\run_eval.py",
+      "sha256": "649d4b62c51131aad11a7519ab7107764ed8cd10c3e8ca3f83ccb8d8e1f5f8f1",
+      "script_origin": "当前仓库",
+      "worktree_modified": []
+    },
+    "python": "3.14.6",
+    "numbers": {
+      "no_miss": [
+        42,
+        44
+      ],
+      "recall5": [
+        30,
+        44
+      ],
+      "refuse_ok": [
+        12,
+        61
+      ]
+    },
+    "raw_tail": "2026-11-11 18:12:08,935 [INFO] __main__: 入库 332 块，拦下 23 块\n- s23: 误答 [clear]  我今年录取后直接去当兵了、没来报到，家里挺困难的，国家助学金能申请吗？\n- s24: 误答 [clear]  处分规定里白纸黑字写『学生工作处』，可现在学校文件都写『党委学生工作部』，我要交申诉材料到底找哪个部门？\n- s25: 误答 [clear]  五一我外校的高中同学跟着我们班出去活动，路上受了伤，学校这规定管他吗？\n2026-11-11 18:12:14,012 [INFO] __main__: 耗时 29.5s"
   }
 ]
