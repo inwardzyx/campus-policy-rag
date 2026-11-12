@@ -146,25 +146,30 @@ def run_live(base: str, limit: int | None, only: str) -> list[dict]:
 
 
 def _version_lines() -> list[str]:
-    """与其它报告同款的四行头（没这四行，新鲜度检查会判 UNVERIFIABLE）。"""
-    import kb.runstate as rs
+    """与其它报告同款的四行头（没这四行，新鲜度检查会判 UNVERIFIABLE）。
+
+    ★ 踩过一次坑：`capture()` 的层级是 `docs["dirs"]["docs/kb"]["hash"]`、
+      python 在 `runtime["python"]` —— 我第一版按 `docs["docs/kb"]` 读，
+      结果语料哈希**静默为空**，报告被判 UNVERIFIABLE（不报错，只是判不出来）。
+    """
     from pathlib import Path
-    # ★ capture() 的 docs_state 要求 Path；传 str 不报错，只是**静默返回空语料哈希** ——
-    #   然后新鲜度检查会判 UNVERIFIABLE。今天在这里踩了一次。
+
+    import kb.runstate as rs
     st = rs.capture(Path(_ROOT), note="eval/agent_metrics")
     git = st.get("git") or {}
-    docs = st.get("docs") or {}
+    dirs = (st.get("docs") or {}).get("dirs") or {}
     dep = rs.deps_state(_ROOT)
     lay = rs.layout_state()
+    kb = (dirs.get("docs/kb") or {}).get("hash") or ""
+    inbox = (dirs.get("docs/inbox") or {}).get("hash") or ""
     return [
         f"- 运行指纹：`{st.get('fingerprint')}`（`kb/runstate.py`；git `{str(git.get('sha'))[:12]}`"
-        f" dirty=`{git.get('dirty')}`，python {st.get('python')}）",
+        f" dirty=`{git.get('dirty')}`，python {(st.get('runtime') or {}).get('python')}）",
         f"- 依赖指纹：{'、'.join(f'`{k}`={v}' for k, v in dep.items()) or '**未记录**'}"
         f"（`requirements*.txt` 的 sha256 前 8 位）",
         f"- 版面后端：auto 会选 `{lay.get('auto_would_use')}`；"
         f"可用 `{'、'.join(lay.get('available') or []) or '无'}`；PDF_BACKEND=`{lay.get('pdf_backend')}`",
-        f"- 语料哈希：`docs/kb`={(docs.get('docs/kb') or '')[:8]}；"
-        f"`docs/inbox`={(docs.get('docs/inbox') or '')[:8]}",
+        f"- 语料哈希：`docs/kb`={kb[:8]}；`docs/inbox`={inbox[:8]}",
     ]
 
 
