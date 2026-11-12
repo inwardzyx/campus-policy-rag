@@ -72,7 +72,33 @@
 **回滚点**：Step 1 全部在 `AGENT_ENABLED` 后面；任何时候改回 off，产品路径零影响。
 **放弃条件**：若 1.3 的拒答准确率掉到 <34/61，**停下来修门禁**，不进 Step 2 —— "agent 更容易瞎答"是真实风险，不能带病上线。
 
-### Step 2（第 3–4 天）前端：把"过程"画出来
+### Step 2（第 3–4 天）前端：把「过程」画出来 —— **已完成（非流式版，2026-11-12）**
+
+> 实际落地比计划小一号，原因写在这里：Java 层**没有** `/api/chat/stream` 的 SSE 转发
+> （前端一直是「问一句等一个 JSON」）。要做**实时**时间线，得先在 Java 里加 SSE 穿透，
+> 那是另一件事。这一版先把「过程」在响应里带回来并画出来 —— 用户能看到每一步，
+> 只是不是边跑边看。**Step 2b（SSE 穿透）留到 Step 3 之后。**
+>
+> 已落地：
+> - `apps/web/src/agentTimeline.ts`：**判据纯函数** `verdictOf` / `stepTone`（7 条单测）
+> - `apps/web/src/components/AgentTimeline.vue`：步骤列表（工具 / 参数 / 耗时 / 命中数 / 失败标红）
+> - `apps/web/src/views/ChatView.vue`：Agent 模式开关；404 时提示「agent 未启用」并**回退**到 /chat
+> - Java：`Dto.AgentResponse`、`PythonAiClient.agent()`、`ChatService.agent()`（配额 → 调用 → 审计，
+>   新增 `degraded` 决策档）、`POST /api/agent`
+> - `apps/web/src/api.ts`：`askAgent()` + 类型
+
+**Step 2 的判据（已用单测钉住，不依赖浏览器）**
+
+| # | 判据 | 用例 |
+|---|---|---|
+| 2.1 | 零步骤 / 工具全失败 ⇒ **不许显示成成功** | `verdictOf([], 'done') → error`；`tool_error → error` |
+| 2.2 | 撞上限 / 超预算 ⇒ 必须显式写「被截断」 | `max_rounds` / `budget` → warn，detail 含「截断」 |
+| 2.3 | 未知 `stopped_reason` ⇒ 不许当成功 | `something_new → warn / 状态未知` |
+
+原计划的「缺 `tool_result` 事件必须显示未完成」随 SSE 一起挪到 Step 2b；
+现在这条判据的等价物是 2.1（零步骤 = 没有证据）。
+
+<details><summary>原计划（保留，作为 Step 2b 的依据）</summary>
 
 **改什么**
 - 新组件 `apps/web/src/components/AgentTimeline.vue`：接收 SSE 四类事件，渲染可折叠步骤列表
@@ -88,6 +114,7 @@
 | 2.3 | 关掉 Agent 开关时，页面与现在一致 | 同 1.4 的方式截对比图 |
 
 **回滚点**：开关关闭即回到现 UI；组件独立，不改现有 ChatView 的渲染路径。
+</details>
 
 ### Step 3（第 5–6 天）评测：agent 的三条指标进流水线
 

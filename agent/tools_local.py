@@ -35,8 +35,8 @@ class ToolError(RuntimeError):
     """工具失败。与 `mcp.tools_impl.ToolError` 同名同义，但**这个会抛出去**（见模块说明）。"""
 
 
-def search_policy(query: str, k: int = 5) -> str:
-    """拿原文条款。★ 走 `handle_chat` 的**完整拒答门禁**（精排 < 5 分 = 库里没有）。
+def search_policy(query: str, k: int = 5, roles=None) -> str:
+    """拿原文条款。★ 走 `handle_chat` 的**完整拒答门禁**（roles 一路传到块级 ACL）（精排 < 5 分 = 库里没有）。
 
     ★★ 两份实现为什么都退回 `handle_chat`（2026-11-12 实测，两次踩坑）：
       第一版：裸 `rag.search`（top-5 直接喂）⇒ 拒答 4/8（/chat 是 8/8）；
@@ -51,7 +51,7 @@ def search_policy(query: str, k: int = 5) -> str:
     if not svc.rag.ready:
         raise ToolError("模型还在加载（rag 未就绪）")
     try:
-        resp = svc.handle_chat(svc.ChatRequest(question=query))
+        resp = svc.handle_chat(svc.ChatRequest(question=query), roles=roles)
     except Exception as e:                                  # noqa: BLE001
         raise ToolError(f"检索失败：{type(e).__name__}: {e}") from e
     srcs = [{"doc": s.doc, "text": s.text, "score": float(s.score or 0.0)}
@@ -61,14 +61,14 @@ def search_policy(query: str, k: int = 5) -> str:
     return _format_sources(srcs) + _signal_line("hit", "search_policy", len(srcs))
 
 
-def ask_policy(question: str) -> str:
+def ask_policy(question: str, roles=None) -> str:
     """走完整管道拿成答：直接调 `handle_chat`（与 `/chat` 同一个入口，含拒答与引用）。"""
     import service as svc
 
     if not svc.rag.ready:
         raise ToolError("模型还在加载（rag 未就绪）")
     try:
-        resp = svc.handle_chat(svc.ChatRequest(question=question))
+        resp = svc.handle_chat(svc.ChatRequest(question=question), roles=roles)
     except Exception as e:                                  # noqa: BLE001
         raise ToolError(f"问答失败：{type(e).__name__}: {e}") from e
     srcs = getattr(resp, "sources", []) or []

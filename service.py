@@ -2117,8 +2117,13 @@ def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
     def worker():
         token = set_current_ledger(led)          # ★ 账本在真正调模型的线程里绑
         try:
+            from agent.tools_local import ask_policy, search_policy
+            tools = {
+                "search_policy": lambda query, k=5: search_policy(query, k=k, roles=roles),
+                "ask_policy": lambda question: ask_policy(question, roles=roles),
+            }
             run_loop(req.question, max_rounds=req.max_rounds, budget_tokens=req.budget_tokens,
-                     on_event=q.put, tools=None)
+                     on_event=q.put, tools=tools)
         except Exception as e:                    # noqa: BLE001
             holder["error"] = f"{type(e).__name__}: {e}"
             q.put({"type": "error", "detail": holder["error"]})
@@ -2149,10 +2154,16 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
                              stopped_reason="error", rounds=0, took_ms=0, agent_used=True)
     # ★ 复用同一个 ChatDeepSeek 实例（`rag.llm` 已经是"用到才建"），只额外 bind_tools。
     from mcp.tool_schemas import MODEL_SCHEMAS
-    from agent.tools_local import TOOL_IMPL as AGENT_TOOLS   # ★ 进程内工具，不走 MCP 的 HTTP 跳转
+    from agent.tools_local import ask_policy, search_policy
+    # ★★ roles 必须一路传到工具：agent 自己决定调哪个工具，但**权限不是模型的事**。
+    #   漏传的后果不是报错，是"检索没按 ACL 过滤"—— 看起来一切正常，数据已经越权。
     bound = rag.llm.bind_tools(MODEL_SCHEMAS)
+    tools = {
+        "search_policy": lambda query, k=5: search_policy(query, k=k, roles=roles),
+        "ask_policy": lambda question: ask_policy(question, roles=roles),
+    }
     rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
-                   budget_tokens=req.budget_tokens, tools=AGENT_TOOLS)
+                   budget_tokens=req.budget_tokens, tools=tools)
     return AgentResponse(
         answer=rec["answer"],
         sources=[Source(**{k: s.get(k) for k in ("doc", "text", "score")}) for s in rec.get("sources", [])],
