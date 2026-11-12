@@ -100,8 +100,8 @@ promptfoo（27k star）官方把断言分三层：确定性断言、模型判（
 2026-10-10 的 35/44 就是这样躲了两周。补的另一半是「产物 ↔ 当前代码与语料」：
 `scripts/check_report_freshness.py`（CI 快 job，`--strict`）。
 
-四态：`FRESH` / `STALE_CODE` / `STALE_DATA` / `STALE_BOTH` / `UNVERIFIABLE`。
-只比**三个字段**：`git sha`、`docs/kb` 哈希、`docs/inbox` 哈希 —— **不比 runstate 的聚合指纹**，
+五态：`FRESH` / `STALE_CODE` / `STALE_DATA` / `STALE_ENV`（环境变了）/ `STALE_MULTI`（两项以上同时变），外加 `UNVERIFIABLE`（缺字段）。
+比**五样**：`git sha`、`docs/kb` 哈希、`docs/inbox` 哈希、**依赖指纹**、**版面后端**（后两样见本节〈环境也是「版本」的一部分〉）—— **不比 runstate 的聚合指纹**，
 因为后者含 dirty 与工作区未提交文件，而报告自己就在工作区里 ⇒ 改一次报告指纹就变，永远 STALE。
 
 ### 我认的一个错：`sha == HEAD` 对已入库报告不成立
