@@ -23,7 +23,8 @@
 ```python
 {
   "answer": str, "refused": bool,
-  "stopped_reason": "done" | "no_tool" | "max_rounds" | "budget" | "tool_error",
+  "stopped_reason": "done" | "gate_refused" | "no_tool" | "rewrite_limit"
+                     | "max_rounds" | "budget" | "tool_error",
   "steps": [{"i", "tool", "args", "tool_ms", "status", "n_src", "error"}],
   "rounds": int, "tokens": int | None, "no_hit_seen": bool,
 }
@@ -80,8 +81,21 @@ def _emit(on_event, etype: str, **fields) -> None:
     on_event({"type": etype, **fields})
 
 
+#: 改写问法的重试上限。★ 为什么是 1：105 题实测里，`s10` 第一步走闸被拒，
+#: 模型改写问法再查就命中了**无关文档** —— "换个说法重试直到命中"是绕过拒答的后门。
+#: 允许一次，是给"表述差异"留余地；允许两次，就是在允许它把拒答磨掉。
+MAX_REWRITES = 2
+
+
+def _norm(q: str) -> str:
+    """比较"是不是同一个问题"用的归一化：只去空白与标点，不做语义改写（不猜）。"""
+    import re as _re
+    return _re.sub(r"[\s，。？！、；：,.?!;:]+", "", q or "").lower()
+
+
 def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
-             budget_tokens: int | None = None, on_event=None, tools=None) -> dict:
+             budget_tokens: int | None = None, on_event=None, tools=None,
+             gate=None) -> dict:
     """跑一次完整的 agent 循环。
 
     `llm` 必须是**已经 bind_tools 过的**可调用对象（`service.rag.llm.bind_tools(MODEL_SCHEMAS)`），
@@ -94,8 +108,16 @@ def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
     rounds_limit = int(max_rounds or MAX_ROUNDS)
     budget = int(budget_tokens or DEFAULT_BUDGET_TOKENS)
 
+    # ★★ 拒答口径以【原问题】为准（2026-11-12）：`gate` 是"这个原问题能不能回答"的判定，
+    #   由调用方注入（服务端传 `handle_chat(原问题).knowledge_hit`）。不注入时退回旧口径。
+    #   为什么必须在循环**开始前**判一次：循环里模型会改写问法，改写后的命中不足以证明
+    #   原问题可答 —— 105 题实测就是这么把拒答从 41/61 磨到 26/61 的。
+    answerable = True if gate is None else bool(gate(question))
+
     msgs = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=question)]
     steps: list[dict] = []
+    rewrites = 0
+    _seen_q: set[str] = set()
     tool_errors = 0
     steps_succeeded = 0
     sources: list[dict] = []
@@ -123,6 +145,12 @@ def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
                 return {"answer": answer, "refused": True, "stopped_reason": "no_tool",
                         "steps": steps, "rounds": rnd + 1, "tokens": tokens,
                         "no_hit_seen": no_hit_seen, "sources": sources}
+            # ★★ 原问题不可答 ⇒ 这里也必须拦住（不能只在收尾拦）：
+            #   done 分支是最常见的一条路，漏了它，gate 等于没接。
+            if gate is not None and not answerable:
+                return {"answer": "知识库里没有能回答这个问题的资料，我不编。", "refused": True,
+                        "stopped_reason": "gate_refused", "steps": steps, "rounds": rnd + 1,
+                        "tokens": tokens, "no_hit_seen": no_hit_seen, "sources": []}
             # ★ 所有工具调用都失败 ⇒ 这不是"答完了"，是"根本没查到东西"（2026-11-12 实测踩到：
             #   连错端口时工具全失败，而 answer 是一段"服务连接失败"的优雅话术、状态却是 done）
             degraded = tool_errors > 0 and not steps_succeeded
@@ -135,6 +163,21 @@ def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
         for tc in resp.tool_calls:
             name = tc["name"]
             _emit(on_event, "tool_call", round=rnd + 1, tool=name, args=tc["args"])
+            # ★ 改写重试上限：同一个原问题只允许一次"换个说法再查"
+            arg_text = " ".join(str(v) for v in (tc["args"] or {}).values())
+            qkey = _norm(arg_text)
+            # ★ 只统计"**新的**不同问法"：同一句话查两次不算两次改写（去重很关键 ——
+            #   第一版按"每次调用"计数，结果正常题第一次换个措辞就被截断，h1 当场被误杀）。
+            if qkey != _norm(question) and qkey not in _seen_q:
+                _seen_q.add(qkey)
+                if rewrites >= MAX_REWRITES:
+                    _emit(on_event, "error", detail=f"改写重试超过 {MAX_REWRITES} 次，停止")
+                    return {"answer": f"【改写问法超过 {MAX_REWRITES} 次，我停止检索】",
+                            "refused": True, "stopped_reason": "rewrite_limit",
+                            "steps": steps, "rounds": rnd + 1, "tokens": tokens,
+                            "no_hit_seen": no_hit_seen, "sources": sources}
+                rewrites += 1
+
             t0 = time.perf_counter()
             fn = tools.get(name)
             err = None
@@ -175,6 +218,12 @@ def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
                     "refused": bool(no_hit_seen and not hits_seen),
                     "stopped_reason": "budget", "steps": steps, "rounds": rnd + 1,
                     "tokens": tokens, "no_hit_seen": no_hit_seen, "sources": sources}
+
+    if gate is not None and not answerable:
+        # ★ 原问题本身不可答 ⇒ 无论循环里查到了什么，都按拒答处理（answer 用 /chat 的原话）
+        return {"answer": "知识库里没有能回答这个问题的资料，我不编。", "refused": True,
+                "stopped_reason": "gate_refused", "steps": steps, "rounds": rounds_limit,
+                "tokens": tokens, "no_hit_seen": no_hit_seen, "sources": []}
 
     # ---- 终止层 3：轮数用完。必须给兜底文案，不能静默返回（probe_loop:118-122 同语义）----
     return {"answer": f"【超出 {rounds_limit} 轮调用上限，我停止检索】",

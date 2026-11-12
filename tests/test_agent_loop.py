@@ -81,7 +81,8 @@ def test_no_hit_is_refused():
 
 def test_max_rounds_is_not_silent():
     """撞轮数上限必须留下痕迹：stopped_reason + 兜底文案（不许给一段"看起来完整"的答案）。"""
-    script = [_tool_call("search_policy", {"query": "q"}, cid=f"c{i}") for i in range(3)]
+    # 查询文本与原问题一致 ⇒ 不算"改写"，这样用例测的才是轮数上限（不是改写上限）
+    script = [_tool_call("search_policy", {"query": "绕圈子的问题"}, cid=f"c{i}") for i in range(3)]
     rec = run_loop("绕圈子的问题", llm=_FakeBound(script), tools={"search_policy": _hit_tool},
                    max_rounds=2)
     assert rec["stopped_reason"] == "max_rounds"
@@ -138,3 +139,41 @@ def test_no_tool_call_is_not_done():
     assert rec["stopped_reason"] == "no_tool"
     assert rec["refused"] is True
     assert rec["steps"] == []
+
+def test_gate_refuses_even_when_rewrite_hits():
+    """★★ 核心判据：原问题不可答 ⇒ 循环里查到什么都不许当成回答。
+
+    105 题实测（2026-11-12）：`s10` 第一步走闸被拒，模型改写问法再查命中**无关文档**，
+    于是 refused=False —— 拒答从 41/61 掉到 26/61。修法就是这条 gate。
+    """
+    rec = run_loop("退学后还能回来接着读吗", llm=_FakeBound([_tool_call("search_policy", {"query": "退学 复学"}),
+                                                            _final("可以复学。")]),
+                   tools={"search_policy": _hit_tool}, gate=lambda q: False)
+    assert rec["stopped_reason"] == "gate_refused"
+    assert rec["refused"] is True
+    assert rec["sources"] == []
+    assert "不编" in rec["answer"]
+
+
+def test_gate_allows_when_original_answerable():
+    rec = run_loop("请假谁批", llm=_FakeBound([_tool_call("search_policy", {"query": "请假"}),
+                                             _final("辅导员。")]),
+                   tools={"search_policy": _hit_tool}, gate=lambda q: True)
+    assert rec["refused"] is False
+    assert rec["stopped_reason"] == "done"
+
+
+def test_rewrite_cap_stops_after_two_distinct_rewrites():
+    """改写问法最多两次（去重计数）：第三次"新问法"就停 —— 不给"换个说法直到命中"的后门。
+
+    ★ 上限从 1 放宽到 2 的原因：按"每次调用"数会把正常题也截断（h1 实测被误杀）。
+      去重后只数**新的**问法；同一句话查两次不算改写。
+    """
+    script = [_tool_call("search_policy", {"query": "第一次改写"}, cid="c1"),
+              _tool_call("search_policy", {"query": "第二次改写"}, cid="c2"),
+              _tool_call("search_policy", {"query": "第三次改写"}, cid="c3"),
+              _final("不该走到这里")]
+    rec = run_loop("原问题", llm=_FakeBound(script), tools={"search_policy": _hit_tool},
+                   gate=lambda q: True)
+    assert rec["stopped_reason"] == "rewrite_limit"
+    assert rec["refused"] is True

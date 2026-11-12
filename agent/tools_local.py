@@ -83,3 +83,63 @@ def ask_policy(question: str, roles=None) -> str:
 #: 给 `run_loop(tools=...)` 用的清单。名字必须与 `mcp/tool_schemas.py` 的 schema 一致，
 #: 否则模型调的名字在这里取不到（会走 loop 里那条 unknown_tool 分支）。
 TOOL_IMPL = {"search_policy": search_policy, "ask_policy": ask_policy}
+
+
+def _norm(q: str) -> str:
+    import re
+    return re.sub(r"[\s，。？！、；：,.?!;:]+", "", q or "").lower()
+
+
+def _render(resp, tool: str) -> str:
+    """把一次 `handle_chat` 的响应渲染成工具文本（与 MCP 路径同一份渲染）。"""
+    srcs = [{"doc": s.doc, "text": s.text, "score": float(s.score or 0.0)}
+            for s in (getattr(resp, "sources", None) or [])]
+    if not getattr(resp, "knowledge_hit", True) or not srcs:
+        return NO_HIT_TEXT + _signal_line("no_hit", tool)
+    return _format_sources(srcs) + _signal_line("hit", tool, len(srcs))
+
+
+def make_tools(roles=None):
+    """为**一次请求**造工具与闸，并共享一份 memo。
+
+    ★ 为什么需要 memo：`gate(原问题)` 与 `ask_policy(原问题)` 问的是同一件事。
+      不共享的话，一次问答要跑两遍 `handle_chat`（多花约 700 token，还多一次可能不一致的生成）。
+      共享后：同一个（归一化后的）问法只调一次模型，**闸和工具拿到的是同一份事实**。
+
+    ★ 作用域是按请求（返回新对象），所以不会跨用户/跨角色串味 —— 这一点比省 token 更重要。
+    """
+    import service as svc
+
+    memo: dict[str, object] = {}
+
+    def chat(question: str):
+        key = _norm(question)
+        if key not in memo:
+            memo[key] = svc.handle_chat(svc.ChatRequest(question=question), roles=roles)
+        return memo[key]
+
+    def search_policy(query: str, k: int = 5) -> str:
+        if not svc.rag.ready:
+            raise ToolError("模型还在加载（rag 未就绪）")
+        try:
+            return _render(chat(query), "search_policy")
+        except ToolError:
+            raise
+        except Exception as e:                              # noqa: BLE001
+            raise ToolError(f"检索失败：{type(e).__name__}: {e}") from e
+
+    def ask_policy(question: str) -> str:
+        if not svc.rag.ready:
+            raise ToolError("模型还在加载（rag 未就绪）")
+        try:
+            return _render(chat(question), "ask_policy")
+        except ToolError:
+            raise
+        except Exception as e:                              # noqa: BLE001
+            raise ToolError(f"问答失败：{type(e).__name__}: {e}") from e
+
+    def gate(question: str) -> bool:
+        """原问题能不能回答 —— 与 `/chat` **同一道闸**（同一个 handle_chat）。"""
+        return bool(getattr(chat(question), "knowledge_hit", True))
+
+    return {"search_policy": search_policy, "ask_policy": ask_policy}, gate

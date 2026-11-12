@@ -2117,13 +2117,16 @@ def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
     def worker():
         token = set_current_ledger(led)          # ★ 账本在真正调模型的线程里绑
         try:
-            from agent.tools_local import ask_policy, search_policy
-            tools = {
-                "search_policy": lambda query, k=5: search_policy(query, k=k, roles=roles),
-                "ask_policy": lambda question: ask_policy(question, roles=roles),
-            }
-            run_loop(req.question, max_rounds=req.max_rounds, budget_tokens=req.budget_tokens,
-                     on_event=q.put, tools=tools)
+            from agent.tools_local import make_tools
+            tools, gate = make_tools(roles=roles)
+            rec = run_loop(req.question, max_rounds=req.max_rounds, budget_tokens=req.budget_tokens,
+                           on_event=q.put, tools=tools, gate=gate)
+            # ★ 收尾必须发一个 `result`：`refused` / `stopped_reason` 不在事件流里出现，
+            #   前端只能靠它判"这段答案算不算成功"。不发的话前端会把 gate_refused 画成绿色 done。
+            q.put({"type": "result", "stopped_reason": rec.get("stopped_reason"),
+                   "refused": bool(rec.get("refused")), "rounds": rec.get("rounds", 0),
+                   "tokens": rec.get("tokens", 0), "answer": rec.get("answer", ""),
+                   "sources": rec.get("sources") or []})
         except Exception as e:                    # noqa: BLE001
             holder["error"] = f"{type(e).__name__}: {e}"
             q.put({"type": "error", "detail": holder["error"]})
@@ -2154,16 +2157,15 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
                              stopped_reason="error", rounds=0, took_ms=0, agent_used=True)
     # ★ 复用同一个 ChatDeepSeek 实例（`rag.llm` 已经是"用到才建"），只额外 bind_tools。
     from mcp.tool_schemas import MODEL_SCHEMAS
-    from agent.tools_local import ask_policy, search_policy
+    from agent.tools_local import make_tools
     # ★★ roles 必须一路传到工具：agent 自己决定调哪个工具，但**权限不是模型的事**。
     #   漏传的后果不是报错，是"检索没按 ACL 过滤"—— 看起来一切正常，数据已经越权。
+    # ★★ gate 也必须传：拒答口径以**原问题**为准（105 题实测：不传的话，
+    #   模型改写问法再查一次就能把拒答磨掉，refuse_ok 从 41/61 掉到 26/61）。
     bound = rag.llm.bind_tools(MODEL_SCHEMAS)
-    tools = {
-        "search_policy": lambda query, k=5: search_policy(query, k=k, roles=roles),
-        "ask_policy": lambda question: ask_policy(question, roles=roles),
-    }
+    tools, gate = make_tools(roles=roles)
     rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
-                   budget_tokens=req.budget_tokens, tools=tools)
+                   budget_tokens=req.budget_tokens, tools=tools, gate=gate)
     return AgentResponse(
         answer=rec["answer"],
         sources=[Source(**{k: s.get(k) for k in ("doc", "text", "score")}) for s in rec.get("sources", [])],
