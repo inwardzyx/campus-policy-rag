@@ -238,7 +238,7 @@ Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 
 ![自动生成的接口文档：/health、/guard-report、/chat 三个端点 + 请求/响应 schema](docs/images/demo-api-docs.png)
 
-> ★ 上图是 2026-10-12 的截图（当时那张图里是三个端点）。现在一共 **21 个**：
+> ★ 上图是 2026-10-12 的截图（当时那张图里是三个端点）。现在一共 **23 个**：
 > `GET /`（网页）、`POST /chat`（检索+生成）、**`POST /chat/stream`（SSE 流式，2026-10-14 加）**、
 > `POST /search`（只检索不生成）、`GET /health`、`GET /limits`、`GET /guard-report`、
 > **`POST /kb/{namespace}/documents`（上传企业语料，2026-10-23 加）**、
@@ -253,7 +253,9 @@ Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 > **`POST /internal/chat`（内部问答入口，2026-11-04 加：给 Java 业务层调，认 `X-Internal-Token`、不限流但照旧记账）**、
 > **`POST /internal/kb/{namespace}/documents`（内部上传，同上）**、
 > **`DELETE /internal/kb/{namespace}/documents/{doc_id}`（内部软删除，同上）**、
-> **`GET /internal/kb/{namespace}/documents`（内部列文档，2026-11-05 加：Java 前端列表用）**。
+> **`GET /internal/kb/{namespace}/documents`（内部列文档，2026-11-05 加：Java 前端列表用）**、
+> **`POST /agent`（agent 循环，2026-11-12 加：`AGENT_ENABLED=1` 才启用，默认 404）**、
+> **`POST /agent/stream`（agent 的 SSE：plan / tool_call / tool_result / answer，同上）**。
 > ⇒ 要最新的接口文档，起服务后看 `/docs`（FastAPI 自动生成，永远是当前代码的样子）。
 > ★ **这个数字现在有人管了**：`scripts/check_readme_numbers.py` 的 `_check_endpoints()`
 > 现扫 `service.py` 里的路由装饰器，个数与名单都对一遍（2026-10-14 补 —— 此前它是手写的，

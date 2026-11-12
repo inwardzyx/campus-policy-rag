@@ -1535,6 +1535,48 @@ class ChatResponse(BaseModel):
     context: Optional[ContextSummary] = None
 
 
+class AgentRequest(BaseModel):
+    """`/agent` 的请求体：**故意比 ChatRequest 小**。
+
+    ★ 为什么不留 `use_rerank` / `top_k` / `acl` 这些旋钮：agent 的工具调用由模型决定，
+      把检索参数暴露给调用方，等于让两条路径各有一套管法（`/chat` 的契约会被悄悄旁路）。
+      要调就调 `max_rounds` / `budget_tokens` —— 这两个是**循环**的参数，不是检索的参数。
+    ★ 2026-11-12 加：agent 是可选路径（`AGENT_ENABLED` 默认 off），关掉时端点 404。
+    """
+
+    question: str = Field(..., description="用户的问题", min_length=1, max_length=500)
+    max_rounds: Optional[int] = Field(None, ge=1, le=10,
+                                      description="循环轮数上限（默认取 mcp/probe_loop.MAX_ROUNDS=6）")
+    budget_tokens: Optional[int] = Field(None, ge=1, le=100000,
+                                        description="token 预算（默认 8000），超了在下一轮前收口")
+
+
+class AgentStep(BaseModel):
+    """一步工具调用。前端时间线**只认这个结构**（don't parse the model's prose）。"""
+
+    i: int
+    tool: str
+    args: dict = {}
+    tool_ms: int = 0
+    status: Optional[str] = None          # hit / no_hit / None（解析不了不猜）
+    n_src: int = 0
+    error: Optional[str] = None
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    sources: list[Source] = []
+    steps: list[AgentStep] = []
+    # ★ `stopped_reason` 必须有值：静默截断 = 硬失败（撞上限却给一段"看起来完整"的答案）。
+    stopped_reason: str
+    rounds: int = 0
+    tokens: int = 0
+    refused: bool = False
+    took_ms: int = 0
+    # 与 /chat 同款：降级要可见（agent 关掉时前端不该以为自己在用 agent）
+    agent_used: bool = True
+
+
 class SearchRequest(BaseModel):
     """`/search` 的请求体：只检索、不生成（工具 `search_policy` 用）。
 
@@ -2006,6 +2048,121 @@ def _gated(request: Request, pipeline, *, who_override: str | None = None,
         _CURRENT_LEDGER.reset(token)          # 精确复原（不是 set(None) —— 那会清掉外层账本）
         _note_usage(tenant_id, usage)
         LIMITER.record(who, usage)
+
+
+def _agent_enabled() -> bool:
+    """懒加载开关。★ 不在模块顶部 `from agent.loop import ...`：那会把 mcp/tools_impl
+    的依赖（HTTP 客户端）拖进 service 的启动路径 —— 关掉 agent 的人不该为它承担启动失败的风险。"""
+    from agent.loop import agent_enabled
+    return agent_enabled()
+
+
+@app.post("/agent", response_model=AgentResponse)
+def agent_chat(req: AgentRequest, request: Request):
+    """agent 问答（非流式，给评测与脚本用）。
+
+    ★ 与 `/chat` 的分工：这里**只做闸门 + 记账 + 契约转换**，真正的循环在 `agent/loop.py`。
+      循环、工具、拒答口径全部复用 —— 不在这里重写（重写就是第二套行为）。
+    ★ 审计：`audit_mod.record_response` 的字段集是按 `/chat` 的响应设计的，
+      agent 多出 `steps`，硬塞进去要改表结构 ⇒ **本轮不写审计**，留到 agent 指标进评测（Step 3）时一起做。
+    """
+    if not _agent_enabled():
+        raise HTTPException(status_code=404, detail={"reason": "agent_disabled",
+                                                     "detail": "设 AGENT_ENABLED=1 才启用"})
+    roles = _request_roles(request)
+    tenant = _tenant(request)
+    quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
+    return _gated(request, lambda led: handle_agent(req, led, roles=roles),
+                  who_override=quota_key, tenant_id=tenant.id)
+
+
+@app.post("/agent/stream")
+def agent_stream(req: AgentRequest, request: Request):
+    """agent 问答（SSE）。事件：`plan` / `tool_call` / `tool_result` / `answer` / `error` / `done`。
+
+    ★ 与 `/chat/stream` 同款的顺序：**闸门在任何字节之前**（被挡时还能返干净的 429/503）。
+    ★ 账本在 worker 线程里绑（`set_current_ledger`）—— 与 `/chat/stream` 同一个理由：
+      同步端点跑在线程池、生成器跑在 anyio 上下文、worker 是第三个上下文副本，
+      在这里 set 会**静默无效**（service.py 里那条注释记了踩过三次）。
+    """
+    if not _agent_enabled():
+        raise HTTPException(status_code=404, detail={"reason": "agent_disabled",
+                                                     "detail": "设 AGENT_ENABLED=1 才启用"})
+    roles = _request_roles(request)
+    who = limits_mod.client_id(
+        request.client.host if request.client else None,
+        {k.lower(): v for k, v in request.headers.items()},
+        LIMITER.limits)
+    decision = LIMITER.check(who)
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=decision.http_status(),
+            detail={"reason": decision.reason, "detail": decision.detail},
+            headers={"Retry-After": str(decision.retry_after)})
+    return StreamingResponse(_agent_events(req, UsageLedger(), who, roles),
+                             media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
+    """把 run_loop 的事件回调转成 SSE。循环跑在独立线程，生成器只从队列读（不阻塞事件循环）。"""
+    import queue as _q
+    import threading as _t
+
+    from agent.loop import run_loop
+
+    q: "_q.Queue[dict | None]" = _q.Queue()
+    holder: dict = {}
+
+    def worker():
+        token = set_current_ledger(led)          # ★ 账本在真正调模型的线程里绑
+        try:
+            run_loop(req.question, max_rounds=req.max_rounds, budget_tokens=req.budget_tokens,
+                     on_event=q.put, tools=None)
+        except Exception as e:                    # noqa: BLE001
+            holder["error"] = f"{type(e).__name__}: {e}"
+            q.put({"type": "error", "detail": holder["error"]})
+        finally:
+            _CURRENT_LEDGER.reset(token)
+            usage = led.take()
+            LIMITER.record(who, usage)            # 记账无条件（与 _gated 同一条纪律）
+            q.put(None)
+
+    _t.Thread(target=worker, daemon=True, name="agent-stream").start()
+    while True:
+        ev = q.get()
+        if ev is None:
+            break
+        yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+    yield "data: " + json.dumps({"type": "done", "error": holder.get("error")}, ensure_ascii=False) + "\n\n"
+
+
+def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None) -> AgentResponse:
+    """agent 管道本体（不含 HTTP 闸门）—— 与 `handle_chat` 同一分工。"""
+    import time as _time
+
+    from agent.loop import run_loop
+
+    t0 = _time.time()
+    if not rag.ready:
+        return AgentResponse(answer="服务还在加载模型，请稍等几秒再试", sources=[], steps=[],
+                             stopped_reason="error", rounds=0, took_ms=0, agent_used=True)
+    # ★ 复用同一个 ChatDeepSeek 实例（`rag.llm` 已经是"用到才建"），只额外 bind_tools。
+    from mcp.tool_schemas import MODEL_SCHEMAS
+    from agent.tools_local import TOOL_IMPL as AGENT_TOOLS   # ★ 进程内工具，不走 MCP 的 HTTP 跳转
+    bound = rag.llm.bind_tools(MODEL_SCHEMAS)
+    rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
+                   budget_tokens=req.budget_tokens, tools=AGENT_TOOLS)
+    return AgentResponse(
+        answer=rec["answer"],
+        sources=[Source(**{k: s.get(k) for k in ("doc", "text", "score")}) for s in rec.get("sources", [])],
+        steps=[AgentStep(**st) for st in rec.get("steps", [])],
+        stopped_reason=rec["stopped_reason"],
+        rounds=rec.get("rounds", 0),
+        tokens=rec.get("tokens", 0),
+        refused=bool(rec.get("refused")),
+        took_ms=int((_time.time() - t0) * 1000),
+    )
 
 
 @app.post("/search", response_model=SearchResponse)

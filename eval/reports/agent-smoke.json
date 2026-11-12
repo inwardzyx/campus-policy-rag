@@ -1,0 +1,122 @@
+[
+  {
+    "id": "h1",
+    "type": "answer",
+    "chat_hit": true,
+    "agent_stopped": "done",
+    "agent_refused": false,
+    "agent_n_src": 2,
+    "agent_rounds": 2,
+    "agent_tokens": 1902
+  },
+  {
+    "id": "h2",
+    "type": "answer",
+    "chat_hit": true,
+    "agent_stopped": "done",
+    "agent_refused": false,
+    "agent_n_src": 3,
+    "agent_rounds": 2,
+    "agent_tokens": 2183
+  },
+  {
+    "id": "h3",
+    "type": "answer",
+    "chat_hit": true,
+    "agent_stopped": "done",
+    "agent_refused": false,
+    "agent_n_src": 3,
+    "agent_rounds": 2,
+    "agent_tokens": 2292
+  },
+  {
+    "id": "h4",
+    "type": "answer",
+    "chat_hit": true,
+    "agent_stopped": "done",
+    "agent_refused": false,
+    "agent_n_src": 1,
+    "agent_rounds": 2,
+    "agent_tokens": 1903
+  },
+  {
+    "id": "h15",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "done",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 2,
+    "agent_tokens": 1470
+  },
+  {
+    "id": "h16",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "done",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 2,
+    "agent_tokens": 1499
+  },
+  {
+    "id": "h17",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "done",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 2,
+    "agent_tokens": 1495
+  },
+  {
+    "id": "h18",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "done",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 2,
+    "agent_tokens": 1513
+  },
+  {
+    "id": "h19",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "done",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 2,
+    "agent_tokens": 1758
+  },
+  {
+    "id": "h20",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "done",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 2,
+    "agent_tokens": 1697
+  },
+  {
+    "id": "r21",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "no_tool",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 1,
+    "agent_tokens": 697
+  },
+  {
+    "id": "r22",
+    "type": "refuse",
+    "chat_hit": false,
+    "agent_stopped": "no_tool",
+    "agent_refused": true,
+    "agent_n_src": 0,
+    "agent_rounds": 1,
+    "agent_tokens": 694
+  }
+]
