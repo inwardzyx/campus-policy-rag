@@ -1,16 +1,16 @@
 {
  "run": "run1",
  "source": "promptfoo-online.json",
- "at": "2026-11-11 19:05",
+ "at": "2026-11-12 08:53",
  "layer": "online",
  "n_cases": 105,
  "tally": {
   "recall5": {
-   "pass": 40,
+   "pass": 41,
    "total": 44
   },
   "no_miss": {
-   "pass": 43,
+   "pass": 44,
    "total": 44
   },
   "refuse_ok": {
@@ -184,8 +184,8 @@
   "h9": {
    "type": "answer",
    "scores": {
-    "recall5": 0,
-    "no_miss": 0
+    "recall5": 1,
+    "no_miss": 1
    }
   },
   "r1": {
@@ -583,13 +583,13 @@
   "s20": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 1
+    "refuse_ok": 0
    }
   },
   "s21": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 0
+    "refuse_ok": 1
    }
   },
   "s22": {
@@ -613,7 +613,7 @@
   "s25": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 1
+    "refuse_ok": 0
    }
   },
   "s26": {
@@ -660,7 +660,7 @@
   "s4": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 0
+    "refuse_ok": 1
    }
   },
   "s5": {
