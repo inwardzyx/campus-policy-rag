@@ -2,8 +2,8 @@
 
 - 评测层：**online**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
-- 生成时间：2026-11-12 23:24
-- 运行指纹：`a4f33671d913`（`kb/runstate.py`；git `b1deac231fd6` dirty=`True`，python 3.14.6）
+- 生成时间：2026-11-12 23:33
+- 运行指纹：`a162683e5466`（`kb/runstate.py`；git `0f10f7bec819` dirty=`True`，python 3.14.6）
 - 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
 - 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；不可用 `mineru`；PDF_BACKEND=`auto`
 - 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
@@ -13,8 +13,8 @@
 
 | 指标 | 通过/总数 | 口径 | 分母 |
 |---|---|---|---|
-| `recall5` | 43/44 | gold 条款进了粗捞 top-5（Recall@5） | 应答题数 |
-| `no_miss` | 44/44 | 应答题没被误拒（knowledge_hit == true） | 应答题数 |
+| `recall5` | 42/44 | gold 条款进了粗捞 top-5（Recall@5） | 应答题数 |
+| `no_miss` | 43/44 | 应答题没被误拒（knowledge_hit == true） | 应答题数 |
 | `refuse_ok` | 39/61 | 拒答题拒对了（knowledge_hit == false） | 拒答题数 |
 
 > ⚠️ 本报告是**单次跑批**的快照。online 层的查询改写与精排由模型产生，同配置重跑会有抖动；**地板是量出来的**（`eval/noise_floor.py` → `reports/noise-floor.md`），本报告不手写这个数。**两次跑批要比，请用 `eval/gate.py`（配对 + McNemar，它会读那份地板），不要直接比两个百分比。**
@@ -51,11 +51,11 @@
 | h5 | answer | ❌ | ✅ | — | — | gold 没进前 5 → 检索问题 |
 | h6 | answer | ✅ | ✅ | — | 2 |  |
 | h7 | answer | ✅ | ✅ | — | 1 |  |
-| h8 | answer | ✅ | ✅ | — | 1 |  |
-| h9 | answer | ✅ | ✅ | — | 5 |  |
+| h8 | answer | ✅ | ✅ | — | 3 |  |
+| h9 | answer | ❌ | ❌ | — | — | gold 没进前 5 → 检索问题 |
 | r1 | answer | ✅ | ✅ | — | 1 |  |
 | r10 | answer | ✅ | ✅ | — | 1 |  |
-| r11 | answer | ✅ | ✅ | — | 2 |  |
+| r11 | answer | ✅ | ✅ | — | 3 |  |
 | r12 | answer | ✅ | ✅ | — | 1 |  |
 | r13 | answer | ✅ | ✅ | — | 1 |  |
 | r14 | answer | ✅ | ✅ | — | 5 |  |
@@ -75,12 +75,12 @@
 | r27 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r28 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r29 | refuse | — | — | ✅ | — |  |
-| r3 | answer | ✅ | ✅ | — | 2 |  |
-| r30 | refuse | — | — | ✅ | — |  |
+| r3 | answer | ✅ | ✅ | — | 1 |  |
+| r30 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r31 | refuse | — | — | ✅ | — |  |
 | r32 | refuse | — | — | ✅ | — |  |
 | r33 | refuse | — | — | ✅ | — |  |
-| r34 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
+| r34 | refuse | — | — | ✅ | — |  |
 | r35 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r36 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r37 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
@@ -91,7 +91,7 @@
 | r41 | refuse | — | — | ✅ | — |  |
 | r42 | refuse | — | — | ✅ | — |  |
 | r43 | refuse | — | — | ✅ | — |  |
-| r44 | refuse | — | — | ✅ | — |  |
+| r44 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r45 | refuse | — | — | ✅ | — |  |
 | r46 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | r47 | refuse | — | — | ✅ | — |  |
@@ -110,9 +110,9 @@
 | s13 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | s14 | refuse | — | — | ✅ | — |  |
 | s15 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
-| s16 | refuse | — | — | ✅ | — |  |
+| s16 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | s17 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
-| s18 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
+| s18 | refuse | — | — | ✅ | — |  |
 | s19 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | s2 | refuse | — | — | ✅ | — |  |
 | s20 | refuse | — | — | ✅ | — |  |
@@ -120,7 +120,7 @@
 | s22 | refuse | — | — | ✅ | — |  |
 | s23 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
 | s24 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
-| s25 | refuse | — | — | ❌ | — | 被误答 → 判据太松 |
+| s25 | refuse | — | — | ✅ | — |  |
 | s26 | answer | ✅ | ✅ | — | 2 |  |
 | s27 | answer | ✅ | ✅ | — | 1 |  |
 | s28 | answer | ✅ | ✅ | — | 1 |  |

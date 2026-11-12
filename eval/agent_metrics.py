@@ -291,7 +291,7 @@ def main() -> int:
         return 2
 
     global OUT_JSON, OUT_MD
-    if a.live and a.chat:                     # ★ 同刻对照写自己的文件，不覆盖 agent 基线
+    if a.chat:                                # ★ 同刻对照写自己的文件，不覆盖 agent 基线（--from-json 也算）
         OUT_JSON = OUT_JSON.replace("agent-baseline", "chat-baseline-same-moment")
         OUT_MD = OUT_MD.replace("agent-baseline", "chat-baseline-same-moment")
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
