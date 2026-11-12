@@ -50,7 +50,19 @@ def _version_lines() -> list[str]:
         return [f"- ⚠️ 拿不到语料哈希（{type(e).__name__}: {e}）⇒ 本文件会被判 UNVERIFIABLE"]
     sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(HERE.parent), capture_output=True,
                          text=True, encoding="utf-8", errors="replace").stdout.strip()
-    return [f"- 运行指纹相关三字段：git `{sha}`；`docs/kb`={kb}；`docs/inbox`={inbox}"]
+    try:
+        dep, lay = rs.deps_state(HERE.parent), rs.layout_state()
+    except Exception:                                  # noqa: BLE001
+        dep, lay = {}, {}
+    return [
+        f"- 运行指纹相关三字段：git `{sha}`；`docs/kb`={kb}；`docs/inbox`={inbox}",
+        f"- 依赖指纹：{'、'.join(f'`{k}`={v}' for k, v in dep.items()) or '**未记录**'}"
+        f"（`requirements*.txt` 的 sha256 前 8 位）",
+        f"- 版面后端：auto 会选 `{lay.get('auto_would_use')}`；"
+        f"可用 `{'、'.join(lay.get('available') or []) or '无'}`；"
+        f"不可用 `{'、'.join(lay.get('unavailable') or []) or '无'}`；"
+        f"PDF_BACKEND=`{lay.get('pdf_backend')}`",
+    ]
 OUT_JSON = HERE / "reports" / "noise-floor.json"
 COMPACT_DIR = HERE / "reports" / "noise"
 

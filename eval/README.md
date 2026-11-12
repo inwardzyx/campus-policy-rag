@@ -215,7 +215,7 @@ questions sha、docs 语料树 sha、判分脚本 sha、入库块数）：
 | 谁 | 比什么 | 抓什么 |
 |---|---|---|
 | `scripts/check_readme_numbers.py` | README ↔ 产物 | README 的数字与产物不一致 |
-| `scripts/check_report_freshness.py` | 产物 ↔ **当前 HEAD + 当前语料** | 报告过期，而**有人还在引用它** |
+| `scripts/check_report_freshness.py` | 产物 ↔ **当前 HEAD + 当前语料 + 当前环境** | 报告过期（代码/语料/**依赖或版面后端**变了），而**有人还在引用它** |
 | `tests/test_eval_reconcile.py` | case_server ↔ run_eval | 两把尺子分叉 |
 | `eval/summarize.py --compare` | 自己 ↔ run_eval 同刻跑批 | 接线错 |
 
@@ -241,6 +241,13 @@ questions sha、docs 语料树 sha、判分脚本 sha、入库块数）：
    读不到地板时 gate 会明说"未量"，这时**不要**解释小幅差异。
 6. **它永远红** ⇒ 语义又被写成了不可满足的口径（`--strict-sha` 就是那个反例：已入库报告一出生就 STALE）。
    常红 = 把警报贴住。
+7. **两份报告 git sha 相同、语料哈希相同，跑出来结果却不同，而都判 FRESH** ⇒ 坏。
+   这是 2026-11-11 自己证明出来的盲区：装不装 **docling**，同一份扫描版 PDF 从 `ParseError`
+   变成解析出 3481 字；而 runstate 指纹只有 git/语料/python。
+   ⇒ 报告头现在多两行：**依赖指纹**（`requirements*.txt` 的 sha256 前 8）+ **版面后端**
+   （auto 会选谁、谁可用）。任一行变了 ⇒ `STALE_ENV`；两项以上变了 ⇒ `STALE_MULTI`。
+   ★ 一句话：**文件不影响结果 ≠ 环境不影响结果** —— `requirements-optional.txt`
+     作为文件不改数字，但它声明的 docling 一装上就改行为。
 
 ## 坑（全部实测踩到）
 

@@ -150,9 +150,21 @@ def _fingerprint_lines(boot: dict) -> list[str]:
         return ["- 运行指纹：**未记录**（该跑批用的 case_server 还没有接 `kb/runstate.py` 指纹）"]
     docs = "、".join(f"`{k}`={str(v)[:8]}" for k, v in (rs.get("docs") or {}).items()) or "—"
     corp = "、".join(f"`{k}`={str(v)[:8]}" for k, v in (rs.get("corpus") or {}).items()) or "—"
+    deps = rs.get("deps") or {}
+    lay = rs.get("layout") or {}
+    dep_txt = "、".join(f"`{k}`={v}" for k, v in deps.items()) or "**未记录**"
+    if lay.get("error"):
+        lay_txt = f"**取不到**（{lay['error']}）"
+    else:
+        avail = "、".join(lay.get("available") or []) or "无"
+        unavail = "、".join(lay.get("unavailable") or []) or "无"
+        lay_txt = (f"auto 会选 `{lay.get('auto_would_use')}`；可用 `{avail}`；不可用 `{unavail}`；"
+                   f"PDF_BACKEND=`{lay.get('pdf_backend')}`")
     return [
         f"- 运行指纹：`{rs['fingerprint']}`（`kb/runstate.py`；git `{str(rs.get('git_sha'))[:12]}`"
         f" dirty=`{rs.get('git_dirty')}`，python {rs.get('python')}）",
+        f"- 依赖指纹：{dep_txt}（`requirements*.txt` 的 sha256 前 8 位）",
+        f"- 版面后端：{lay_txt}",
         f"- 语料哈希：{docs}；企业 demo：{corp}（不参与本评测）",
         "- 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。",
         "- ⚠️ 指纹里含**工作区未提交文件**（报告文件本身也算）⇒ 同一批产出的两份报告指纹会不同。"

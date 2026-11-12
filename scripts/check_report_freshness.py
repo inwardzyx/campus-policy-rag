@@ -11,13 +11,20 @@
 
 | 状态 | 判据 |
 |---|---|
-| `FRESH` | 报告头记的 git sha == 当前 HEAD，且 docs/kb、docs/inbox 两个语料哈希 == 当前值 |
+| `FRESH` | 代码、语料、环境三项都 == 当前值 |
 | `STALE_CODE` | 代码变过（见下面那条"怎么判代码变过"） |
 | `STALE_DATA` | 语料哈希不同（docs/kb 或 docs/inbox） |
-| `STALE_BOTH` | 两者都不同 |
-| `UNVERIFIABLE` | 报告头缺 git sha 或语料哈希 ⇒ **无法判断，不许当新鲜** |
+| `STALE_ENV` | **环境**不同：依赖指纹（`requirements*.txt`）或**实际可用的版面后端**变了 |
+| `STALE_MULTI` | 两项及以上同时不同（原因里逐项列） |
+| `UNVERIFIABLE` | 报告头缺 git sha / 语料哈希 / 环境两行 ⇒ **无法判断，不许当新鲜** |
 
-★ 只比三个字段：`git_sha`、`docs/kb` 哈希、`docs/inbox` 哈希。
+★ 比五样：`git_sha`、`docs/kb` 哈希、`docs/inbox` 哈希、**依赖指纹**、**版面后端**。
+
+★★ 为什么必须比后两样（2026-11-11 自己证明出来的盲区）：装不装 docling，
+   同一份扫描版 PDF 从 `ParseError` 变成解析出 3481 字；而 runstate 的聚合指纹只有
+   git/语料/python ⇒ **同一 commit、同一语料，两台机器跑出不同结果，两份报告却都判 FRESH**。
+   ⇒ **文件不影响结果 ≠ 环境不影响结果**：`requirements-optional.txt` 作为文件不改数字，
+     但它声明的 docling 一装上就改行为。
   **不比 runstate 的聚合指纹**：它含 dirty 与工作区未提交文件，而报告文件自己就在工作区里
   ⇒ 一改报告指纹就变，永远判 STALE。报告头里那句「判系统同一性看 git_sha + 语料哈希」就是这条。
 
@@ -99,7 +106,10 @@ NON_AFFECTING = re.compile(
     r"|\.github/.*"                    # CI 配置（不改判分逻辑）
     r"|tests/.*"                       # 测试
     r"|scripts/.*"                     # 检查器 / 变异脚本（都不参与判分，改它们不影响基线数字）
-    r"|requirements-optional\.txt"     # 可选依赖声明（文档性质，不影响测量结果）
+    # ⚠️ 注意：文件不影响结果 ≠ 环境不影响结果 —— 这个文件作为**文件**不改数字，
+    #   但它声明的 docling 一装上就改行为（扫描件从报错变成解析出正文）。
+    #   环境靠报告头的「依赖指纹 + 版面后端」两行钉住（见上文的 STALE_ENV）。
+    r"|requirements-optional\.txt"     # 可选依赖声明（文件本身不影响测量结果）
     r"|eval/noise_floor\.py"           # 量噪声地板：它只读跑批 JSON，不参与基线判分
     r"|docs?/.*\.md$"                  # 文档
     r"|.*\.md$"                        # 任何 markdown（README/START/DECISIONS/HANDOFF/报告说明）
@@ -116,6 +126,11 @@ RE_GIT = re.compile(r"git\s+`([0-9a-f]{7,40})`")
 RE_KB = re.compile(r"`docs/kb`[=:]\s*`?([0-9a-f]{8,64})`?")
 RE_INBOX = re.compile(r"`docs/inbox`[=:]\s*`?([0-9a-f]{8,64})`?")
 RE_DIRTY = re.compile(r"dirty\s*[=:]\s*`?(True|False|true|false)`?")
+RE_DEPS = re.compile(r"`([\w.\-]+\.txt)`=([0-9a-f]{8})")
+RE_LAYOUT_AUTO = re.compile(r"auto 会选 `([a-z\-]+)`")
+RE_LAYOUT_AVAIL = re.compile(r"可用 `([^`]*)`")
+RE_LAYOUT_UNAVAIL = re.compile(r"不可用 `([^`]*)`")
+RE_LAYOUT_BACKEND = re.compile(r"PDF_BACKEND=`([^`]*)`")
 
 
 def _git(*args: str) -> str:
@@ -141,6 +156,8 @@ def current_state() -> dict:
         "docs": docs,
         "docs_ok": docs_ok,
         "fingerprint": st.get("fingerprint"),
+        "deps": rs.deps_state(ROOT),
+        "layout": rs.layout_state(),
     }
 
 
@@ -153,11 +170,28 @@ def parse_header(path: Path) -> dict:
     head = "\n".join(text.splitlines()[:40])          # 只看头部，别把正文里的 sha 也捡进来
     m_git, m_kb, m_inbox = RE_GIT.search(head), RE_KB.search(head), RE_INBOX.search(head)
     m_dirty = RE_DIRTY.search(head)
+    deps = {k: v for k, v in RE_DEPS.findall(head)}
+    m_auto = RE_LAYOUT_AUTO.search(head)
+    m_av = RE_LAYOUT_AVAIL.search(head)
+    m_un = RE_LAYOUT_UNAVAIL.search(head)
+    m_be = RE_LAYOUT_BACKEND.search(head)
+
+    def _names(m) -> list[str]:
+        if not m:
+            return []
+        return [x.strip().strip("`") for x in m.group(1).split("、") if x.strip()]
+
+    layout = None
+    if m_auto:
+        layout = {"auto_would_use": m_auto.group(1), "available": _names(m_av),
+                  "unavailable": _names(m_un), "pdf_backend": m_be.group(1) if m_be else ""}
     return {
         "git": m_git.group(1) if m_git else None,
         "docs_kb": m_kb.group(1) if m_kb else None,
         "docs_inbox": m_inbox.group(1) if m_inbox else None,
         "dirty": (m_dirty.group(1).lower() == "true") if m_dirty else None,
+        "deps": deps,
+        "layout": layout,
     }
 
 
@@ -221,13 +255,45 @@ def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
         code_same = False
         why = "生成时工作区不干净（dirty=True）"
 
-    if code_same and data_same:
+    # ★ 环境两维（2026-11-11 补）：缺字段 ⇒ UNVERIFIABLE，不许当新鲜。
+    if not h.get("deps") or not h.get("layout"):
+        missed = []
+        if not h.get("deps"):
+            missed.append("依赖指纹")
+        if not h.get("layout"):
+            missed.append("版面后端")
+        return "UNVERIFIABLE", f"报告头缺环境字段：{' / '.join(missed) or '依赖指纹 / 版面后端'}"
+
+    cur_deps = cur.get("deps") or {}
+    cur_lay = cur.get("layout") or {}
+    deps_same = dict(h["deps"]) == dict(cur_deps)
+    h_lay = h["layout"]
+    lay_same = (h_lay.get("auto_would_use") == cur_lay.get("auto_would_use")
+                and sorted(h_lay.get("available") or []) == sorted(cur_lay.get("available") or [])
+                and (h_lay.get("pdf_backend") or "") == (cur_lay.get("pdf_backend") or ""))
+    env_same = deps_same and lay_same
+
+    changed = []
+    if not code_same:
+        changed.append(("CODE", why))
+    if not data_same:
+        changed.append(("DATA", "语料哈希与当前不同（docs/kb 或 docs/inbox 变过）"))
+    if not env_same:
+        diff = []
+        if not deps_same:
+            diff.append(f"依赖指纹 {h['deps']} ≠ 当前 {cur_deps}")
+        if not lay_same:
+            diff.append(f"版面后端 auto=`{h_lay.get('auto_would_use')}` ≠ 当前 "
+                        f"`{cur_lay.get('auto_would_use')}`（可用 "
+                        f"{h_lay.get('available') or ['无']} → {cur_lay.get('available') or ['无']}）")
+        changed.append(("ENV", "；".join(diff)))
+
+    if not changed:
         return "FRESH", why
-    if code_same and not data_same:
-        return "STALE_DATA", "语料哈希与当前不同（docs/kb 或 docs/inbox 变过）"
-    if data_same and not code_same:
-        return "STALE_CODE", why
-    return "STALE_BOTH", f"{why}；且语料哈希也不同"
+    if len(changed) == 1:
+        kind, reason = changed[0]
+        return f"STALE_{kind}", reason
+    return "STALE_MULTI", "；".join(f"[{k}] {r}" for k, r in changed)
 
 
 def scan_references(docs: tuple[str, ...]) -> dict[str, list[tuple[str, int, str, bool]]]:

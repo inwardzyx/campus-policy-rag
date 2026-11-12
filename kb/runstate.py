@@ -407,6 +407,60 @@ def docs_state(root: Path, dirs: Sequence[str] = DOC_DIRS) -> dict[str, Any]:
     return {"dirs": out, "dir_count": len(out)}
 
 
+def deps_state(root: Path | str) -> dict[str, str]:
+    """依赖指纹：`requirements*.txt` 的 sha256 前 8 位。
+
+    ★ 为什么需要它（2026-11-11 自己证明出来的盲区）：runstate 的指纹只钉 git/语料/python，
+      **不钉"装了哪些依赖"**。而 `requirements-optional.txt` 声明的 docling 一装上，
+      同一份扫描版 PDF 就从 `ParseError` 变成解析出 3481 字 ⇒ 同一 commit、同一语料，结果不同。
+      ⇒ 文件不影响结果 ≠ **环境**不影响结果。
+    ★ 为什么只哈希声明文件、不列已装包：列 pip 清单要跑子进程、慢且天天漂；
+      声明文件是"这台机器被承诺装了什么"的稳定证据，配合下面的版面后端探测够用。
+    """
+    out: dict[str, str] = {}
+    root = Path(root)
+    for name in ("requirements.txt", "requirements-optional.txt"):
+        f = root / name
+        if f.exists():
+            out[name] = _sha(f.read_bytes())[:8]
+    return out
+
+
+def layout_state() -> dict[str, Any]:
+    """版面解析后端：谁可用、`auto` 会选谁、`PDF_BACKEND` 取值。
+
+    ★ 与 `kb/source.py::_read_pdf` 的 auto 顺序保持一致（docling → mineru → 都不行则 pypdf）。
+      探测失败一律当"不可用"，并把异常写进 `error`（缺失 ≠ 可用）。
+    """
+    available: list[str] = []
+    unavailable: list[str] = []
+    err = ""
+    try:
+        from kb.layout import BackendUnavailable, select_backend
+        for name in ("docling", "docling-local", "mineru"):
+            try:
+                if select_backend(name).available():
+                    available.append(name)
+                else:
+                    unavailable.append(name)
+            except BackendUnavailable:
+                unavailable.append(name)
+            except Exception:                              # noqa: BLE001
+                unavailable.append(name)
+    except Exception as e:                                 # noqa: BLE001
+        err = f"{type(e).__name__}: {e}"
+    auto = "pypdf"
+    for name in ("docling", "mineru"):
+        if name in available:
+            auto = name
+            break
+    out = {"available": available, "unavailable": unavailable, "auto_would_use": auto,
+           "pdf_backend": (os.environ.get("PDF_BACKEND") or "auto").strip().lower()}
+    if err:
+        out["error"] = err
+    return out
+
+
 def runtime_state() -> dict[str, Any]:
     return {
         "python": platform.python_version(),

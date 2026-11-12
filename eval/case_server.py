@@ -64,6 +64,11 @@ def _snapshot_runstate() -> dict:
     st = rs.capture(REPO_ROOT, note="eval/case_server")
     git = st.get("git") or {}
     return {
+        # ★ 环境指纹（2026-11-11 补）：runstate 只钉 git/语料/python，**不钉已装依赖与可用 PDF 后端**。
+        #   实测：装不装 docling，同一份扫描 PDF 从 ParseError 变成解析出 3481 字 ——
+        #   同一 commit、同一语料，两台机器结果不同，而两份报告原来都判 FRESH。
+        "deps": rs.deps_state(REPO_ROOT),
+        "layout": rs.layout_state(),
         "fingerprint": st.get("fingerprint"),
         "git_sha": git.get("sha"),
         "git_dirty": git.get("dirty"),

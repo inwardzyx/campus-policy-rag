@@ -306,9 +306,20 @@ def _header_lines(history: list[dict]) -> list[str]:
             dirs = {}
     kb, inbox = str(dirs.get("docs/kb") or "")[:8], str(dirs.get("docs/inbox") or "")[:8]
     lines = ["- 说明：本文件描述 **旧代码**（worktree 里那个 commit）下的测量，**不是**当前基线。"]
+    try:
+        import kb.runstate as _rs
+        dep, lay = _rs.deps_state(REPO), _rs.layout_state()
+    except Exception:                                  # noqa: BLE001
+        dep, lay = {}, {}
     if kb and inbox:
         lines.append(f"- 运行指纹相关三字段：git `{sha[:40]}`；`docs/kb`={kb}；`docs/inbox`={inbox}"
                      f"（用于 `scripts/check_report_freshness.py` 比对；缺失则会被判 UNVERIFIABLE）")
+        lines.append(f"- 依赖指纹：{'、'.join(f'`{k}`={v}' for k, v in dep.items()) or '**未记录**'}"
+                     f"（`requirements*.txt` 的 sha256 前 8 位）")
+        lines.append(f"- 版面后端：auto 会选 `{lay.get('auto_would_use')}`；"
+                     f"可用 `{'、'.join(lay.get('available') or []) or '无'}`；"
+                     f"不可用 `{'、'.join(lay.get('unavailable') or []) or '无'}`；"
+                     f"PDF_BACKEND=`{lay.get('pdf_backend')}`")
     else:
         lines.append("- ⚠️ 拿不到逐目录语料哈希 ⇒ 本文件会被新鲜度检查判 UNVERIFIABLE（缺失≠新鲜）")
     return lines
