@@ -119,6 +119,15 @@ NON_AFFECTING = re.compile(
     #   —— 改过渲染逻辑就自己重生成 md；数字定义的正确性由 tests/test_eval_reconcile.py 与
     #   `summarize --compare` 守。
     r"|eval/summarize\.py"
+    # ★ agent 侧代码 / 脚本 / 报告（2026-11-12）：它们只在 `/agent` 这条路上生效，
+    #   不参与 `/chat` 的 case_server 判分（`eval/case_server.py` 与 `evalset/run_eval.py`
+    #   都不 import `agent/*`）。不登记的话，改一行 agent 代码就会把两份 `/chat` 基线
+    #   误报成 STALE —— 而假红会教人关掉检查（这个仓库的判据纪律里写了这条）。
+    #   ⚠️ 反过来不成立：`agent` 自己的报告**不受**这份清单保护（它们的输出确实会被 agent 代码改变）。
+    r"|agent/.*"
+    r"|eval/agent_metrics\.py"
+    r"|eval/reports/agent-.*"
+    r"|eval/reports/chat-baseline-same-moment\.(?:md|json)"
     r")$"
 )
 
