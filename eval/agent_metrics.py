@@ -44,6 +44,9 @@ if _ROOT not in sys.path:
 OUT_JSON = os.path.join(_ROOT, "eval", "reports", "agent-baseline.json")
 OUT_MD = os.path.join(_ROOT, "eval", "reports", "agent-baseline.md")
 
+#: 进程启动时采一次状态（**必须在写任何产物之前**：先写 JSON 再 capture 会把自己算成脏）。
+_STATE: dict | None = None
+
 
 def _post(base: str, path: str, payload: dict, timeout: int = 300) -> dict:
     import urllib.error
@@ -155,7 +158,7 @@ def _version_lines() -> list[str]:
     from pathlib import Path
 
     import kb.runstate as rs
-    st = rs.capture(Path(_ROOT), note="eval/agent_metrics")
+    st = _STATE if _STATE is not None else rs.capture(Path(_ROOT), note="eval/agent_metrics")
     git = st.get("git") or {}
     dirs = (st.get("docs") or {}).get("dirs") or {}
     dep = rs.deps_state(_ROOT)
@@ -285,6 +288,12 @@ def main() -> int:
     ap.add_argument("--compare", default="", help="同一刻 /chat 的 JSON，用于生成对照表")
     ap.add_argument("--note", default="")
     a = ap.parse_args()
+
+    global _STATE
+    from pathlib import Path as _P
+
+    import kb.runstate as _rs
+    _STATE = _rs.capture(_P(_ROOT), note="eval/agent_metrics")   # ★ 先采状态，再写产物
 
     if a.live and a.chat:
         rows = run_live_chat(a.base_url, a.limit or None, a.only)
