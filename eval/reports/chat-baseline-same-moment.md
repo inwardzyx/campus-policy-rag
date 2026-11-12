@@ -3,7 +3,7 @@
 > ★ 本文件由 `eval/agent_metrics.py` 生成，**不要手改**（下次生成会覆盖）。
 > 跑法：从 `chat-baseline-same-moment.json` 重渲染
 
-- 运行指纹：`650fc4c900b0`（`kb/runstate.py`；git `fba093162d54` dirty=`True`，python 3.14.6）
+- 运行指纹：`2eeb7d066314`（`kb/runstate.py`；git `bac8c9537ef1` dirty=`True`，python 3.14.6）
 - 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
 - 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；PDF_BACKEND=`auto`
 - 语料哈希：`docs/kb`=d39a8542；`docs/inbox`=cb62f2bf
