@@ -2,8 +2,8 @@
 
 - 评测层：**offline**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
-- 生成时间：2026-11-12 23:27
-- 运行指纹：`2552133f5824`（`kb/runstate.py`；git `0f10f7bec819` dirty=`False`，python 3.14.6）
+- 生成时间：2026-11-12 23:41
+- 运行指纹：`b317a36c02f1`（`kb/runstate.py`；git `91659e4a231d` dirty=`False`，python 3.14.6）
 - 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
 - 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；不可用 `mineru`；PDF_BACKEND=`auto`
 - 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
