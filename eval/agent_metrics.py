@@ -165,7 +165,8 @@ def _version_lines() -> list[str]:
     ]
 
 
-def render(rows: list[dict], *, base: str = "", note: str = "", compare: list[dict] | None = None) -> str:
+def render(rows: list[dict], *, base: str = "", note: str = "", compare: list[dict] | None = None,
+           title: str = "# agent 基线（105 题独立集，`/agent` 端到端）") -> str:
     ans = [r for r in rows if r["type"] == "answer"]
     ref = [r for r in rows if r["type"] == "refuse"]
     n = len(rows) or 1
@@ -184,7 +185,7 @@ def render(rows: list[dict], *, base: str = "", note: str = "", compare: list[di
         reasons[r["stopped_reason"]] = reasons.get(r["stopped_reason"], 0) + 1
 
     lines = [
-        "# agent 基线（105 题独立集，`/agent` 端到端）",
+        title,
         "",
         "> ★ 本文件由 `eval/agent_metrics.py` 生成，**不要手改**（下次生成会覆盖）。",
         f"> 跑法：{base or '（历史跑批）'}",
@@ -298,7 +299,9 @@ def main() -> int:
     json.dump(rows, open(OUT_JSON, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     cmp_rows = json.load(open(a.compare, encoding="utf-8")) if a.compare else None
     open(OUT_MD, "w", encoding="utf-8").write(
-        render(rows, base=base, note=a.note, compare=cmp_rows))
+        render(rows, base=base, note=a.note, compare=cmp_rows,
+               title=("# `/chat` 同刻基线（105 题，与 agent 同一批）" if a.chat
+                      else "# agent 基线（105 题独立集，`/agent` 端到端）")))
 
     ans = [r for r in rows if r["type"] == "answer"]
     ref = [r for r in rows if r["type"] == "refuse"]
