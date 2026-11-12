@@ -2,8 +2,10 @@
 
 - 评测层：**offline**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
-- 生成时间：2026-11-11 19:03
-- 运行指纹：`361a83ed6a50`（`kb/runstate.py`；git `8e29d78fe9b3` dirty=`False`，python 3.14.6）
+- 生成时间：2026-11-12 08:45
+- 运行指纹：`ed471122a99c`（`kb/runstate.py`；git `65601d8f09ca` dirty=`False`，python 3.14.6）
+- 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
+- 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；不可用 `mineru`；PDF_BACKEND=`auto`
 - 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
 - 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。
 - ⚠️ 指纹里含**工作区未提交文件**（报告文件本身也算）⇒ 同一批产出的两份报告指纹会不同。判「是不是同一个系统」请看 `git_sha` 与语料哈希这两行；完整指纹只标识「这一次跑批的状态」。
