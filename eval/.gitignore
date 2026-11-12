@@ -32,3 +32,8 @@ reports/*.json
 #   它是 `reports/agent-smoke.md` 每个数字的出处；重跑一次要花 token，所以留证据。
 #   （判据 1.3 的两个真实回归 —— 4/8 与 6/8 —— 就是靠它留下的。）
 !reports/agent-smoke.json
+
+# ★ 例外：agent 基线 + 同一刻 /chat 对照的两份逐题原文（各约 30KB）。
+#   它们是 `agent-baseline.md` 对照表每个数字的出处；重跑一次要花 20 分钟与十万级 token。
+!reports/agent-baseline.json
+!reports/chat-baseline-same-moment.json

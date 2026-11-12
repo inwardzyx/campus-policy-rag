@@ -36,7 +36,7 @@ def test_search_policy_renders_like_mcp(monkeypatch):
     srcs = [SimpleNamespace(doc="学生纪律处分管理规定.md｜第十八条", text="违规电器清单……", score=0.8123),
             SimpleNamespace(doc="学生请假管理办法.md｜第五条", text="请假审批……", score=0.7411)]
     monkeypatch.setattr(svc, "handle_chat",
-                        lambda req: SimpleNamespace(sources=srcs, knowledge_hit=True))
+                        lambda req, roles=None: SimpleNamespace(sources=srcs, knowledge_hit=True))
     out = tools_local.search_policy("违规电器怎么处分？")
     expected = _format_sources([{"doc": s.doc, "text": s.text, "score": s.score} for s in srcs]) \
         + _signal_line("hit", "search_policy", len(srcs))
@@ -47,7 +47,7 @@ def test_search_policy_no_hit_uses_same_refusal_text(monkeypatch):
     """未命中时：拒答文案与信号行也必须来自同一处（不许各写一句"查不到"）。"""
     _ready_rag(monkeypatch)
     monkeypatch.setattr(svc, "handle_chat",
-                        lambda req: SimpleNamespace(sources=[], knowledge_hit=False))
+                        lambda req, roles=None: SimpleNamespace(sources=[], knowledge_hit=False))
     out = tools_local.search_policy("图书馆几点关门？")
     assert out == NO_HIT_TEXT + _signal_line("no_hit", "search_policy")
 
@@ -60,7 +60,7 @@ def test_tool_failure_raises_not_returns(monkeypatch):
     """
     _ready_rag(monkeypatch)
 
-    def boom(req):
+    def boom(req, roles=None):
         raise RuntimeError("connection refused")
 
     monkeypatch.setattr(svc, "handle_chat", boom)
@@ -72,6 +72,6 @@ def test_ask_policy_no_hit_when_knowledge_miss(monkeypatch):
     """`ask_policy` 的拒答口径：`knowledge_hit=False` ⇒ NO_HIT + no_hit 信号（不是把成答喂回去）。"""
     _ready_rag(monkeypatch)
     monkeypatch.setattr(svc, "handle_chat",
-                        lambda req: SimpleNamespace(answer="", sources=[], knowledge_hit=False))
+                        lambda req, roles=None: SimpleNamespace(answer="", sources=[], knowledge_hit=False))
     out = tools_local.ask_policy("图书馆几点关门？")
     assert out == NO_HIT_TEXT + _signal_line("no_hit", "ask_policy")

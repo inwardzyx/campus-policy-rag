@@ -36,7 +36,9 @@ class ToolError(RuntimeError):
 
 
 def search_policy(query: str, k: int = 5, roles=None) -> str:
-    """拿原文条款。★ 走 `handle_chat` 的**完整拒答门禁**（roles 一路传到块级 ACL）（精排 < 5 分 = 库里没有）。
+    """拿原文条款。★ 走 `handle_chat` 的**完整拒答门禁**（精排 < 5 分 = 库里没有）。
+
+    `roles` 会一路传到 `handle_chat` 的块级 ACL —— **权限不是模型的事**，漏传不会报错，只会越权。
 
     ★★ 两份实现为什么都退回 `handle_chat`（2026-11-12 实测，两次踩坑）：
       第一版：裸 `rag.search`（top-5 直接喂）⇒ 拒答 4/8（/chat 是 8/8）；
