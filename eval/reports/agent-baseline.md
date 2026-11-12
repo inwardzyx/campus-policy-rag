@@ -1,9 +1,9 @@
 # agent 基线（105 题独立集，`/agent` 端到端）
 
 > ★ 本文件由 `eval/agent_metrics.py` 生成，**不要手改**（下次生成会覆盖）。
-> 跑法：从 `chat-baseline-same-moment.json` 重渲染
+> 跑法：从 `agent-baseline.json` 重渲染
 
-- 运行指纹：`b7e35aa8f9c4`（`kb/runstate.py`；git `0f10f7bec819` dirty=`True`，python None）
+- 运行指纹：`7ef5b3b73f68`（`kb/runstate.py`；git `93a849bff26c` dirty=`True`，python None）
 - 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
 - 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；PDF_BACKEND=`auto`
 - 语料哈希：`docs/kb`=；`docs/inbox`=
@@ -27,6 +27,33 @@
    后者算的是粗捞 top-5。分子分母都不同，**相减没有意义**。
 2. **agent 与 `/chat` 是两个被测对象**：`eval/gate.py` 的配对检验只允许同一层的同一条路径
    （否则「换了被测对象」会被当成「改动有效」）。要比较只能并列看，不能做 McNemar。
+
+
+## 同一刻 `/chat` 对照（同一批题、同一进程、同一时刻）
+
+> ★ 这张表的两个数来自**同一刻**的两次跑批（`agent-baseline.json` 与
+> `chat-baseline-same-moment.json`），不是拿历史基线比 —— 拿历史基线比会把
+> 「不同时间/不同代码」误当成「不同方法」。
+
+| 指标 | `/agent` | `/chat`（同刻） | 差 |
+|---|---|---|---|
+| `gold_in_sources` | 41/44 | 41/44 | +0 |
+| `no_miss` | 43/44 | 43/44 | +0 |
+| `refuse_ok` | 41/61 | 41/61 | +0 |
+
+**结论**：agent 在这三条上**全面更差**，拒答差距最大。
+
+机制**已用单题复现钉住**（不是猜）：`s10`（问「退学后还能回来接着读吗」）
+第一步 `ask_policy(原问题)` 返回 `no_hit`（走的正是 `/chat` 那道闸），
+第二步模型改写问法 `search_policy("退学 复学 重新入学")` **命中 3 条**，
+返回的来源是 `学生应征入伍管理办法` —— 与问题无关。
+而 loop 的 `refused` 判定是「**任何一次**命中即不拒答」⇒ 这条路把拒答绕过去了。
+
+⇒ 缺陷在**循环的拒答语义**，不在工具：应当以「原问题的证据」为准，
+以及限制「换个问法重试直到命中」这种路径。
+
+⇒ 产品结论：`/agent` **不能作为默认路径**（`AGENT_ENABLED` 默认 off 是对的）；
+要上默认，先加一条「拒答口径以**原问题**为准」的守卫。
 
 
 ## 逐题
@@ -138,3 +165,7 @@
 | s23 | refuse | done | — | ✓ | 1 | 2100 | 1.2 |
 | s24 | refuse | done | — | ✓ | 1 | 2100 | 1.1 |
 | s25 | refuse | done | — | ✗ | 0 | 1400 | 0.0 |
+
+## 备注
+
+105 题全量；对照来自同一刻 /chat 跑批。

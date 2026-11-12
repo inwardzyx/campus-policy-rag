@@ -148,7 +148,10 @@ def run_live(base: str, limit: int | None, only: str) -> list[dict]:
 def _version_lines() -> list[str]:
     """与其它报告同款的四行头（没这四行，新鲜度检查会判 UNVERIFIABLE）。"""
     import kb.runstate as rs
-    st = rs.capture(_ROOT, note="eval/agent_metrics")
+    from pathlib import Path
+    # ★ capture() 的 docs_state 要求 Path；传 str 不报错，只是**静默返回空语料哈希** ——
+    #   然后新鲜度检查会判 UNVERIFIABLE。今天在这里踩了一次。
+    st = rs.capture(Path(_ROOT), note="eval/agent_metrics")
     git = st.get("git") or {}
     docs = st.get("docs") or {}
     dep = rs.deps_state(_ROOT)

@@ -118,7 +118,7 @@
 
 ### Step 3（第 5–6 天）评测：agent 的三条指标进流水线 —— **已完成（2026-11-12）**
 
-> 产物：`eval/reports/agent-baseline.md`（105 题 `/agent`）与
+> 产物（实测记录，脚本生成）：`eval/reports/agent-baseline.md`（105 题 `/agent`）与
 > `eval/reports/chat-baseline-same-moment.md`（**同一刻**的 `/chat` 对照）。
 > 两份都由 `eval/agent_metrics.py` 生成，数字不许手改。
 
