@@ -116,6 +116,32 @@
 **回滚点**：开关关闭即回到现 UI；组件独立，不改现有 ChatView 的渲染路径。
 </details>
 
+### Step 3.5（2026-11-13）拒答语义修好 —— **已完成**
+
+修的是 Step 3 实测出来的那个洞：`refused` 判「任何一次命中即不拒答」，于是模型
+**改写问法再查一次**就能把拒答磨掉（`s10` 实测：第一步被闸拒，第二步命中无关的《应征入伍管理办法》）。
+
+修法（三处，缺一不可）：
+
+1. **`gate`**：原问题能不能答，由 `handle_chat(原问题)` 判定 —— 与 `/chat` **同一道闸**。
+   循环里查到什么都不能推翻它；`done` 分支也要拦（第一版只在收尾拦，等于没接）。
+2. **改写上限**：`MAX_REWRITES = 2`，且**按"新的不同问法"去重计数**。
+   第一版按"每次调用"数、上限 1 —— 正常题（`h1`）第一次换个措辞就被截断，当场误杀。
+3. **memo 共享**：`make_tools(roles)` 让闸和工具用同一份 `handle_chat` 响应，
+   同一个问法只调一次模型（否则一次问答跑两遍，既贵又可能不一致）。
+
+复验（同一服务、同一天）：`s10` / `h18` → `gate_refused`；`h1`（应答题）→ 正常 `done`。
+
+### Step 2b（2026-11-13）SSE 穿透 —— **已完成**
+
+- Java：`PythonAiClient.streamAgent()`（`exchange` 拿 `InputStream`，`retrieve` 会缓冲）、
+  `ChatService.agentStream()`（配额在开流前扣、审计记 `streamed`）、`POST /api/agent/stream`
+- Python：`/agent/stream` 收尾补发 `result` 帧（`refused`/`stopped_reason` 不进事件流的话，
+  前端只能猜"成功"）
+- 前端：`applyEvent` / `parseSseFrames`（纯函数，5 条用例：合并成一步、result 定成败、
+  流断=状态未知、分片留残余、坏帧只丢自己）
+- 判据没变：判"算不算成功"的仍然是 `verdictOf`，组件不解析模型的散文
+
 ### Step 3（第 5–6 天）评测：agent 的三条指标进流水线 —— **已完成（2026-11-12）**
 
 > 产物（实测记录，脚本生成）：`eval/reports/agent-baseline.md`（105 题 `/agent`）与
