@@ -311,9 +311,10 @@ def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
         if not deps_same:
             diff.append(f"依赖指纹 {h['deps']} ≠ 当前 {cur_deps}")
         if not lay_same:
-            diff.append(f"版面后端 auto=`{h_lay.get('auto_would_use')}` ≠ 当前 "
-                        f"`{cur_lay.get('auto_would_use')}`（可用 "
-                        f"{h_lay.get('available') or ['无']} → {cur_lay.get('available') or ['无']}）")
+            diff.append(
+                f"版面后端 报告:auto=`{h_lay.get('auto_would_use')}`/PDF_BACKEND=`{h_lay.get('pdf_backend')}`"
+                f" ≠ 当前:auto=`{cur_lay.get('auto_would_use')}`/PDF_BACKEND=`{cur_lay.get('pdf_backend')}`"
+                f"（可用 {h_lay.get('available') or ['无']} → {cur_lay.get('available') or ['无']}）")
         changed.append(("ENV", "；".join(diff)))
 
     if not changed:

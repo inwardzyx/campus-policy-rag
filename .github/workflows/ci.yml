@@ -116,6 +116,10 @@ jobs:
         # ★ 为什么能进快 job：只用标准库 + git + kb/runstate（不装模型、不联网）。
         # ⚠️ 必须在**干净 checkout** 里跑：`git diff` 与 `git rev-parse HEAD` 才有意义。
         #   判据：被引用（且引用行没标历史快照）的报告不是 FRESH ⇒ exit 1。
+        # ★ 必须钉 PDF_BACKEND=pypdf：报告是用 pypdf 出的，而 CI 里没装 docling，
+        #   不钉的话 `auto` 在两边选的后端不同 ⇒ 五份 STALE_ENV，怎么改都红（2026-11-16）。
+        env:
+          PDF_BACKEND: pypdf
         run: python scripts/check_report_freshness.py --strict
 
       - name: 跑"判据的判据"：变异测试（这四个不需要模型，也不需要 gitignored 的数据）
