@@ -37,3 +37,6 @@ reports/*.json
 #   它们是 `agent-baseline.md` 对照表每个数字的出处；重跑一次要花 20 分钟与十万级 token。
 !reports/agent-baseline.json
 !reports/chat-baseline-same-moment.json
+
+# ★ 例外：run_python 配对实验的逐题原文（23 题 × 2 配置）
+!reports/sandbox-ab.json

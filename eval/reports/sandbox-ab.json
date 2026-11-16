@@ -1,0 +1,604 @@
+[
+  {
+    "id": "c50-A1",
+    "question": "我周一早上迟到了大概二十分钟，要扣多少钱？",
+    "expect": [
+      [
+        30.0,
+        "分"
+      ],
+      [
+        2.0,
+        "分"
+      ],
+      [
+        200.0,
+        "%"
+      ],
+      [
+        21.75,
+        "天"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 4,
+    "on_src": 4,
+    "on_tools": [
+      "search_policy",
+      "ask_policy"
+    ],
+    "sec": 25.4,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A3",
+    "question": "我入职三个月，合同签的两年，试用期最长能定几个月？",
+    "expect": [
+      [
+        2.0,
+        "个"
+      ],
+      [
+        1.0,
+        "年"
+      ],
+      [
+        3.0,
+        "年"
+      ],
+      [
+        1.0,
+        "次"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 1,
+    "on_src": 1,
+    "on_tools": [
+      "ask_policy"
+    ],
+    "sec": 11.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A4",
+    "question": "试用期工资能不能就是转正工资的七成？我们那儿最低工资是 2100。",
+    "expect": [
+      [
+        2.0,
+        "个"
+      ],
+      [
+        80.0,
+        "%"
+      ],
+      [
+        3000.0,
+        ""
+      ],
+      [
+        2400.0,
+        ""
+      ],
+      [
+        2100.0,
+        ""
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 1,
+    "on_src": 1,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 19.7,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A5",
+    "question": "我连续三个月迟到很多，出勤率不到 90%，公司能直接把我开掉吗？",
+    "expect": [
+      [
+        3.0,
+        "个"
+      ],
+      [
+        90.0,
+        "%"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 4,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 35.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A7",
+    "question": "我签了保密协议，那离职之后还要保密几年？",
+    "expect": [
+      [
+        2.0,
+        "年"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 1,
+    "on_src": 2,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 18.1,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A10",
+    "question": "项目做到一半我离职了，公司说奖金条件没达成就不发了，有依据吗？",
+    "expect": [
+      [
+        2.0,
+        "个"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 3,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 26.4,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A12",
+    "question": "年假我能不能攒到明年休？公司说必须当年用完。",
+    "expect": [
+      [
+        2.0,
+        "个"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": false,
+    "off_src": 1,
+    "on_src": 1,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 24.6,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A13",
+    "question": "我连续两个季度绩效都是 C，公司说要给我调岗，我可以直接不去吗？",
+    "expect": [
+      [
+        2.0,
+        "个"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 26.5,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A15",
+    "question": "公司规定迟到要罚 50 块，这个规定有效吗？",
+    "expect": [
+      [
+        2.0,
+        "分"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 3,
+    "on_tools": [
+      "search_policy",
+      "ask_policy"
+    ],
+    "sec": 21.5,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A16",
+    "question": "出差住宿超了标准 200 块，当时没来得及批，回来能补批吗？",
+    "expect": [
+      [
+        1.0,
+        "次"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": false,
+    "off_src": 1,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 25.4,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A17",
+    "question": "我离职两周了，工作也交接完了，公司还是没给我开离职证明，说要等我把电脑还了。这合理吗？",
+    "expect": [
+      [
+        15.0,
+        "天"
+      ],
+      [
+        1.0,
+        "个"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 30.5,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-A19",
+    "question": "我上个月实际工作 22 天，那制度里的 21.75 是怎么算出来的？我拿它折算日工资对不对？",
+    "expect": [
+      [
+        21.75,
+        "天"
+      ],
+      [
+        21.75,
+        ""
+      ],
+      [
+        365.0,
+        "天"
+      ],
+      [
+        104.0,
+        "天"
+      ],
+      [
+        12.0,
+        ""
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 1,
+    "on_src": 1,
+    "on_tools": [
+      "search_policy",
+      "ask_policy"
+    ],
+    "sec": 30.0,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B3",
+    "question": "我迟到了一次，公司就直接按\"严重违纪\"把我开了，这符合制度吗？",
+    "expect": [
+      [
+        2.0,
+        "分"
+      ],
+      [
+        3.0,
+        "个"
+      ],
+      [
+        3.0,
+        "次"
+      ],
+      [
+        5.0,
+        "次"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 3,
+    "on_tools": [
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 36.4,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B5",
+    "question": "我们部门一直没跟我签劳动合同，只让我在一份员工手册确认书上签了字，这算合同吗？",
+    "expect": [
+      [
+        1.0,
+        "个"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 4,
+    "on_tools": [
+      "ask_policy",
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 26.7,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B6",
+    "question": "我想离职，公司说不用提前 30 天通知，行业里都是随时走人。",
+    "expect": [
+      [
+        30.0,
+        "天"
+      ],
+      [
+        3.0,
+        "天"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 30.1,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B7",
+    "question": "公司把我辞退了，只口头说了一句\"公司决定\"，没给理由也没让我解释。",
+    "expect": [
+      [
+        5.0,
+        "个"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": false,
+    "off_src": 4,
+    "on_src": 3,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 36.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B8",
+    "question": "周末我加班了，公司说优先安排调休，我想要加班费。行不行？",
+    "expect": [
+      [
+        200.0,
+        "%"
+      ],
+      [
+        150.0,
+        "%"
+      ],
+      [
+        300.0,
+        "%"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 3,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 34.4,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B9",
+    "question": "公司规定全体员工必须接受每月一次线上考试，考不过扣绩效。制度里有这条吗？",
+    "expect": [
+      [
+        27.0,
+        ""
+      ],
+      [
+        31.0,
+        ""
+      ],
+      [
+        32.0,
+        ""
+      ],
+      [
+        33.0,
+        ""
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": false,
+    "off_src": 0,
+    "on_src": 0,
+    "on_tools": [
+      "search_policy",
+      "search_policy",
+      "search_policy",
+      "ask_policy"
+    ],
+    "sec": 29.7,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-B10",
+    "question": "有个同事拒绝在员工手册签收确认书上签字，公司是不是就等于没告知他？",
+    "expect": [
+      [
+        3.0,
+        ""
+      ],
+      [
+        5.0,
+        ""
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 4,
+    "on_tools": [
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 31.6,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-C1",
+    "question": "公司让我们把身份证照片和银行卡号发到一个共享表格里，说只是做通讯录登记，合适吗？",
+    "expect": [
+      [
+        1.0,
+        "个"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": false,
+    "off_src": 0,
+    "on_src": 0,
+    "on_tools": [
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 24.4,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-C5",
+    "question": "我前两天发烧烧到 39 度，在家躺了两天，让同事帮我跟领导说了一声，也没填假条，这算旷工吗？",
+    "expect": [
+      [
+        2.0,
+        "小时"
+      ],
+      [
+        3.0,
+        "个"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 3,
+    "on_tools": [
+      "ask_policy",
+      "search_policy",
+      "search_policy"
+    ],
+    "sec": 34.6,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-C9",
+    "question": "我离职时电脑还没还，公司说\"等离职证明开出来你再来还电脑\"，这样可以吗？",
+    "expect": [
+      [
+        15.0,
+        "天"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 3,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 28.0,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "c50-D2",
+    "question": "我请了三天病假，病假工资到底该扣多少？按我的工资算还是按最低工资算？",
+    "expect": [
+      [
+        80.0,
+        "%"
+      ],
+      [
+        21.75,
+        ""
+      ],
+      [
+        21.75,
+        "天"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "ask_policy",
+      "search_policy"
+    ],
+    "sec": 23.6,
+    "off_err": null,
+    "on_err": null
+  }
+]

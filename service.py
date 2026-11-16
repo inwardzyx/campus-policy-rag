@@ -1545,6 +1545,9 @@ class AgentRequest(BaseModel):
     """
 
     question: str = Field(..., description="用户的问题", min_length=1, max_length=500)
+    # ★ 企业语料场景必需：agent 默认只查 docs/kb，公司制度在 namespace 里。
+    namespace: Optional[str] = Field(None, max_length=64,
+                                     description="知识库分区（不传 = docs/ 默认语料）")
     max_rounds: Optional[int] = Field(None, ge=1, le=10,
                                       description="循环轮数上限（默认取 mcp/probe_loop.MAX_ROUNDS=6）")
     budget_tokens: Optional[int] = Field(None, ge=1, le=100000,
@@ -2123,7 +2126,7 @@ def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
         try:
             from agent.tools_local import make_tools
             from mcp.tool_schemas import MODEL_SCHEMAS
-            tools, gate = make_tools(roles=roles)
+            tools, gate = make_tools(roles=roles, namespace=req.namespace)
             schemas = [sch for sch in MODEL_SCHEMAS if sch["function"]["name"] in tools]
             bound = rag.llm.bind_tools(schemas)
             rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
@@ -2170,7 +2173,7 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
     #   漏传的后果不是报错，是"检索没按 ACL 过滤"—— 看起来一切正常，数据已经越权。
     # ★★ gate 也必须传：拒答口径以**原问题**为准（105 题实测：不传的话，
     #   模型改写问法再查一次就能把拒答磨掉，refuse_ok 从 41/61 掉到 26/61）。
-    tools, gate = make_tools(roles=roles)
+    tools, gate = make_tools(roles=roles, namespace=req.namespace)
     # ★ 只把**已挂上**的工具 schema 喂给模型：`run_python` 默认不挂，
     #   若 schema 里却有它，模型会去调一个不存在的工具（走 unknown_tool 分支）。
     schemas = [sch for sch in MODEL_SCHEMAS if sch["function"]["name"] in tools]

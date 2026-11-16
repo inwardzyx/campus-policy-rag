@@ -99,7 +99,7 @@ def _render(resp, tool: str) -> str:
     return _format_sources(srcs) + _signal_line("hit", tool, len(srcs))
 
 
-def make_tools(roles=None):
+def make_tools(roles=None, namespace=None):
     """为**一次请求**造工具与闸，并共享一份 memo。
 
     ★ 为什么需要 memo：`gate(原问题)` 与 `ask_policy(原问题)` 问的是同一件事。
@@ -115,7 +115,8 @@ def make_tools(roles=None):
     def chat(question: str):
         key = _norm(question)
         if key not in memo:
-            memo[key] = svc.handle_chat(svc.ChatRequest(question=question), roles=roles)
+            memo[key] = svc.handle_chat(
+                svc.ChatRequest(question=question, namespace=namespace), roles=roles)
         return memo[key]
 
     def search_policy(query: str, k: int = 5) -> str:
