@@ -3,11 +3,11 @@
 > ★ 本文件由 `eval/agent_metrics.py` 生成，**不要手改**（下次生成会覆盖）。
 > 跑法：从 `agent-baseline.json` 重渲染
 
-- 运行指纹：`437f655bc6be`（`kb/runstate.py`；git `519d1e7e2071` dirty=`True`，python 3.14.6）
+- 运行指纹：`b1f7a864f121`（`kb/runstate.py`；git `e7565a43e54b` dirty=`True`，python 3.14.6）
 - 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
 - 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；PDF_BACKEND=`auto`
 - 语料哈希：`docs/kb`=d39a8542；`docs/inbox`=cb62f2bf
-- 判据版本：`6c756948`（agent gate 以原问题为准 + 改写去重上限 2；评分 k=5；指标分母各自算；改这些文件会让旧报告失效）
+- 判据版本：`8a7f7538`（agent gate 以原问题为准 + 改写去重上限 2；评分 k=5；指标分母各自算；改这些文件会让旧报告失效）
 
 ## 结论
 

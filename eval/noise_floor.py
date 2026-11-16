@@ -38,10 +38,11 @@ OUT_MD = HERE / "reports" / "noise-floor.md"
 
 
 def _criteria() -> str:
-    """判据版本（取不到写「未记录」）。"""
+    """判据版本（取不到写「未记录」）。★ 本文件没有 `_ROOT`，从 `__file__` 现算。"""
     import sys as _sys
-    if _ROOT not in _sys.path:
-        _sys.path.insert(0, _ROOT)
+    root = str(Path(__file__).resolve().parent.parent)
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
     try:
         import kb.criteria as criteria_mod
         return criteria_mod.version()
