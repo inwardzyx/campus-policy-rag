@@ -10,7 +10,7 @@
 - 语料哈希：`docs/kb`=d39a8542、`docs/inbox`=cb62f2bf；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
 - 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。
 - ⚠️ 指纹里含**工作区未提交文件**（报告文件本身也算）⇒ 同一批产出的两份报告指纹会不同。判「是不是同一个系统」请看 `git_sha` 与语料哈希这两行；完整指纹只标识「这一次跑批的状态」。
-- 数据来源：`reports/promptfoo-online.json`（本报告由 `eval/summarize.py` 生成，数字不手抄）
+- 数据来源：`eval/reports/promptfoo-online.json`（本报告由 `eval/summarize.py` 生成，数字不手抄）
 
 | 指标 | 通过/总数 | 口径 | 分母 |
 |---|---|---|---|
