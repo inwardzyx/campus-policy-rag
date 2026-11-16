@@ -140,7 +140,17 @@ def parse_run_eval_report(path: Path) -> dict:
 
 
 def _criteria_version() -> str:
-    """判据版本（`kb/criteria.py`）。取不到就写「未记录」—— 缺失 ≠ 零。"""
+    """判据版本（`kb/criteria.py`）。取不到就写「未记录」—— 缺失 ≠ 零。
+
+    ★ 必须先把仓库根塞进 sys.path：本文件在 `eval/` 下，进程的 sys.path[0] 是 `eval/`，
+      直接 `import kb.criteria` 会 ImportError，而 except 会把"没算出来"伪装成"未记录"
+      —— 于是所有报告都缺这一行（2026-11-16 现场踩到）。
+    """
+    import os as _os
+    import sys as _sys
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
     try:
         import kb.criteria as criteria_mod
         return criteria_mod.version()

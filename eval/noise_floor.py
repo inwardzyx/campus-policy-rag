@@ -37,6 +37,18 @@ import summarize                                    # noqa: E402
 OUT_MD = HERE / "reports" / "noise-floor.md"
 
 
+def _criteria() -> str:
+    """判据版本（取不到写「未记录」）。"""
+    import sys as _sys
+    if _ROOT not in _sys.path:
+        _sys.path.insert(0, _ROOT)
+    try:
+        import kb.criteria as criteria_mod
+        return criteria_mod.version()
+    except Exception:                                    # noqa: BLE001
+        return "**未记录**"
+
+
 def _version_lines() -> list[str]:
     """报告头三字段：git + 两个语料哈希（同一把尺子：kb.runstate）。"""
     import subprocess
@@ -58,6 +70,7 @@ def _version_lines() -> list[str]:
         f"- 运行指纹相关三字段：git `{sha}`；`docs/kb`={kb}；`docs/inbox`={inbox}",
         f"- 依赖指纹：{'、'.join(f'`{k}`={v}' for k, v in dep.items()) or '**未记录**'}"
         f"（`requirements*.txt` 的 sha256 前 8 位）",
+        f"- 判据版本：`{_criteria()}`（判分/拒答规则；改这些文件会让旧报告失效）",
         f"- 版面后端：auto 会选 `{lay.get('auto_would_use')}`；"
         f"可用 `{'、'.join(lay.get('available') or []) or '无'}`；"
         f"不可用 `{'、'.join(lay.get('unavailable') or []) or '无'}`；"
