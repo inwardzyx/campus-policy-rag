@@ -58,6 +58,26 @@ SOURCE_TOOLS: list[dict] = [
         },
         "required": ["question"],
     },
+    {
+        "name": "run_python",
+        "desc": (
+            "在一个**断网、只读、限内存**的容器里跑一小段 Python，用来做**计算**。\n"
+            "适用于：拿到条款后还要算数（年假折算、加班费、迟到扣款、日期差）。\n"
+            "不适用于：查询资料（用 search_policy / ask_policy）、读写文件、联网、装包 —— 这些都做不了。\n"
+            "【重要】不要用它去「验证」制度内容对不对；它只算数，算完仍要引用条款原文。"
+        ),
+        "props": {
+            "code": {
+                "type": "string",
+                "desc": (
+                    "要执行的 Python 代码，必须 print 出结果（否则你看不到任何输出）。\n"
+                    "例：print(round(5000/21.75*3, 2))\n"
+                    "没有网络、没有第三方包、只能写 /tmp（16MB）。"
+                ),
+            },
+        },
+        "required": ["code"],
+    },
 ]
 
 

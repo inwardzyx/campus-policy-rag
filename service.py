@@ -2122,9 +2122,12 @@ def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
         token = set_current_ledger(led)          # ★ 账本在真正调模型的线程里绑
         try:
             from agent.tools_local import make_tools
+            from mcp.tool_schemas import MODEL_SCHEMAS
             tools, gate = make_tools(roles=roles)
-            rec = run_loop(req.question, max_rounds=req.max_rounds, budget_tokens=req.budget_tokens,
-                           on_event=q.put, tools=tools, gate=gate)
+            schemas = [sch for sch in MODEL_SCHEMAS if sch["function"]["name"] in tools]
+            bound = rag.llm.bind_tools(schemas)
+            rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
+                           budget_tokens=req.budget_tokens, on_event=q.put, tools=tools, gate=gate)
             # ★ 收尾必须发一个 `result`：`refused` / `stopped_reason` 不在事件流里出现，
             #   前端只能靠它判"这段答案算不算成功"。不发的话前端会把 gate_refused 画成绿色 done。
             q.put({"type": "result", "stopped_reason": rec.get("stopped_reason"),
@@ -2167,8 +2170,11 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
     #   漏传的后果不是报错，是"检索没按 ACL 过滤"—— 看起来一切正常，数据已经越权。
     # ★★ gate 也必须传：拒答口径以**原问题**为准（105 题实测：不传的话，
     #   模型改写问法再查一次就能把拒答磨掉，refuse_ok 从 41/61 掉到 26/61）。
-    bound = rag.llm.bind_tools(MODEL_SCHEMAS)
     tools, gate = make_tools(roles=roles)
+    # ★ 只把**已挂上**的工具 schema 喂给模型：`run_python` 默认不挂，
+    #   若 schema 里却有它，模型会去调一个不存在的工具（走 unknown_tool 分支）。
+    schemas = [sch for sch in MODEL_SCHEMAS if sch["function"]["name"] in tools]
+    bound = rag.llm.bind_tools(schemas)
     rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
                    budget_tokens=req.budget_tokens, tools=tools, gate=gate)
     return AgentResponse(

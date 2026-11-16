@@ -142,4 +142,21 @@ def make_tools(roles=None):
         """原问题能不能回答 —— 与 `/chat` **同一道闸**（同一个 handle_chat）。"""
         return bool(getattr(chat(question), "knowledge_hit", True))
 
-    return {"search_policy": search_policy, "ask_policy": ask_policy}, gate
+    tools = {"search_policy": search_policy, "ask_policy": ask_policy}
+
+    # ★ 代码执行默认不挂：多一个能跑代码的工具就多一类风险。
+    #   `SANDBOX_ENABLED=1` 才暴露（模型只能调"被告知存在"的工具，所以 schema 也要过滤）。
+    from agent.sandbox import enabled as _sandbox_enabled, run_python
+
+    if _sandbox_enabled():
+        def run_python_tool(code: str) -> str:
+            r = run_python(code)
+            if r["status"] == "ok":
+                return (f"{r['stdout']}\n\n[容器内执行成功，{r['ms']} ms]"
+                        + (f"\n[stderr] {r['stderr']}" if r["stderr"].strip() else ""))
+            return (f"[执行失败：{r['status']}，{r['ms']} ms]\n"
+                    f"stdout: {r['stdout']}\nstderr: {r['stderr']}")
+
+        tools["run_python"] = run_python_tool
+
+    return tools, gate
