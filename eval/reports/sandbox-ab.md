@@ -63,7 +63,7 @@ system prompt 里加一条「涉及金额/天数/比例必须用 run_python」�
 
 ## 版本
 
-- 运行指纹：`1a14bd95f34e`（git `10477f7b9164` dirty=`True`）
+- 运行指纹：`36a8db88af53`（git `638420405242` dirty=`False`）
 - 依赖指纹：`requirements.txt`=e15469e2、`requirements-optional.txt`=9d4b995d
 - 版面后端：auto 会选 `docling`
 - 语料哈希：`docs/kb`=d39a8542；`docs/inbox`=cb62f2bf
