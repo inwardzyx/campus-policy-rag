@@ -1613,6 +1613,10 @@ sources 条数 ±1 容差），1 遍就够，**实测全绿**。
 | `no_miss` | 37/44 | **42/44** | 43/44 |
 | `refuse_ok` | 26/61 | **40/61** | 41/61 |
 
+> ★ **三项全给，且结论是"打平"不是"更好"**：gold +1、漏答 −1、拒答 −1，
+> 两处 −1 都在噪声带内（见 `reports/noise-floor.md`）。挑着看会显得更好看，
+> 但 README 是公开的 —— 选择性展示迟早被对上。
+
 产物（脚本生成，不许手改）：`eval/reports/agent-baseline.md`（含同刻对照表）、
 `eval/reports/chat-baseline-same-moment.md`；跑法见 `agent/PLAN.md`。
 
