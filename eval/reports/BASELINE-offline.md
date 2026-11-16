@@ -2,7 +2,7 @@
 
 - 评测层：**offline**（由 case_server 的 EVAL_LAYER 决定，这里是服务自报的值）
 - 评测语料：docs/ 入库 263 块 / 拦下 23 块（另有企业 demo 69 块**不参与**本评测 —— 评测请求不带 namespace，`rag.search()` 只查 default 语料）
-- 生成时间：2026-11-16 16:31
+- 生成时间：2026-11-16 16:39
 - 运行指纹：`60c374d39bd4`（`kb/runstate.py`；git `0b89dd3bc5a4` dirty=`False`，python 3.14.6）
 - 依赖指纹：`requirements.txt`=98cf4408、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
 - 判据版本：`fe0cf083`（agent gate 以原问题为准 + 改写去重上限 2；评分 k=5；指标分母各自算；改这些文件会让旧报告失效）
@@ -10,7 +10,7 @@
 - 语料哈希：`docs/kb`=fe2bb077、`docs/inbox`=6f3d4043；企业 demo：`company`=cc4471c1、`sunrun`=199b0bd7（不参与本评测）
 - 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。
 - ⚠️ 指纹里含**工作区未提交文件**（报告文件本身也算）⇒ 同一批产出的两份报告指纹会不同。判「是不是同一个系统」请看 `git_sha` 与语料哈希这两行；完整指纹只标识「这一次跑批的状态」。
-- 数据来源：`reports/promptfoo-offline.json`（本报告由 `eval/summarize.py` 生成，数字不手抄）
+- 数据来源：`eval/reports/promptfoo-offline.json`（本报告由 `eval/summarize.py` 生成，数字不手抄）
 
 | 指标 | 通过/总数 | 口径 | 分母 |
 |---|---|---|---|
@@ -27,7 +27,7 @@
 
 > ⚠️ 本层是 `offline` ⇒ **`refuse_ok` 这一行不能用来谈「系统的拒答能力」**，它是单闸（向量分 0.55）边界；要谈拒答请跑 `EVAL_LAYER=online`。
 
-## 与 run_eval.py 对账（`reports/run_eval-offline-heldout.log`）
+## 与 run_eval.py 对账（`eval/reports/run_eval-offline-heldout.log`）
 
 | 指标 | 本报告 | run_eval | 一致 |
 |---|---|---|---|
