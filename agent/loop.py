@@ -93,6 +93,20 @@ def _norm(q: str) -> str:
     return _re.sub(r"[\s，。？！、；：,.?!;:]+", "", q or "").lower()
 
 
+def _bigrams(q: str) -> set[str]:
+    """中文没有空格，用**二元组**当"词"：字符级 Jaccard 足够区分"换说法"与"换子问题"。"""
+    t = _norm(q)
+    return {t[i:i + 2] for i in range(max(0, len(t) - 1))} or ({t} if t else set())
+
+
+def _same_need(a: str, b: str) -> bool:
+    """两次查询是不是"同一个需求"（换说法重试）。阈值 0.5 是拍的，但有单测盯着。"""
+    A, B = _bigrams(a), _bigrams(b)
+    if not A or not B:
+        return False
+    return len(A & B) / len(A | B) >= 0.5
+
+
 def _run_loop(question: str, *, llm=None, max_rounds: int | None = None,
               budget_tokens: int | None = None, on_event=None, tools=None,
               gate=None) -> dict:
@@ -118,6 +132,7 @@ def _run_loop(question: str, *, llm=None, max_rounds: int | None = None,
     steps: list[dict] = []
     rewrites = 0
     _seen_q: set[str] = set()
+    _executed: list[str] = []
     tool_errors = 0
     steps_succeeded = 0
     sources: list[dict] = []
@@ -166,17 +181,22 @@ def _run_loop(question: str, *, llm=None, max_rounds: int | None = None,
             # ★ 改写重试上限：同一个原问题只允许一次"换个说法再查"
             arg_text = " ".join(str(v) for v in (tc["args"] or {}).values())
             qkey = _norm(arg_text)
-            # ★ 只统计"**新的**不同问法"：同一句话查两次不算两次改写（去重很关键 ——
-            #   第一版按"每次调用"计数，结果正常题第一次换个措辞就被截断，h1 当场被误杀）。
+            # ★★ 只把"**同一个需求的又一次尝试**"算成改写（2026-11-16 第二次修）：
+            #   第一次按"每次调用"数 ⇒ 正常题被误杀；第二次按"不同问法个数"数 ⇒ **多跳被误杀**
+            #   （奖学金 + 勤工助学两道子问题就超限，根本走不到计算那一步）。
+            #   现在：与已执行查询的最大相似度 ≥ 0.5 ⇒ 同需求 retry；否则算新的子问题（hop）。
             if qkey != _norm(question) and qkey not in _seen_q:
                 _seen_q.add(qkey)
-                if rewrites >= MAX_REWRITES:
+                is_retry = any(_same_need(arg_text, prev) for prev in _executed)
+                if is_retry and rewrites >= MAX_REWRITES:
                     _emit(on_event, "error", detail=f"改写重试超过 {MAX_REWRITES} 次，停止")
                     return {"answer": f"【改写问法超过 {MAX_REWRITES} 次，我停止检索】",
                             "refused": True, "stopped_reason": "rewrite_limit",
                             "steps": steps, "rounds": rnd + 1, "tokens": tokens,
                             "no_hit_seen": no_hit_seen, "sources": sources}
-                rewrites += 1
+                if is_retry:
+                    rewrites += 1          # ★ 只有"同需求的重复尝试"才计数（hop 不计数）
+                _executed.append(arg_text)
 
             t0 = time.perf_counter()
             fn = tools.get(name)

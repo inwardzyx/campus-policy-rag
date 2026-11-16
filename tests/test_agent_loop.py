@@ -163,17 +163,37 @@ def test_gate_allows_when_original_answerable():
     assert rec["stopped_reason"] == "done"
 
 
-def test_rewrite_cap_stops_after_two_distinct_rewrites():
-    """改写问法最多两次（去重计数）：第三次"新问法"就停 —— 不给"换个说法直到命中"的后门。
+def test_rewrite_cap_counts_same_need_retries():
+    """**同一个需求的反复尝试**最多两次 —— 这才是要堵的"换个说法直到命中"。
 
-    ★ 上限从 1 放宽到 2 的原因：按"每次调用"数会把正常题也截断（h1 实测被误杀）。
-      去重后只数**新的**问法；同一句话查两次不算改写。
+    ★ 三版语义的演进（都被实测打过脸）：
+      v1 按"每次调用"数 ⇒ 正常题第一次换措辞就被截断（h1 误杀）；
+      v2 按"不同问法个数"数 ⇒ **多跳被误杀**（奖学金 + 勤工助学两道子问题就超限）；
+      v3 按"与已执行查询的相似度 ≥ 0.5 才算同一需求" ⇒ 换说法仍被拦，多跳放行。
     """
-    script = [_tool_call("search_policy", {"query": "第一次改写"}, cid="c1"),
-              _tool_call("search_policy", {"query": "第二次改写"}, cid="c2"),
-              _tool_call("search_policy", {"query": "第三次改写"}, cid="c3"),
+    # ★ 首次 1 次 + 同需求重试 3 次：上限是"重试 ≤ 2"，所以第 3 次重试才该被拦
+    script = [_tool_call("search_policy", {"query": "请假 审批"}, cid="c1"),
+              _tool_call("search_policy", {"query": "请假 审批 流程"}, cid="c2"),
+              _tool_call("search_policy", {"query": "请假 审批 规定"}, cid="c3"),
+              _tool_call("search_policy", {"query": "请假 审批 制度"}, cid="c4"),
               _final("不该走到这里")]
-    rec = run_loop("原问题", llm=_FakeBound(script), tools={"search_policy": _hit_tool},
+    rec = run_loop("请假谁批", llm=_FakeBound(script), tools={"search_policy": _hit_tool},
                    gate=lambda q: True)
-    assert rec["stopped_reason"] == "rewrite_limit"
+    assert rec["stopped_reason"] == "rewrite_limit", rec["stopped_reason"]
     assert rec["refused"] is True
+
+
+def test_multi_hop_not_blocked_by_rewrite_cap():
+    """★ 多跳不能被改写上限误杀：三道**不同子问题**的检索必须能跑完。
+
+    实测现场（2026-11-16）：「奖学金 + 勤工助学 一年能拿多少」在第二步就被 rewrite_limit
+    掐断，agent 根本没机会去调 run_python 算数 —— 而那正是加这个工具的理由。
+    """
+    script = [_tool_call("search_policy", {"query": "国家励志奖学金 金额"}, cid="c1"),
+              _tool_call("search_policy", {"query": "勤工助学 报酬 标准"}, cid="c2"),
+              _tool_call("search_policy", {"query": "一学年 总收入"}, cid="c3"),
+              _final("合计 8000 元。")]
+    rec = run_loop("奖学金加勤工助学一年能拿多少", llm=_FakeBound(script),
+                   tools={"search_policy": _hit_tool}, gate=lambda q: True)
+    assert rec["stopped_reason"] == "done", rec["stopped_reason"]
+    assert len(rec["steps"]) == 3
