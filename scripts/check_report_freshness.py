@@ -294,9 +294,19 @@ def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
     cur_lay = cur.get("layout") or {}
     deps_same = dict(h["deps"]) == dict(cur_deps)
     h_lay = h["layout"]
-    lay_same = (h_lay.get("auto_would_use") == cur_lay.get("auto_would_use")
-                and sorted(h_lay.get("available") or []) == sorted(cur_lay.get("available") or [])
-                and (h_lay.get("pdf_backend") or "") == (cur_lay.get("pdf_backend") or ""))
+    # ★★ 显式钉死后端时，只比「钉的是谁」。
+    #   报告与 CI 都设了 PDF_BACKEND=pypdf ⇒ 实际跑的就是 pypdf；
+    #   这时 `auto 会选谁` 只反映「装没装 docling」，不影响测量结果。
+    #   不这么写，CI（没装 docling，auto=pypdf）对着报告（auto=docling）永远判 STALE_ENV。
+    #   （2026-11-16：已经在 CI 里钉了变量，仍然红，就是这段在比 auto。）
+    h_pin = (h_lay.get("pdf_backend") or "").lower()
+    c_pin = (cur_lay.get("pdf_backend") or "").lower()
+    if h_pin and c_pin and h_pin != "auto" and h_pin == c_pin:
+        lay_same = True
+    else:
+        lay_same = (h_lay.get("auto_would_use") == cur_lay.get("auto_would_use")
+                    and sorted(h_lay.get("available") or []) == sorted(cur_lay.get("available") or [])
+                    and h_pin == c_pin)
     env_same = deps_same and lay_same
 
     changed = []
