@@ -3,9 +3,9 @@
 > ★ 本文件由 `eval/agent_metrics.py` 生成，**不要手改**（下次生成会覆盖）。
 > 跑法：从 `chat-baseline-same-moment.json` 重渲染
 
-- 运行指纹：`1c4fc1c3f8db`（`kb/runstate.py`；git `8df95b189bf6` dirty=`False`，python 3.14.6）
+- 运行指纹：`2fe493534697`（`kb/runstate.py`；git `88572193e4b4` dirty=`False`，python 3.14.6）
 - 依赖指纹：`requirements.txt`=98cf4408、`requirements-optional.txt`=9d4b995d（`requirements*.txt` 的 sha256 前 8 位）
-- 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；PDF_BACKEND=`auto`
+- 版面后端：auto 会选 `docling`；可用 `docling、docling-local`；PDF_BACKEND=`pypdf`
 - 语料哈希：`docs/kb`=fe2bb077；`docs/inbox`=6f3d4043
 - 判据版本：`fe0cf083`（agent gate 以原问题为准 + 改写去重上限 2；评分 k=5；指标分母各自算；改这些文件会让旧报告失效）
 
