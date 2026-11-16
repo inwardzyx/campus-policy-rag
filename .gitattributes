@@ -21,3 +21,22 @@ Dockerfile        text eol=lf
 .dockerignore     text eol=lf
 *.sh              text eol=lf
 scripts/hooks/*   text eol=lf
+
+# ==================================================================
+# 2026-11-16 追加：参与哈希计算的文本文件一律 LF
+# ==================================================================
+# 为什么：本机 core.autocrlf=true ⇒ 工作区 CRLF，CI 检出 LF，
+#   于是 sha256（questions.json）、判据版本（agent/loop.py 等五个文件）、
+#   语料哈希（docs/kb/*.md）、依赖指纹（requirements.txt）全都对不上，
+#   CI 里 5 份报告变 STALE_MULTI、test_heldout_sha 直接失败。
+# ⇒ 行尾对文本文件功能没影响，但**对哈希有影响**。钉死 LF 之后两边算出来的才是同一个数。
+# 不包含 *.ps1：那些脚本要求 UTF-8 BOM + CRLF（PowerShell 5.1 的坑，见 HANDOFF §7）。
+*.md      text eol=lf
+*.json    text eol=lf
+*.py      text eol=lf
+*.txt     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.html    text eol=lf
+*.toml    text eol=lf
+*.sha256  text eol=lf
