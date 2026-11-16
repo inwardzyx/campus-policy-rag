@@ -93,9 +93,9 @@ def _norm(q: str) -> str:
     return _re.sub(r"[\s，。？！、；：,.?!;:]+", "", q or "").lower()
 
 
-def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
-             budget_tokens: int | None = None, on_event=None, tools=None,
-             gate=None) -> dict:
+def _run_loop(question: str, *, llm=None, max_rounds: int | None = None,
+              budget_tokens: int | None = None, on_event=None, tools=None,
+              gate=None) -> dict:
     """跑一次完整的 agent 循环。
 
     `llm` 必须是**已经 bind_tools 过的**可调用对象（`service.rag.llm.bind_tools(MODEL_SCHEMAS)`），
@@ -230,3 +230,17 @@ def run_loop(question: str, *, llm=None, max_rounds: int | None = None,
             "refused": bool(no_hit_seen and not hits_seen),
             "stopped_reason": "max_rounds", "steps": steps, "rounds": rounds_limit,
             "tokens": tokens, "no_hit_seen": no_hit_seen, "sources": sources}
+
+def run_loop(*args, **kwargs) -> dict:
+    """公开入口：跑一次循环，并给结果补上 `disposition`。
+
+    ★ 为什么在外面包一层而不是在每个 `return` 里加：`_run_loop` 有 **6 条退出路径**
+      （done / gate_refused / no_tool / rewrite_limit / budget / max_rounds）。
+      逐个加一定漏一条 —— 第一版就是这么改的，`ast.parse` 直接报 unmatched ')'。
+      包一层 = 只有一处后处理，绕不过去。
+    """
+    from agent.disposition import classify
+
+    rec = _run_loop(*args, **kwargs)
+    rec["disposition"] = classify(rec)
+    return rec

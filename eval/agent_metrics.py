@@ -148,6 +148,22 @@ def run_live(base: str, limit: int | None, only: str) -> list[dict]:
     return rows
 
 
+def _criteria() -> str:
+    try:
+        import kb.criteria as criteria_mod
+        return criteria_mod.version()
+    except Exception:                                    # noqa: BLE001
+        return "未记录"
+
+
+def _criteria_label() -> str:
+    try:
+        import kb.criteria as criteria_mod
+        return criteria_mod.LABEL
+    except Exception:                                    # noqa: BLE001
+        return "gate / k=5 / 指标定义"
+
+
 def _version_lines() -> list[str]:
     """与其它报告同款的四行头（没这四行，新鲜度检查会判 UNVERIFIABLE）。
 
@@ -173,6 +189,7 @@ def _version_lines() -> list[str]:
         f"- 版面后端：auto 会选 `{lay.get('auto_would_use')}`；"
         f"可用 `{'、'.join(lay.get('available') or []) or '无'}`；PDF_BACKEND=`{lay.get('pdf_backend')}`",
         f"- 语料哈希：`docs/kb`={kb[:8]}；`docs/inbox`={inbox[:8]}",
+        f"- 判据版本：`{_criteria()[:8]}`（{_criteria_label()}；改这些文件会让旧报告失效）",
     ]
 
 

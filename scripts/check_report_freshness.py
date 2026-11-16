@@ -136,6 +136,7 @@ RE_KB = re.compile(r"`docs/kb`[=:]\s*`?([0-9a-f]{8,64})`?")
 RE_INBOX = re.compile(r"`docs/inbox`[=:]\s*`?([0-9a-f]{8,64})`?")
 RE_DIRTY = re.compile(r"dirty\s*[=:]\s*`?(True|False|true|false)`?")
 RE_DEPS = re.compile(r"`([\w.\-]+\.txt)`=([0-9a-f]{8})")
+RE_CRITERIA = re.compile(r"- 判据版本：`?([0-9a-f]{8}|\*\*未记录\*\*)`?")
 RE_LAYOUT_AUTO = re.compile(r"auto 会选 `([a-z\-]+)`")
 RE_LAYOUT_AVAIL = re.compile(r"可用 `([^`]*)`")
 RE_LAYOUT_UNAVAIL = re.compile(r"不可用 `([^`]*)`")
@@ -167,6 +168,7 @@ def current_state() -> dict:
         "fingerprint": st.get("fingerprint"),
         "deps": rs.deps_state(ROOT),
         "layout": rs.layout_state(),
+        "criteria": _criteria_version(),
     }
 
 
@@ -201,6 +203,7 @@ def parse_header(path: Path) -> dict:
         "dirty": (m_dirty.group(1).lower() == "true") if m_dirty else None,
         "deps": deps,
         "layout": layout,
+        "criteria": (RE_CRITERIA.search(head).group(1) if RE_CRITERIA.search(head) else None),
     }
 
 
@@ -233,6 +236,15 @@ def code_changed_since(sha: str) -> tuple[bool, list[str], str]:
     if not affecting:
         return False, [], f"其后只改了不影响结果的文件（{len(files)} 个，如 {files[0]}）"
     return True, affecting, f"其后改了 {len(affecting)} 个影响结果的文件（如 {affecting[0]}）"
+
+
+def _criteria_version() -> str:
+    """当前判据版本（`kb/criteria.py`）。取不到就返回空串（= 不参与比较，而不是"相等"）。"""
+    try:
+        import kb.criteria as criteria_mod
+        return criteria_mod.version()
+    except Exception:                                    # noqa: BLE001
+        return ""
 
 
 def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
@@ -273,6 +285,11 @@ def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
             missed.append("版面后端")
         return "UNVERIFIABLE", f"报告头缺环境字段：{' / '.join(missed) or '依赖指纹 / 版面后端'}"
 
+    if not h.get("criteria") or h["criteria"] == "**未记录**":
+        return "UNVERIFIABLE", "报告头缺判据版本（判分规则改了却无从判断新旧可比性）"
+    cur_criteria = cur.get("criteria") or ""
+    criteria_same = (not cur_criteria) or h["criteria"] == cur_criteria
+
     cur_deps = cur.get("deps") or {}
     cur_lay = cur.get("layout") or {}
     deps_same = dict(h["deps"]) == dict(cur_deps)
@@ -285,6 +302,8 @@ def classify(path: Path, cur: dict, *, strict_sha: bool) -> tuple[str, str]:
     changed = []
     if not code_same:
         changed.append(("CODE", why))
+    if not criteria_same:
+        changed.append(("CODE", f"判据版本 {h['criteria']} ≠ 当前 {cur_criteria}（判分/拒答规则改过，旧报告不可比）"))
     if not data_same:
         changed.append(("DATA", "语料哈希与当前不同（docs/kb 或 docs/inbox 变过）"))
     if not env_same:

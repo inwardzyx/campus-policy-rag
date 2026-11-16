@@ -1573,6 +1573,10 @@ class AgentResponse(BaseModel):
     tokens: int = 0
     refused: bool = False
     took_ms: int = 0
+    # ★ 处置：这次请求**到底发生了什么**（answered / refused / degraded / error + code）。
+    #   学自 super-agent 的 disposition 表：`stopped_reason` 说"循环怎么结束"，
+    #   disposition 说"这次该不该被当成一次有效工作"——两条都要有，才查得出"为什么没产出"。
+    disposition: dict = {}
     # 与 /chat 同款：降级要可见（agent 关掉时前端不该以为自己在用 agent）
     agent_used: bool = True
 
@@ -2126,7 +2130,8 @@ def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
             q.put({"type": "result", "stopped_reason": rec.get("stopped_reason"),
                    "refused": bool(rec.get("refused")), "rounds": rec.get("rounds", 0),
                    "tokens": rec.get("tokens", 0), "answer": rec.get("answer", ""),
-                   "sources": rec.get("sources") or []})
+                   "sources": rec.get("sources") or [],
+                   "disposition": rec.get("disposition") or {}})
         except Exception as e:                    # noqa: BLE001
             holder["error"] = f"{type(e).__name__}: {e}"
             q.put({"type": "error", "detail": holder["error"]})
@@ -2175,6 +2180,7 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
         tokens=rec.get("tokens", 0),
         refused=bool(rec.get("refused")),
         took_ms=int((_time.time() - t0) * 1000),
+        disposition=rec.get("disposition") or {},
     )
 
 

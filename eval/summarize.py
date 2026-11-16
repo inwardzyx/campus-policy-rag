@@ -139,6 +139,23 @@ def parse_run_eval_report(path: Path) -> dict:
     return parse_run_eval_text(path.read_text(encoding="utf-8"))
 
 
+def _criteria_version() -> str:
+    """判据版本（`kb/criteria.py`）。取不到就写「未记录」—— 缺失 ≠ 零。"""
+    try:
+        import kb.criteria as criteria_mod
+        return criteria_mod.version()
+    except Exception:                                    # noqa: BLE001
+        return "**未记录**"
+
+
+def _criteria_label() -> str:
+    try:
+        import kb.criteria as criteria_mod
+        return criteria_mod.LABEL
+    except Exception:                                    # noqa: BLE001
+        return "gate / k=5 / 指标定义"
+
+
 def _fingerprint_lines(boot: dict) -> list[str]:
     """报告头的"这是同一个系统吗"三行。
 
@@ -164,6 +181,10 @@ def _fingerprint_lines(boot: dict) -> list[str]:
         f"- 运行指纹：`{rs['fingerprint']}`（`kb/runstate.py`；git `{str(rs.get('git_sha'))[:12]}`"
         f" dirty=`{rs.get('git_dirty')}`，python {rs.get('python')}）",
         f"- 依赖指纹：{dep_txt}（`requirements*.txt` 的 sha256 前 8 位）",
+        # ★ 判据版本（2026-11-16，学自 super-agent 的 `policyVersion`）：
+        #   代码版本只说"哪一版程序"，这条说"哪一版**判分/拒答规则**"。
+        #   改 gate / 改写上限 / k=5 / 指标定义 ⇒ 旧报告自动失效（freshness 会判 STALE）。
+        f"- 判据版本：`{_criteria_version()}`（{_criteria_label()}；改这些文件会让旧报告失效）",
         f"- 版面后端：{lay_txt}",
         f"- 语料哈希：{docs}；企业 demo：{corp}（不参与本评测）",
         "- 切块与索引**不物化**：它们是（语料哈希 × 代码版本）的确定函数 ⇒ **指纹即索引版本**。",
