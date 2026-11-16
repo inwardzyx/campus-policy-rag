@@ -1,20 +1,20 @@
 {
  "run": "run3",
  "source": "online-lf-run2.json",
- "at": "2026-11-16 16:25",
+ "at": "2026-11-16 16:48",
  "layer": "online",
  "n_cases": 105,
  "tally": {
   "recall5": {
-   "pass": 43,
+   "pass": 42,
    "total": 44
   },
   "no_miss": {
-   "pass": 44,
+   "pass": 43,
    "total": 44
   },
   "refuse_ok": {
-   "pass": 39,
+   "pass": 41,
    "total": 61
   }
  },
@@ -184,8 +184,8 @@
   "h9": {
    "type": "answer",
    "scores": {
-    "recall5": 1,
-    "no_miss": 1
+    "recall5": 0,
+    "no_miss": 0
    }
   },
   "r1": {
@@ -511,7 +511,7 @@
   "s1": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 0
+    "refuse_ok": 1
    }
   },
   "s10": {
@@ -565,7 +565,7 @@
   "s18": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 1
+    "refuse_ok": 0
    }
   },
   "s19": {
@@ -601,7 +601,7 @@
   "s23": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 0
+    "refuse_ok": 1
    }
   },
   "s24": {
@@ -613,7 +613,7 @@
   "s25": {
    "type": "refuse",
    "scores": {
-    "refuse_ok": 0
+    "refuse_ok": 1
    }
   },
   "s26": {
