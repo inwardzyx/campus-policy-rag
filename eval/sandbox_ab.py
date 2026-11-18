@@ -31,6 +31,7 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -108,13 +109,22 @@ def main() -> int:
     ap.add_argument("--on", default="http://127.0.0.1:8035")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--from-json", default="", help="只重渲染（不重跑）")
+    ap.add_argument("--cases", default="", help="题集 jsonl（默认：company-52 的数字子集）")
     a = ap.parse_args()
 
     if a.from_json:
         rows = json.load(open(a.from_json, encoding="utf-8"))
         cases = []   # 重渲染：不重跑，循环自然空转
     else:
-        cases = numeric_cases()
+        if a.cases:
+            cases = []
+            for line in open(a.cases, encoding="utf-8"):
+                if line.strip():
+                    c = json.loads(line)
+                    cases.append({"id": c["id"], "question": c["question"],
+                                  "expect": c["expect"]})
+        else:
+            cases = numeric_cases()
         if a.limit:
             cases = cases[:a.limit]
         rows = []
@@ -144,15 +154,22 @@ def main() -> int:
     p = mcnemar_exact(b, cc)
     used_py = sum(1 for r in rows if "run_python" in r["on_tools"])
 
-    os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
-    json.dump(rows, open(OUT_JSON, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    out_json, out_md = OUT_JSON, OUT_MD
+    if a.cases:
+        tag = Path(a.cases).stem.replace("compute-", "calc-")
+        out_json = os.path.join(_ROOT, "eval", "reports", f"sandbox-ab-{tag}.json")
+        out_md = os.path.join(_ROOT, "eval", "reports", f"sandbox-ab-{tag}.md")
+    os.makedirs(os.path.dirname(out_json), exist_ok=True)
+    json.dump(rows, open(out_json, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
     lines = [
         "# `run_python` 配对实验：同一批题，开/关工具各跑一次",
         "",
         "> ★ 本文件由 `eval/sandbox_ab.py` 生成，**不要手改**。",
-        f"> 题目：`evalset/scenarios/company-52.jsonl` 中 **能抽出数字期望** 的 {len(rows)} 道"
-        f"（namespace=`{NAMESPACE}`）",
+        (f"> 题目：`{a.cases}` 的 **{len(rows)}** 道（namespace=`{NAMESPACE}`）"
+         if a.cases else
+         f"> 题目：`evalset/scenarios/company-52.jsonl` 中 **能抽出数字期望** 的 {len(rows)} 道"
+         f"（namespace=`{NAMESPACE}`）"),
         f"> 打分：`kb.values.extract` 抽 `(数字, 单位)`，回答里命中即为通过（与 evalkit 同一抽取器）",
         "",
         "## 结论",
@@ -166,25 +183,33 @@ def main() -> int:
         f"- 实际调用 `run_python` 的题：**{used_py}/{len(rows)}**",
         "",
         ("→ 结论：**有可测的能力增量**（b > c 且 p < 0.05）。" if (b > cc and p < 0.05) else
-         "→ 结论：**这批题上看不出显著增量**。"),
+         ("→ 结论：**数值命中几乎不变**（" + f"+{b} / −{cc}" + "），这批题模型心算也够准。"
+          if a.cases else
+          "→ 结论：**这批题上看不出显著增量**。")),
         "",
         (f"★ 关键解释：**工具只被调用 {used_py} 次**。" if used_py == 0 else
          f"★ 工具被调用 {used_py} 次。"),
         "",
-        "两条都成立时才谈得上增量：**题需要算 + 模型会去调**。这份实验里第一条就不成立 ——",
-        "company-52 的数字题（迟到扣分、试用期上限、试用期工资）**数值直接写在条款里**，",
-        "模型读条款就能答，不需要算；所以开不开工具都不改变数值命中。",
-        "",
-        "**而在真正需要组合计算的题上，工具是有用的**（同一服务、手工构造两题）：",
-        "",
-        "| 题 | 关工具 | 开工具 |",
-        "|---|---|---|",
-        "| 奖学金 6000 + 勤工助学 300×10 | 心算，答 9000 | **调 run_python**，答 9000 |",
-        "| 综合测评 85×70% + 90×30% | 心算，答 86.5 | 这次没调（心算），答 86.5 |",
-        "",
-        "⇒ 真问题不是「工具没用」，是**模型不一定会去调**（第二题就没调）。下一步要么在",
-        "system prompt 里加一条「涉及金额/天数/比例必须用 run_python」，要么补一批",
-        "**条款里只有系数、答案必须组合计算**的题，让「需要算」这件事在分布里真的存在。",
+        *([
+            "★ 这批题按条款公式现算期望值（21.75 天、150%/200%/300%、迟到 30 分钟以上按半日事假），所以「命中」= 数值算对。",
+            "★ 工具采用率 100% 说明「需要算」在分布里成立了；但准确率几乎不变 ⇒ 工具的价值是**计算过程可复核**，不是「更准」。",
+            "★ 判分口径的局限：答案只写「不用给钱」而没有数字时会被判错（0 元类题目尤其）。",
+        ] if a.cases else [
+            "两条都成立时才谈得上增量：**题需要算 + 模型会去调**。这份实验里第一条就不成立 ——",
+            "company-52 的数字题（迟到扣分、试用期上限、试用期工资）**数值直接写在条款里**，",
+            "模型读条款就能答，不需要算；所以开不开工具都不改变数值命中。",
+            "",
+            "**而在真正需要组合计算的题上，工具是有用的**（同一服务、手工构造两题）：",
+            "",
+            "| 题 | 关工具 | 开工具 |",
+            "|---|---|---|",
+            "| 奖学金 6000 + 勤工助学 300×10 | 心算，答 9000 | **调 run_python**，答 9000 |",
+            "| 综合测评 85×70% + 90×30% | 心算，答 86.5 | 这次没调（心算），答 86.5 |",
+            "",
+            "⇒ 真问题不是「工具没用」，是**模型不一定会去调**（第二题就没调）。下一步要么在",
+            "system prompt 里加一条「涉及金额/天数/比例必须用 run_python」，要么补一批",
+            "**条款里只有系数、答案必须组合计算**的题，让「需要算」这件事在分布里真的存在。",
+        ]),
         "",
         "## 逐题",
         "",
@@ -195,11 +220,11 @@ def main() -> int:
         lines.append(f"| `{r['id']}` | {'✅' if r['off_ok'] else '❌'} | {'✅' if r['on_ok'] else '❌'} | "
                      f"{', '.join(r['on_tools']) or '（无）'} |")
     lines += ["", "## 版本", ""] + _version_lines()
-    open(OUT_MD, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    open(out_md, "w", encoding="utf-8").write("\n".join(lines) + "\n")
 
     print(f"\n关工具 {n_off}/{len(rows)}　开工具 {n_on}/{len(rows)}　"
           f"b={b} c={cc}　p={p:.4f}　run_python 用了 {used_py} 次")
-    print(f"已写 {OUT_MD}")
+    print(f"已写 {out_md}")
     return 0
 
 

@@ -1,0 +1,326 @@
+[
+  {
+    "id": "calc-01",
+    "question": "我月薪 8700，今天迟到 20 分钟，要扣多少钱？",
+    "expect": [
+      [
+        "0",
+        "元"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": false,
+    "off_src": 4,
+    "on_src": 3,
+    "on_tools": [
+      "search_policy",
+      "ask_policy"
+    ],
+    "sec": 17.7,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-02",
+    "question": "我月薪 8700，今天迟到 45 分钟，按制度要扣多少钱？",
+    "expect": [
+      [
+        "200",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 4,
+    "on_src": 4,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 19.2,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-03",
+    "question": "我月薪 8700，旷工半日，公司能扣我多少工资？",
+    "expect": [
+      [
+        "800",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 3,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 18.2,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-04",
+    "question": "我月薪 8700，工作日加班 3 小时（已审批），加班费是多少？",
+    "expect": [
+      [
+        "225",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 18.1,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-05",
+    "question": "我月薪 8700，休息日加班 8 小时且不能补休，加班费多少？",
+    "expect": [
+      [
+        "800",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 16.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-06",
+    "question": "我月薪 8700，法定节假日加班 8 小时，加班费多少？",
+    "expect": [
+      [
+        "1200",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 17.1,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-07",
+    "question": "我月薪 8700，请了 2 天事假，要扣多少钱？",
+    "expect": [
+      [
+        "800",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 3,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 18.6,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-08",
+    "question": "我月薪 8700，迟到 100 分钟，按制度扣多少钱？",
+    "expect": [
+      [
+        "200",
+        "元"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 4,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 23.2,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-09",
+    "question": "offer 转正工资 3000，当地最低工资 2100，试用期工资最低能定多少？",
+    "expect": [
+      [
+        "2400",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 1,
+    "on_src": 1,
+    "on_tools": [
+      "ask_policy",
+      "search_policy",
+      "run_python"
+    ],
+    "sec": 13.1,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-10",
+    "question": "我月薪 8700，按 21.75 天折算，日工资是多少？",
+    "expect": [
+      [
+        "400",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 1,
+    "on_src": 0,
+    "on_tools": [
+      "run_python"
+    ],
+    "sec": 8.5,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-11",
+    "question": "我月薪 8700，按 21.75 天、每天 8 小时算，时薪是多少？",
+    "expect": [
+      [
+        "50",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 0,
+    "on_src": 0,
+    "on_tools": [
+      "run_python"
+    ],
+    "sec": 5.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-12",
+    "question": "我月薪 8700，这个月工作日一共加班 9 小时（已审批），加班费多少？",
+    "expect": [
+      [
+        "675",
+        "元"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": true,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "ask_policy",
+      "run_python"
+    ],
+    "sec": 17.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-13",
+    "question": "我月薪 8700，请 1 天事假，加上迟到 20 分钟，总共扣多少？",
+    "expect": [
+      [
+        "400",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 5,
+    "on_src": 3,
+    "on_tools": [
+      "search_policy",
+      "search_policy",
+      "run_python"
+    ],
+    "sec": 23.2,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-14",
+    "question": "我月薪 8700，旷工 1 天，按日工资 200% 扣，扣多少？",
+    "expect": [
+      [
+        "800",
+        "元"
+      ]
+    ],
+    "off_ok": true,
+    "on_ok": true,
+    "off_src": 3,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "search_policy",
+      "run_python"
+    ],
+    "sec": 16.9,
+    "off_err": null,
+    "on_err": null
+  },
+  {
+    "id": "calc-15",
+    "question": "我月薪 8700，休息日加班 4 小时，公司安排了补休，还要给加班费吗？给多少？",
+    "expect": [
+      [
+        "0",
+        "元"
+      ]
+    ],
+    "off_ok": false,
+    "on_ok": false,
+    "off_src": 2,
+    "on_src": 2,
+    "on_tools": [
+      "search_policy",
+      "ask_policy"
+    ],
+    "sec": 17.8,
+    "off_err": null,
+    "on_err": null
+  }
+]
