@@ -1,7 +1,7 @@
 # `run_python` 配对实验：同一批题，开/关工具各跑一次
 
 > ★ 本文件由 `eval/sandbox_ab.py` 生成，**不要手改**。
-> 题目：`evalset\scenarios\compute-24.jsonl` 的 **24** 道（namespace=`company`）
+> 题目：`evalset\compute\compute-24.jsonl` 的 **24** 道（namespace=`company`）
 > 打分：`kb.values.extract` 抽 `(数字, 单位)`，回答里命中即为通过（与 evalkit 同一抽取器）
 
 ## 结论
@@ -53,7 +53,7 @@
 
 ## 版本
 
-- 运行指纹：`22f433f2bb4d`（git `f90b7376c9bb` dirty=`True`）
+- 运行指纹：`05e0c09bb89c`（git `6d81340d1c3c` dirty=`True`）
 - 依赖指纹：`requirements.txt`=98cf4408、`requirements-optional.txt`=9d4b995d
 - 版面后端：auto 会选 `docling`
 - 语料哈希：`docs/kb`=fe2bb077；`docs/inbox`=6f3d4043
