@@ -1548,6 +1548,9 @@ class AgentRequest(BaseModel):
     # ★ 企业语料场景必需：agent 默认只查 docs/kb，公司制度在 namespace 里。
     namespace: Optional[str] = Field(None, max_length=64,
                                      description="知识库分区（不传 = docs/ 默认语料）")
+    # ★ 2026-11-19 加：多轮会话。不传 = 单轮，行为与改动前一致。
+    session_id: Optional[str] = Field(None, max_length=64,
+                                      description="会话标识（不传 = 单轮）")
     max_rounds: Optional[int] = Field(None, ge=1, le=10,
                                       description="循环轮数上限（默认取 mcp/probe_loop.MAX_ROUNDS=6）")
     budget_tokens: Optional[int] = Field(None, ge=1, le=100000,
@@ -1580,6 +1583,8 @@ class AgentResponse(BaseModel):
     #   学自 super-agent 的 disposition 表：`stopped_reason` 说"循环怎么结束"，
     #   disposition 说"这次该不该被当成一次有效工作"——两条都要有，才查得出"为什么没产出"。
     disposition: dict = {}
+    # ★ 这次到底有没有用上历史（降级不静默：None = 没传 session_id）
+    session_used: Optional[bool] = None
     # 与 /chat 同款：降级要可见（agent 关掉时前端不该以为自己在用 agent）
     agent_used: bool = True
 
@@ -2129,8 +2134,16 @@ def _agent_events(req: AgentRequest, led: "UsageLedger", who: str, roles):
             tools, gate = make_tools(roles=roles, namespace=req.namespace)
             schemas = [sch for sch in MODEL_SCHEMAS if sch["function"]["name"] in tools]
             bound = rag.llm.bind_tools(schemas)
+            prior: list[str] = []
+            if req.session_id:
+                prior = SESSION_STORE.get_questions(req.session_id)
             rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
-                           budget_tokens=req.budget_tokens, on_event=q.put, tools=tools, gate=gate)
+                           budget_tokens=req.budget_tokens, on_event=q.put, tools=tools,
+                           gate=gate, history=prior)
+            if req.session_id:
+                SESSION_STORE.append_turn(req.session_id, req.question,
+                                          session_mod.DEFAULT_MAX_TURNS,
+                                          session_mod.DEFAULT_TTL_SEC)
             # ★ 收尾必须发一个 `result`：`refused` / `stopped_reason` 不在事件流里出现，
             #   前端只能靠它判"这段答案算不算成功"。不发的话前端会把 gate_refused 画成绿色 done。
             q.put({"type": "result", "stopped_reason": rec.get("stopped_reason"),
@@ -2174,12 +2187,23 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
     # ★★ gate 也必须传：拒答口径以**原问题**为准（105 题实测：不传的话，
     #   模型改写问法再查一次就能把拒答磨掉，refuse_ok 从 41/61 掉到 26/61）。
     tools, gate = make_tools(roles=roles, namespace=req.namespace)
+    # ★ 多轮：先取历史（不含本轮），跑完再把本轮写回去（best-effort，失败不抛）
+    prior: list[str] = []
+    if req.session_id:
+        prior = SESSION_STORE.get_questions(req.session_id)
     # ★ 只把**已挂上**的工具 schema 喂给模型：`run_python` 默认不挂，
     #   若 schema 里却有它，模型会去调一个不存在的工具（走 unknown_tool 分支）。
     schemas = [sch for sch in MODEL_SCHEMAS if sch["function"]["name"] in tools]
     bound = rag.llm.bind_tools(schemas)
     rec = run_loop(req.question, llm=bound, max_rounds=req.max_rounds,
-                   budget_tokens=req.budget_tokens, tools=tools, gate=gate)
+                   budget_tokens=req.budget_tokens, tools=tools, gate=gate,
+                   history=prior)
+    # ★ 如实报：传了 session_id 但历史为空（首轮）⇒ False（"没用上历史"，不是"没传"）
+    rec["session_used"] = bool(prior) if req.session_id else None
+    if req.session_id:
+        SESSION_STORE.append_turn(req.session_id, req.question,
+                                  session_mod.DEFAULT_MAX_TURNS,
+                                  session_mod.DEFAULT_TTL_SEC)
     return AgentResponse(
         answer=rec["answer"],
         sources=[Source(**{k: s.get(k) for k in ("doc", "text", "score")}) for s in rec.get("sources", [])],
@@ -2190,6 +2214,7 @@ def handle_agent(req: AgentRequest, led: "UsageLedger | None" = None, roles=None
         refused=bool(rec.get("refused")),
         took_ms=int((_time.time() - t0) * 1000),
         disposition=rec.get("disposition") or {},
+    session_used=rec.get("session_used"),
     )
 
 

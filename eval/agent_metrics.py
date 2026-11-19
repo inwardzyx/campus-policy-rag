@@ -44,8 +44,31 @@ if _ROOT not in sys.path:
 OUT_JSON = os.path.join(_ROOT, "eval", "reports", "agent-baseline.json")
 OUT_MD = os.path.join(_ROOT, "eval", "reports", "agent-baseline.md")
 
+
+def _out_paths(prefix: str) -> tuple[str, str]:
+    if not prefix:
+        return OUT_JSON, OUT_MD
+    base = os.path.join(_ROOT, "eval", "reports", prefix)
+    return base + ".json", base + ".md"
+
 #: 进程启动时采一次状态（**必须在写任何产物之前**：先写 JSON 再 capture 会把自己算成脏）。
 _STATE: dict | None = None
+
+
+def _auth_headers() -> dict:
+    """从环境变量取凭据 —— 不写死、也不默认放空。
+
+    8031（dev）与 8033（临时服务）都开了 INTERNAL_TOKEN，不带头会 401，
+    而 401 在统计里看起来像"模型答错"，会把基线数字弄脏（2026-11-19 踩过）。
+    """
+    h = {}
+    tok = os.environ.get("INTERNAL_TOKEN")
+    if tok:
+        h["X-Internal-Token"] = tok
+    roles = os.environ.get("AUTH_ROLES")
+    if roles:
+        h["X-Auth-Roles"] = roles
+    return h
 
 
 def _post(base: str, path: str, payload: dict, timeout: int = 300) -> dict:
@@ -53,7 +76,7 @@ def _post(base: str, path: str, payload: dict, timeout: int = 300) -> dict:
     import urllib.request
 
     req = urllib.request.Request(base + path, data=json.dumps(payload).encode(), method="POST",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", **_auth_headers()})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
@@ -295,6 +318,7 @@ def render(rows: list[dict], *, base: str = "", note: str = "", compare: list[di
 
 
 def main() -> int:
+    global OUT_JSON, OUT_MD
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--base-url", default="http://127.0.0.1:8031")
@@ -304,7 +328,13 @@ def main() -> int:
     ap.add_argument("--chat", action="store_true")
     ap.add_argument("--compare", default="", help="同一刻 /chat 的 JSON，用于生成对照表")
     ap.add_argument("--note", default="")
+    ap.add_argument("--out-prefix", default="", help="输出文件名前缀（冒烟跑用它，别覆盖基线）")
     a = ap.parse_args()
+    if a.out_prefix:
+        OUT_JSON, OUT_MD = _out_paths(a.out_prefix)
+    # 冒烟跑（--limit）默认不覆盖正式基线：显式加前缀，避免"10 题结果盖掉 105 题报告"
+    elif a.limit and not a.from_json:
+        OUT_JSON, OUT_MD = _out_paths(f"agent-smoke-{a.limit}")
 
     global _STATE
     from pathlib import Path as _P
@@ -325,7 +355,6 @@ def main() -> int:
         print("要么 --live，要么 --from-json", file=sys.stderr)
         return 2
 
-    global OUT_JSON, OUT_MD
     if a.chat:                                # ★ 同刻对照写自己的文件，不覆盖 agent 基线（--from-json 也算）
         OUT_JSON = OUT_JSON.replace("agent-baseline", "chat-baseline-same-moment")
         OUT_MD = OUT_MD.replace("agent-baseline", "chat-baseline-same-moment")

@@ -86,6 +86,47 @@ def _emit(on_event, etype: str, **fields) -> None:
 #: 允许一次，是给"表述差异"留余地；允许两次，就是在允许它把拒答磨掉。
 MAX_REWRITES = 2
 
+# ==================================================================
+# 多轮会话：历史怎么进上下文（2026-11-19 加）
+# ==================================================================
+# ★ 为什么要压缩而不是全塞：追问只需要"上一两轮问过什么"，更早的只要标题。
+#   而且摘要如果调一次模型，等于每轮多付一次 token + 一次延迟 —— 追问场景不值。
+#   ⇒ 规则式压缩：最近 HISTORY_KEEP 轮原文，更早的截到 HISTORY_ITEM_CHARS 字。
+HISTORY_KEEP = 3
+HISTORY_ITEM_CHARS = 40
+
+
+def _compress_history(history: list[str]) -> list[str]:
+    """把会话历史压成"可读的短列表"（纯规则，不调模型）。
+
+    顺序约定：`session.get_questions()` 返回**时间顺序**（旧→新），
+    内存实现与 Redis 实现都是这样（Redis 那边 LPUSH 后做了 reversed）。
+    """
+    if not history:
+        return []
+    keep = max(1, HISTORY_KEEP)
+    recent = history[-keep:]
+    older = history[:-keep]
+    out: list[str] = []
+    for q in older:
+        t = " ".join((q or "").split())
+        if t:
+            out.append(t[:HISTORY_ITEM_CHARS] + ("…" if len(t) > HISTORY_ITEM_CHARS else ""))
+    out.extend(" ".join((q or "").split()) for q in recent)
+    return [x for x in out if x]
+
+
+def _history_note(history: list[str]) -> str:
+    """拼成一条 SystemMessage。明确写"不要复述"，否则模型会拿它当答案素材。"""
+    items = _compress_history(history)
+    if not items:
+        return ""
+    body = "\n".join(f"{i}. {q}" for i, q in enumerate(items, 1))
+    return (
+        "以下是**同一会话里此前的提问**，只用来理解指代（如「那病假呢」指的是什么），"
+        "不要复述、不要当成答案依据；本轮仍以原问题为准。\n" + body
+    )
+
 
 def _norm(q: str) -> str:
     """比较"是不是同一个问题"用的归一化：只去空白与标点，不做语义改写（不猜）。"""
@@ -109,7 +150,7 @@ def _same_need(a: str, b: str) -> bool:
 
 def _run_loop(question: str, *, llm=None, max_rounds: int | None = None,
               budget_tokens: int | None = None, on_event=None, tools=None,
-              gate=None) -> dict:
+              gate=None, history: list[str] | None = None) -> dict:
     """跑一次完整的 agent 循环。
 
     `llm` 必须是**已经 bind_tools 过的**可调用对象（`service.rag.llm.bind_tools(MODEL_SCHEMAS)`），
@@ -128,7 +169,13 @@ def _run_loop(question: str, *, llm=None, max_rounds: int | None = None,
     #   原问题可答 —— 105 题实测就是这么把拒答从 41/61 磨到 26/61 的。
     answerable = True if gate is None else bool(gate(question))
 
-    msgs = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=question)]
+    msgs = [SystemMessage(content=SYSTEM_PROMPT)]
+    # ★ history=None 时**一条都不加**，与改动前逐字节一致（单轮调用方零影响）
+    if history:
+        _note = _history_note(history)
+        if _note:
+            msgs.append(SystemMessage(content=_note))
+    msgs.append(HumanMessage(content=question))
     steps: list[dict] = []
     rewrites = 0
     _seen_q: set[str] = set()
