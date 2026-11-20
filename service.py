@@ -1455,10 +1455,21 @@ class _EarlyAdmit:
         #    ★ 这一层保护的正是"被吵的那个邻居"：它不该因为别人吵而收到 429。
         took_global = False
         if _GLOBAL_ASYNC is not None:
-            try:
-                await asyncio.wait_for(_GLOBAL_ASYNC.acquire(), CONC_WAIT_MS / 1000.0)
-                took_global = True
-            except (asyncio.TimeoutError, TimeoutError):
+            if CONC_WAIT_MS > 0:
+                try:
+                    await asyncio.wait_for(_GLOBAL_ASYNC.acquire(), CONC_WAIT_MS / 1000.0)
+                    took_global = True
+                except (asyncio.TimeoutError, TimeoutError):
+                    pass
+            else:
+                # ★ CONC_WAIT_MS=0 必须走这条路，不能写 `wait_for(..., 0)`：
+                #   Python 3.12+ 的 wait_for 在 timeout<=0 时**先取消再说**，即使名额是空的
+                #   也照样抛 TimeoutError ⇒ 一旦开了 GLOBAL_CONC 就会全拒。
+                #   而 value>0 时 `await acquire()` 不会让出事件循环，等价于非阻塞。
+                if not _GLOBAL_ASYNC.locked():
+                    await _GLOBAL_ASYNC.acquire()
+                    took_global = True
+            if not took_global:
                 sem.release()
                 return await self._reject(send, _busy(
                     "global_concurrency",

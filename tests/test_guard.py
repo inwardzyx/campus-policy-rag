@@ -1331,3 +1331,88 @@ def test_search_is_behind_the_same_gate_and_counts_without_faking_missing(gate):
         raise AssertionError("配额用尽后 /search 一直是 200 ⇒ 新入口没设闸")
     assert client.get("/limits").json()["usage"]["requests_used"] == 5, \
         "被挡的 /search 也记账了（额度会越挡越少，客户端永远回不来）"
+
+
+def _occupy_all_caller_slots(monkeypatch, cap: int):
+    """把某个调用方的并发名额全部占满，返回 who 和已占的名额（用完要 release）。
+
+    ★ 为什么要手动占：并发上限只有在"同时有两个请求"时才生效，而单测里很难稳定制造并发。
+      直接拿 `svc._admit` 把名额占满，判据就变成确定性的了。
+    ★ `MAX_CONC_PER_CALLER`/`_CONC_SLOTS` 都要 monkeypatch：名额是**首次使用时**按当时的上限建的，
+      事后改常量不会改已建出来的 Semaphore（这个坑不修的话测试会假绿）。
+    """
+    monkeypatch.setattr(svc, "MAX_CONC_PER_CALLER", cap)
+    monkeypatch.setattr(svc, "_CONC_SLOTS", {})
+    who = svc._who_of("testclient", {})
+    slots = []
+    for _ in range(cap):
+        slot = svc._admit(who)
+        slots.append(slot)
+    return who, slots
+
+
+def test_search_admission_rejects_before_body_parse(gate, monkeypatch):
+    """并发被挡时**不解析请求体** —— 这条断言同时是对"早拒"这个改动的存在性证明。
+
+    ★ 为什么这么判：旧写法（`ADMIT_MODE=endpoint`）在端点函数里判，而 FastAPI 是
+      **先解析 body 再进函数** ⇒ 坏 body 永远先得到 422。所以：
+        - `early` 模式下，名额满了 + 坏 body ⇒ **429**（说明它在解析前就拒了）；
+        - `endpoint` 模式下，同样条件 ⇒ **422**（说明这条判据真的能区分两种实现）。
+      ★ 后半句是**变异用例**：去掉它，这条测试就只是在描述当前行为，证明不了任何事。
+    """
+    lim, client = gate(burst=100, per_min=0.0, daily_req=0)
+    who, slots = _occupy_all_caller_slots(monkeypatch, 1)
+    try:
+        monkeypatch.setattr(svc, "ADMIT_MODE", "early")
+        r = client.post("/search", content=b"not-json-at-all",
+                        headers={"Content-Type": "application/json"})
+        assert r.status_code == 429, f"期望在解析 body 之前就 429，实际 {r.status_code}：{r.text}"
+        assert r.json()["detail"]["reason"] == "caller_concurrency"
+        assert r.headers.get("Retry-After") == str(svc.CONC_RETRY_AFTER), \
+            "429 没带 Retry-After ⇒ 客户端不会退避，会变成拒绝风暴（实测见 experiments/noisy-neighbor.md §九）"
+
+        monkeypatch.setattr(svc, "ADMIT_MODE", "endpoint")
+        r2 = client.post("/search", content=b"not-json-at-all",
+                         headers={"Content-Type": "application/json"})
+        assert r2.status_code == 422, (
+            f"回滚模式（endpoint）下应该**先解析 body** 得到 422，实际 {r2.status_code}"
+            f" —— 若这里也是 429，说明上面那条断言区分不了两种实现（假绿）")
+    finally:
+        for s in slots:
+            s.release()
+
+
+def test_global_concurrency_cap_returns_busy_instead_of_breaking(gate, monkeypatch):
+    """全局名额（`GLOBAL_CONC`）满了 ⇒ 429 + `global_concurrency`，而且**不能漏名额**。
+
+    ★ 三条断言，每条都对应一个真会犯的错：
+      ① `CONC_WAIT_MS=0` 且名额**空闲**时仍然 200 ——
+         这一条挡的是 `asyncio.wait_for(..., 0)` 的陷阱（Python 3.12+ 即使名额空也抛 TimeoutError，
+         等于一开 GLOBAL_CONC 就全拒；2026-11-20 写这轮代码时真的踩了）；
+      ② 名额被占时 429 且 reason 是 `global_concurrency`（不是 `caller_concurrency`，
+         也不是 500 —— 这两种都会把"机器忙"误报成"你太吵"或"服务坏了"）；
+      ③ 被 ② 拒掉之后，**调用方那层的名额要还回来**：再请求一次必须 200。
+         漏还的话这个调用方会被永久锁死（上限会越用越少）。
+    """
+    import asyncio
+    lim, client = gate(burst=100, per_min=0.0, daily_req=0)
+    monkeypatch.setattr(svc, "_CONC_SLOTS", {})
+    monkeypatch.setattr(svc, "MAX_CONC_PER_CALLER", 2)
+    monkeypatch.setattr(svc, "_GLOBAL_ASYNC", asyncio.Semaphore(1))
+    monkeypatch.setattr(svc, "CONC_WAIT_MS", 0)
+
+    body = {"question": "宿舍里使用违规电器会挨什么处分？"}
+    assert client.post("/search", json=body).status_code == 200, \
+        "全局名额空着却拒了 —— CONC_WAIT_MS=0 走了 wait_for(...,0) 的老路（名额空闲也超时）"
+
+    asyncio.run(svc._GLOBAL_ASYNC.acquire())          # 把唯一的全局名额占掉
+    try:
+        r = client.post("/search", json=body)
+        assert r.status_code == 429, f"全局名额满了还放行（实际 {r.status_code}）"
+        assert r.json()["detail"]["reason"] == "global_concurrency"
+    finally:
+        svc._GLOBAL_ASYNC.release()
+
+    assert client.post("/search", json=body).status_code == 200, \
+        "全局名额被拒之后调用方的名额没还回来 ⇒ 这个调用方被永久锁死"
+
