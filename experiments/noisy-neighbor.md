@@ -214,11 +214,80 @@ D:\Python-project\.venv\Scripts\python.exe scripts\noisy_neighbor_round2.py diag
 
 | 候选 | 能解决什么 | 为什么这轮没做 |
 |---|---|---|
-| **入口层按租户限速 + 并发**（nginx/Envoy，或 Java 网关那层） | 挡住"请求数级别"的风暴，应用进程根本看不到 | 与"两个服务一台机器、Nginx 即网关"的既有决定一致，但要改部署；本轮只在应用层量 |
+| **入口层按租户限速 + 并发**（nginx/Envoy，或 Java 网关那层） | 挡住"请求数级别"的风暴，应用进程根本看不到 | **已做，见第十节**：+623% → +179%（同一应用、同款客户端） |
 | Redis 全局计数器 | 让多 worker 共享**一个**预算（真正的全站口径） | 引入依赖（现在 Redis 连限流都只是可选），且本轮证明瓶颈不在这里 |
 | embedding 拆独立服务/进程 | 隔离 CPU，让生成路径不被检索拖 | 多一跳网络 + 多一个部署单元，本轮数据看不出净收益 |
 
 **一句话总结这一轮**：把"多 worker = 隔离"这个直觉证伪了；
 真正的收益来自"**总预算按机器核数收敛 + 让受害者排队而不是被拒 + 客户端尊重 Retry-After**"，
 而剩下的那 5 倍，得在**入口层**解决 —— 单进程内怎么调预算都有天花板。
+
+---
+
+## 十、入口层：把"拒绝"搬出应用进程（2026-11-20 22:20）
+
+第九节说"剩下那 5 倍得在入口层解决"，这一节把它量了：在应用前面加一个 nginx，
+按 `X-Client-Id` 做**每租户限速 120 r/s + 每租户 2 条连接**。应用侧配置与直连臂**完全相同**
+（现状：`ADMIT_MODE=endpoint`、cap2、1 worker、无全局预算）。
+
+### 10.1 结果
+
+| 臂 | 链路 | B 基线 p95 | 噪音期 p95 | 劣化 | B 收到 429 | A 被拒 |
+|---|---|---|---|---|---|---|
+| E5 直连 | 客户端 → 应用 | 26.4 | 190.8 | **+623%** | 0 | 26,811（应用拒） |
+| E6 过入口层 | 客户端 → nginx → 应用 | 32.8 | 91.6 | **+179%** | 0 | **230,587（nginx 拒）** |
+
+两臂用**同一个客户端**（裸 socket、keep-alive、头与体一次写出、开 TCP_NODELAY），
+A 的负载画像相同（48 并发、429 后立刻重打）。
+
+### 10.2 为什么没到"零影响"（这点必须说清）
+
+入口层解决的是"**拒绝风暴把事件循环占满**"（§9.3 的 /health 30.9×），它不解决"**4 个并发检索互相抢 CPU**"：
+
+- 限速留了余量（B 自己就要 ~60 r/s，所以定 120 r/s），A 被限到 ~110 r/s 后仍有
+  **2 条连接在跑真实检索**（每条约 18ms）；
+- 应用侧还是现状配置，没有全局预算 ⇒ A 的 2 个并发 + B 的 2 个并发 = 4 个检索
+  抢一台背景负载 86% 的机器 ⇒ 剩下这 179% 主要是 CPU 争抢，不是排队。
+
+⇒ 两层是**叠加**的，不互相替代：入口层挡住"请求数级别"的风暴，应用层全局预算收敛"CPU 并发"。
+把两者一起开（入口 nginx + 应用 `GLOBAL_CONC=4`）应该还能再降，**这一轮没测**（诚实标注）。
+
+### 10.3 两个坑（这次的代价）
+
+1. **`limit_conn` 的语法**：`limit_conn tenant_conn 2;` 是**裸 zone 名**；
+   写成 `limit_conn zone=tenant_conn 2;` 会被当成一个叫 `zone=tenant_conn` 的 zone，
+   nginx 启动直接 `[emerg] zero size shared memory zone`。
+2. **47ms 的测量伪影（差点得出相反结论）**：用 `http.client` 当客户端时，
+   每个请求过 nginx 凭空多 **47ms**，B 的基线从 26ms 抬到 74ms、负载也被压低，
+   于是劣化率看着只有 **+28.8%** —— 那个数是假绿（"入口层几乎零影响"）。
+   定位靠 nginx 自己的日志：`$request_time=0.071` 而 `$upstream_response_time=0.024`，
+   那 47ms 花在 nginx 与客户端之间，不是应用的。
+   根因是 `http.client` 把请求头和请求体**分两次 send**（`TCP_NODELAY` 也救不了），
+   改成裸 socket 一次 `sendall` 后同一条链路只要 13.9ms（直连 14.3ms）。
+   ⇒ 这又是"**检出 ≠ 证明**"的一个实例：判据（劣化率变小）确实响了，但它响的原因不是我以为的那个。
+
+### 10.4 局限
+
+- nginx 跑在 Docker Desktop（WSL2 NAT）里，跨宿主机多约 **7ms**；生产同机 loopback 部署会更低；
+- 每臂只跑一轮 60s×3 阶段；机器背景负载 86%（作者桌面 + Ubuntu 虚拟机 + Dify 栈）；
+- 入口层用的是 `X-Client-Id` 这个"自称身份"（实验约定），生产必须由网关/SSO 注入可信身份
+  （`limits.py` 的 `client_id()` 默认就不信它）。
+
+### 10.5 可复跑
+
+```powershell
+# 1) 起应用（现状配置）
+D:\Python-project\.venv\Scripts\python.exe -m uvicorn service:app --host 127.0.0.1 --port 8060
+
+# 2) 起入口层（配置在 experiments/edge/nginx.conf）
+docker run -d --name pd-edge -p 8062:80 --add-host=host.docker.internal:host-gateway `
+  -v D:\_review_rag-cs\experiments\edge\nginx.conf:/etc/nginx/nginx.conf:ro nginx:latest
+
+# 3) 两臂（同一个客户端）
+D:\Python-project\.venv\Scripts\python.exe scripts\noisy_neighbor_round2.py measure --port 8060 --out %TEMP%\e5.json
+D:\Python-project\.venv\Scripts\python.exe scripts\noisy_neighbor_round2.py measure --port 8062 --out %TEMP%\e6.json
+```
+
+产物：`experiments/noisy-neighbor-round2.json` 的 `edge_layer` 一节（含 4 条被客户端伪影污染的作废臂）。
+入口层配置：`experiments/edge/nginx.conf`。
 

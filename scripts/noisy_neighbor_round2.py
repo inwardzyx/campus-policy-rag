@@ -70,38 +70,96 @@ def one(conn, client_id: str) -> tuple[int, float]:
         return 0, (time.perf_counter() - t0) * 1000
 
 
+class RawConn:
+    """裸 socket 的 keep-alive 客户端：**请求头 + 请求体一次 sendall 出去**。
+
+    ★ 为什么不用 `http.client`（2026-11-20 实测，差点把锅记到 nginx 头上）：
+      它把「头」和「体」分两次 send；经过入口层（nginx）时每个请求凭空多 **47ms**
+      （nginx 日志能指认：`urt=0.024` 但 `rt=0.071`），`TCP_NODELAY` 也救不了。
+      结果是入口层的基线被抬高、受害者负载被自己压低，劣化率从 +179% 变成"看起来 +28.8%" ——
+      一个**看起来更好、其实是伪影**的数（见 experiments/noisy-neighbor.md §10.3）。
+      换成一次 sendall 后同一条链路只要 13.9ms（直连 14.3ms，差在噪声内）。
+    """
+
+    __slots__ = ("sock", "buf")
+
+    def __init__(self, port: int):
+        import socket
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=120)
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.buf = b""
+
+    def request(self, client_id: str) -> tuple[int, float]:
+        head = (b"POST /search HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(BODY)).encode() + b"\r\n"
+                b"X-Client-Id: " + client_id.encode() + b"\r\n"
+                b"X-Auth-Roles: public\r\nConnection: keep-alive\r\n\r\n")
+        t0 = time.perf_counter()
+        self.sock.sendall(head + BODY)          # ★ 一次写：见类注释
+        while b"\r\n\r\n" not in self.buf:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("closed")
+            self.buf += chunk
+        hd, _, rest = self.buf.partition(b"\r\n\r\n")
+        status = int(hd.split(b" ")[1])
+        length = 0
+        for line in hd.split(b"\r\n")[1:]:
+            if line.lower().startswith(b"content-length:"):
+                length = int(line.split(b":", 1)[1])
+        while len(rest) < length:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("closed")
+            rest += chunk
+        self.buf = rest[length:]
+        return status, (time.perf_counter() - t0) * 1000
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except Exception:
+            pass
+
+
 def _loop(port: int, client_id: str, sink: list, stop, retry_sleep: float, path: str = "/search") -> None:
+    if path != "/health":
+        # /search 走裸 socket 客户端（理由见 RawConn 的注释）
+        conn = RawConn(port)
+        while not stop.is_set():
+            try:
+                code, ms = conn.request(client_id)
+            except Exception:
+                code, ms = 0, 0.0
+                conn.close()
+                conn = RawConn(port)
+            sink.append({"client": client_id, "at": time.time(), "ms": round(ms, 1), "code": code})
+            if code == 429 and retry_sleep > 0:
+                stop.wait(retry_sleep)          # ★ 守规矩的客户端：尊重 Retry-After
+                continue
+            time.sleep(0.01)
+        conn.close()
+        return
+
+    # /health 对照探针：GET、无 body，不受上面那个两次写的问题影响，用 http.client 就够
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
     while not stop.is_set():
-        if path == "/health":
-            t0 = time.perf_counter()
-            try:
-                conn.request("GET", path)
-                r = conn.getresponse()
-                r.read()
-                code = r.status
-            except Exception:
-                code = 0
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
-            sink.append({"client": client_id, "at": time.time(), "code": code,
-                         "ms": round((time.perf_counter() - t0) * 1000, 1)})
-            time.sleep(0.01)
-            continue
-        code, ms = one(conn, client_id)
-        sink.append({"client": client_id, "at": time.time(), "ms": round(ms, 1), "code": code})
-        if code == 0:
+        t0 = time.perf_counter()
+        try:
+            conn.request("GET", path)
+            r = conn.getresponse()
+            r.read()
+            code = r.status
+        except Exception:
+            code = 0
             try:
                 conn.close()
             except Exception:
                 pass
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
-        elif code == 429 and retry_sleep > 0:
-            stop.wait(retry_sleep)          # ★ 守规矩的客户端：尊重 Retry-After
-            continue
+        sink.append({"client": client_id, "at": time.time(), "code": code,
+                     "ms": round((time.perf_counter() - t0) * 1000, 1)})
         time.sleep(0.01)
     try:
         conn.close()
