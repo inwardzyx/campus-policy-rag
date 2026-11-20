@@ -121,6 +121,17 @@ ENV_REGISTRY: dict[str, str] = {
     "MINERU_TIMEOUT": "mineru 超时",
     # ---- 入库清洗 ----
     "RAG_QUIET_CLEAN": "入库时是否静默清洗（会改切出来的块）",
+    # ---- /search 的并发准入（2026-11-20，noisy neighbor 第二轮）----
+    # ★ 为什么登记而不是放进 `ENV_IGNORED`：它们只影响 `/search`（不碰 `/chat` 的生成路径），
+    #   但 `/search` 是 agent 的工具路径，**放行/拒绝的分布变了，工具侧看到的东西就变了**。
+    #   保守做法是记进状态：宁可让门禁多判一次"环境变了"，也不要让一次准入策略调整
+    #   被当成"候选效果"。理由要能反过来验：把 MAX_CONC_PER_CALLER 从 2 调到 200 再跑
+    #   同一批 agent 用例，工具调用成功率会变 ⇒ 它确实能影响结果。
+    "MAX_CONC_PER_CALLER": "同一调用方的 /search 并发上限（超了直接 429）",
+    "GLOBAL_CONC": "每进程同时允许几个 /search（0=关）—— 决定放行/拒绝的分布",
+    "CONC_WAIT_MS": "全局名额忙时最多等多久（0=立刻拒）—— 决定 429 与排队的分界",
+    "CONC_RETRY_AFTER": "429 带的 Retry-After 秒数 —— 决定客户端退避节奏",
+    "ADMIT_MODE": "准入在哪儿判（early=读 body 前 / endpoint=旧行为）—— 影响被拒请求的形态",
 }
 
 #: 明确**与评测结果无关**的运行时键：出现在源码里也不必登记（端口/主机/编码/测试开关）。
