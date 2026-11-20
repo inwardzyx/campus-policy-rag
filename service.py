@@ -1310,6 +1310,39 @@ rag = RAG()
 #   LIMIT_FAIL_MODE    closed（默认，存储挂了就拒绝服务=护钱包）| open（放行=保可用）
 #   TRUST_PROXY_HEADERS / ALLOW_CLIENT_ID_HEADER   身份怎么认，默认都不信（见 limits.client_id）
 LIMITER = limits_mod.build_limiter(os.environ, log=logger)
+
+# ==================================================================
+# 按调用方的并发上限（2026-11-20，noisy-neighbor 实验驱动）
+# ==================================================================
+# ★ 为什么需要它：/search 走向量 + BM25 + 重排，是 CPU 密集型；单个 FastAPI 进程里
+#   48 个并发调用会把这台机器的 CPU 打满，其他租户的 p95 从 70ms 涨到 647ms（实测）。
+#   限流（令牌桶）管的是"频率"，管不住"同时有多少个在跑"——并发必须单独限。
+# ★ 口径与限流一致：用 limits.client_id()（默认 TCP 对端；开了 ALLOW_CLIENT_ID_HEADER 才认自称头），
+#   否则"按租户限并发"会被伪造头绕过。
+MAX_CONC_PER_CALLER = int(os.environ.get("MAX_CONC_PER_CALLER", "2"))
+_CONC_SLOTS: dict[str, "threading.Semaphore"] = {}
+_CONC_LOCK = threading.Lock()
+
+
+def _caller_of(request) -> str:
+    try:
+        remote = request.client.host if request.client else None
+        return limits_mod.client_id(remote, dict(request.headers), LIMITER.limits)
+    except Exception:                                  # noqa: BLE001
+        return "unknown"
+
+
+def _caller_slot(request):
+    """非阻塞拿一个并发槽；拿不到就 429（不是排队，排队等于把线程占住）。"""
+    who = _caller_of(request)
+    with _CONC_LOCK:
+        sem = _CONC_SLOTS.setdefault(who, threading.Semaphore(MAX_CONC_PER_CALLER))
+    if not sem.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail={
+            "reason": "caller_concurrency",
+            "detail": f"同一调用方并发超过 {MAX_CONC_PER_CALLER} 个（/search 是 CPU 密集型）",
+        })
+    return sem
 # ★ 多租户默认关闭（MULTI_TENANT=1 才校验）；关闭时走 default 租户 = 既有行为不变。
 TENANTS = tenants_mod.Registry.from_env(os.environ)
 
@@ -2237,8 +2270,12 @@ def search(req: SearchRequest, request: Request):
     tenant = _tenant(request)
     _assert_tenant_namespace(tenant, req.namespace)
     quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
-    return _gated(request, lambda led: handle_search(req, led, roles=roles),
-                  who_override=quota_key, tenant_id=tenant.id)
+    slot = _caller_slot(request)          # ★ 并发上限：满了直接 429，不排队
+    try:
+        return _gated(request, lambda led: handle_search(req, led, roles=roles),
+                      who_override=quota_key, tenant_id=tenant.id)
+    finally:
+        slot.release()
 
 
 def _kb_admin_guard(request: Request) -> None:
