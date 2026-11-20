@@ -128,6 +128,17 @@ NON_AFFECTING = re.compile(
     r"|eval/agent_metrics\.py"
     r"|eval/reports/agent-.*"
     r"|eval/reports/chat-baseline-same-moment\.(?:md|json)"
+    # ★ 2026-11-20 第三批（起因：run #101 起快 job 一直红，而其中 4 个文件**可证明**
+    #   不参与判分，却把 4 份 /chat 基线连带判成 STALE —— 假红会教人关掉检查）。
+    #   ⚠️ 每一条都要能说清"凭什么证明它不影响数字"，说不清就别加：
+    #     · env.gitignore 是 git 的忽略清单，没有任何代码读它；
+    #     · eval/sandbox_ab.py 是沙箱 A/B **实验脚本**，全仓库无人 import（只有它自己内部引用）；
+    #     · evalset/compute/* 是另一套题（计算题），105 题基线的 case_server / run_eval 都不读它；
+    #     · experiments/* 是测量**产物与实验脚本**，评测路径只在注释里提过它（已核）。
+    r"|eval/\.gitignore"
+    r"|eval/sandbox_ab\.py"
+    r"|evalset/compute/.*"
+    r"|experiments/.*"
     r")$"
 )
 

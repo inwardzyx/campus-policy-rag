@@ -615,3 +615,56 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 5. 确认 Docker Desktop 在跑、`docker images docling-runner:2.142.1` 存在；不存在则按
    `enterprise-kb.md` 重建。
 6. 从 §5 P0 开始写 `kb/context.py`，不要先碰飞书/部署/新连接器。
+
+---
+
+## 2026-11-20 深夜 · CI 现状（两个 job 绿、一个 job 红，红的原因已定位）
+
+> 写给下一个接手的人（或明早的自己）：**别再花时间猜"是不是自己弄红的"**，下面是实测。
+
+### 绿了
+
+- `慢 job · 把关 + 评测门禁`：之前红在 `tests/test_runstate.py::test_所有环境旋钮都已登记`
+  —— `/search` 准入那 5 个旋钮（`MAX_CONC_PER_CALLER`/`GLOBAL_CONC`/`CONC_WAIT_MS`/
+  `CONC_RETRY_AFTER`/`ADMIT_MODE`）没登记。已登记进 `kb/runstate.py` 的 `ENV_REGISTRY`（commit `14f54f6`）。
+- `容器 job`：一直绿。
+
+### 还红着（`快 job` 的「核报告新鲜度」）
+
+**这不是谁手滑，是 4 份 `/chat` 基线真的过期了**，`check_report_freshness.py --strict` 报的是实话：
+
+```text
+eval/reports/BASELINE-offline.md / BASELINE-online.md /
+chat-baseline-same-moment.md / noise-floor.md   ⇒ STALE_MULTI
+  ① 判据版本 fe0cf083 ≠ 当前 0a440c38（判分/拒答规则改过 ⇒ 旧报告不可比）
+  ② 其后改了 3 个影响结果的文件：.env.example、kb/runstate.py、service.py
+  ③ 版面后端 报告 PDF_BACKEND=pypdf ≠ 当前 auto（环境差异）
+```
+
+★ **①最关键**：判分规则变了，那 4 份报告里的数（42/44、40/61、1 胜 2 负）与现在的口径**不可比**。
+而这三个数正是简历与 README 在引用的数。所以只有两条路，**都要人拍板**：
+
+| 选 | 做什么 | 代价 |
+|---|---|---|
+| A. 重跑 | `evalset/run_eval.py` 重跑两套基线（+ agent 同刻对照） | 需要 key + 时间；**数字会变**，连带简历 PDF、`check_resume_numbers.py`、README 都要跟着改 |
+| B. 标历史 | 在 README:1617/1621 等引用处标 `（旧代码）`/`（历史快照，勿引用）`（检查器认这几个词） | 便宜，但等于承认"简历引的三个数来自旧判据"，对外口径要跟着改 |
+
+⚠️ 别用第三种"绕过"：把文件塞进 `NON_AFFECTING` 让检查器闭嘴。①是**判据版本**差异，
+不是文件清单问题 —— 塞清单只会制造假绿（本次只加了 4 个**可证明**无关的路径：
+`eval/.gitignore`、`eval/sandbox_ab.py`、`evalset/compute/*`、`experiments/*`，
+每条都写了"凭什么无关"，见 commit `check_report_freshness.py` 的注释）。
+
+### 本机还有两条红的测试（**不是仓库的问题**，别人 clone 也是红的）
+
+1. `tests/test_eval_attribution.py::test_ndcg_matches_ir_measures_ground_truth`
+   —— 本机 venv 里装了 `ir_measures` 但后端 `pytrec_eval` 不全 ⇒ `importorskip` 没跳过、算出来是 `None`。
+   CI 不装评测依赖 ⇒ 这条在 CI 里是 skip（测试自己的 docstring 就写着）。
+2. `tests/test_guard.py::test_dup_threshold_has_margin`
+   —— 报「第15条【排班】」两条一模一样；该文本只在 **gitignored 的 `kb_data/`** 里（`docs/` 里 grep 不到），
+   CI 没有那份语料 ⇒ 绿。要本机绿：清掉 `kb_data/synth*` 或让它重新入库。
+
+### 今晚做了什么（想少读就只看这条）
+
+noisy neighbor 这题做完了，报告在 `experiments/noisy-neighbor.md` §九/§十：
+`+652% → +472%（服务端）→ +178%（客户端退避）→ +179%（过入口层 nginx，另一组配对）`，
+并**证伪了"多 worker = 隔离"**（单独上 4 worker 反而 +845%）。产物 `experiments/noisy-neighbor-round2.json`。
