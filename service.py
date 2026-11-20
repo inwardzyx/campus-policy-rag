@@ -83,6 +83,13 @@ CACHE_DIR = os.environ.get(
     "FASTEMBED_CACHE_PATH",
     os.path.join(os.path.expanduser("~"), ".cache", "fastembed"))
 
+#: embedding 的 ONNX 线程数。0 = 交给 onnxruntime 默认（默认值 = 机器逻辑核数）。
+#: ★ 为什么多 worker 时**必须**显式设（2026-11-20 实测）：默认每个进程都想吃满所有核，
+#:   4 个 worker × 14 线程 = 56 个线程抢 14 个核 —— 互相拖慢，而且拖的是**邻居**。
+#:   这正是 noisy-neighbor 实验里"两个重请求就能拖住另一个租户"的机制之一。
+#: ★ 默认 0（不改行为）：单进程部署时用默认值最省事，改了反而可能更慢（未量）。
+EMBED_THREADS = int(os.environ.get("EMBED_THREADS", "0") or 0)
+
 import numpy as np                                  # noqa: E402
 import jieba                                        # noqa: E402
 import uvicorn                                      # noqa: E402
@@ -809,7 +816,8 @@ class RAG:
             default_lex = Path(__file__).parent / "evalset" / "loop" / "active.json"
             lex_path = str(default_lex) if default_lex.exists() else None
         self._lexicon = expand_mod.Lexicon.load(lex_path)
-        self.model = TextEmbedding("BAAI/bge-small-zh-v1.5", cache_dir=CACHE_DIR)
+        self.model = TextEmbedding("BAAI/bge-small-zh-v1.5", cache_dir=CACHE_DIR,
+                                   threads=(EMBED_THREADS or None))
         # ★ 这里【故意不建 LLM】，原因见上面的 llm 属性
 
         # ★ 知识库从 docs/ 加载（不再写死 RAW_DOCS）：
@@ -1312,16 +1320,40 @@ rag = RAG()
 LIMITER = limits_mod.build_limiter(os.environ, log=logger)
 
 # ==================================================================
-# 按调用方的并发上限（2026-11-20，noisy-neighbor 实验驱动）
+# 并发准入（2026-11-20，noisy-neighbor 实验驱动；当日第二轮改成"读 body 之前判"）
 # ==================================================================
-# ★ 为什么需要它：/search 走向量 + BM25 + 重排，是 CPU 密集型；单个 FastAPI 进程里
+# ★ 为什么需要它：/search 走向量 + BM25，是 CPU 密集型；单个 FastAPI 进程里
 #   48 个并发调用会把这台机器的 CPU 打满，其他租户的 p95 从 70ms 涨到 647ms（实测）。
 #   限流（令牌桶）管的是"频率"，管不住"同时有多少个在跑"——并发必须单独限。
 # ★ 口径与限流一致：用 limits.client_id()（默认 TCP 对端；开了 ALLOW_CLIENT_ID_HEADER 才认自称头），
 #   否则"按租户限并发"会被伪造头绕过。
+# ★★ 2026-11-20 第二轮（配对实测，见 experiments/noisy-neighbor.md §五）：
+#   只在端点函数里判**不够**，因为**被拒的请求照样很贵**——
+#   它仍要付：读 body → pydantic 校验 → 认租户 → 令牌桶 → 抛异常 → 序列化 429。
+#   实测纯拒绝吞吐只有 ~270 rps、429 的 p50 是 98ms（这些活全吃 GIL，而一个进程只有一个 GIL）。
+#   偏偏 noisy neighbor 的负载画像就是"被拒的客户端立刻重打"：60 秒 2.5 万个 429。
+#   ⇒ 旧写法并没有减少 CPU 消耗，只是把消耗从"真实检索"搬到了"拒绝"上。
+#   所以准入前移到 **ASGI 中间件**（读请求体之前，纯 ASGI，不碰 body），且 429 带 Retry-After。
 MAX_CONC_PER_CALLER = int(os.environ.get("MAX_CONC_PER_CALLER", "2"))
+#: 每个**进程**同时允许几个 /search 在跑。0 = 不设（旧行为）。
+#: ★ 为什么是"每进程"而不是"全站"：进程之间不共享内存，要做全站口径得经 Redis。
+#:   多 worker 之后全站上限 ≈ GLOBAL_CONC × worker 数 —— 这条取舍写在实验报告里，别在这里假装是全站。
+GLOBAL_CONC = int(os.environ.get("GLOBAL_CONC", "0") or 0)
+#: 全局名额忙时，请求最多等多久（毫秒）。0 = 不等，立刻 429。
+#: ★ 为什么"等"有时比"拒"对（2026-11-20 实测的取舍）：等待发生在**事件循环**里，
+#:   不占线程、不阻塞别人；而立刻 429 会把**受害者**也一起打掉 —— 那种"邻居变快了"
+#:   是因为它没拿到服务，是**假绿**。所以受害者该排队，超额方该被拒。
+CONC_WAIT_MS = int(os.environ.get("CONC_WAIT_MS", "0") or 0)
+#: 拒绝时给的 Retry-After（秒）。★ 让客户端退避，否则它会形成"拒绝风暴"把 GIL 打满。
+CONC_RETRY_AFTER = int(os.environ.get("CONC_RETRY_AFTER", "2") or 2)
+#: 准入在哪儿判：`early`（默认，ASGI 中间件）| `endpoint`（2026-11-20 当天早些时候的行为，回滚用）。
+ADMIT_MODE = (os.environ.get("ADMIT_MODE") or "early").strip().lower()
 _CONC_SLOTS: dict[str, "threading.Semaphore"] = {}
 _CONC_LOCK = threading.Lock()
+#: 端点模式（回滚）用的同步全局名额：只能"抢不到就拒"。
+_GLOBAL_SLOTS = threading.Semaphore(GLOBAL_CONC) if GLOBAL_CONC > 0 else None
+#: 中间件模式用的**异步**全局名额：能"等一会儿"（CONC_WAIT_MS），且等待不占线程。
+_GLOBAL_ASYNC = asyncio.Semaphore(GLOBAL_CONC) if GLOBAL_CONC > 0 else None
 
 
 def _caller_of(request) -> str:
@@ -1332,17 +1364,122 @@ def _caller_of(request) -> str:
         return "unknown"
 
 
-def _caller_slot(request):
-    """非阻塞拿一个并发槽；拿不到就 429（不是排队，排队等于把线程占住）。"""
-    who = _caller_of(request)
+def _who_of(remote, headers: dict) -> str:
+    """和 `_caller_of` 同一口径，但不依赖 Starlette 的 Request（中间件里只有裸 scope）。"""
+    try:
+        return limits_mod.client_id(remote, headers, LIMITER.limits)
+    except Exception:                                  # noqa: BLE001
+        return "unknown"
+
+
+class _Slot:
+    """一个准入名额（调用方那层 + 可选的全局那层）。`release` 幂等 —— 双重释放会把上限悄悄放大。"""
+
+    __slots__ = ("_sem", "_took_global", "_done")
+
+    def __init__(self, sem, took_global: bool):
+        self._sem = sem
+        self._took_global = took_global
+        self._done = False
+
+    def release(self) -> None:
+        if self._done:
+            return
+        self._done = True
+        if self._took_global:
+            _GLOBAL_SLOTS.release()
+        self._sem.release()
+
+
+def _busy(reason: str, detail: str) -> HTTPException:
+    """429 + Retry-After。★ 不给 Retry-After 的话，客户端立刻重打 ⇒ 拒绝风暴自伤（实测见模块注释）。"""
+    return HTTPException(status_code=429, detail={"reason": reason, "detail": detail},
+                         headers={"Retry-After": str(CONC_RETRY_AFTER)})
+
+
+def _admit(who: str) -> _Slot:
+    """非阻塞抢一个名额；抢不到抛 429（不是排队 —— 排队等于把线程占住，也就等于没隔离）。"""
     with _CONC_LOCK:
         sem = _CONC_SLOTS.setdefault(who, threading.Semaphore(MAX_CONC_PER_CALLER))
     if not sem.acquire(blocking=False):
-        raise HTTPException(status_code=429, detail={
-            "reason": "caller_concurrency",
-            "detail": f"同一调用方并发超过 {MAX_CONC_PER_CALLER} 个（/search 是 CPU 密集型）",
-        })
-    return sem
+        raise _busy("caller_concurrency",
+                    f"同一调用方并发超过 {MAX_CONC_PER_CALLER} 个（/search 是 CPU 密集型）")
+    if _GLOBAL_SLOTS is not None and not _GLOBAL_SLOTS.acquire(blocking=False):
+        sem.release()                     # ★ 全局拿不到就把调用方那层还回去，否则名额会漏
+        raise _busy("global_concurrency",
+                    f"本进程 /search 并发超过 {GLOBAL_CONC} 个（GLOBAL_CONC）")
+    return _Slot(sem, _GLOBAL_SLOTS is not None)
+
+
+def _caller_slot(request):
+    """端点内准入（仅 `ADMIT_MODE=endpoint` 回滚时用）。"""
+    return _admit(_caller_of(request))
+
+
+class _EarlyAdmit:
+    """把 `/search` 的并发准入提前到**读请求体之前**。
+
+    ★ 纯 ASGI 实现（不用 BaseHTTPMiddleware）：这里要的就是"最便宜的那条路"，
+      而 BaseHTTPMiddleware 会多包一层任务组。实测 429 的 p50 从 98ms 降到 ~1ms 量级
+      （数在 experiments/noisy-neighbor.md，别在这里写死）。
+    ★ 只拦 `/search`：其他端点不吃这个 CPU 预算，顺手拦会把 /health 这类"看一眼"的接口
+      也变成 429 —— 那正是"防护把自己变成故障"。
+    ★ 名额在 `await self.app(...)` **返回后**释放：这时候响应已经发完，计数不会提前松手。
+    """
+
+    __slots__ = ("app",)
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (scope.get("type") != "http" or scope.get("path") != "/search"
+                or ADMIT_MODE != "early"):
+            return await self.app(scope, receive, send)
+        headers: dict = {}
+        for k, v in scope.get("headers") or []:
+            try:
+                headers[k.decode("latin-1").lower()] = v.decode("latin-1")
+            except Exception:                         # noqa: BLE001
+                continue
+        remote = (scope.get("client") or (None,))[0]
+        who = _who_of(remote, headers)
+        # ① 调用方那层：**你自己**超额了 ⇒ 立刻 429（这类请求没有等的价值，等只会更吵）
+        with _CONC_LOCK:
+            sem = _CONC_SLOTS.setdefault(who, threading.Semaphore(MAX_CONC_PER_CALLER))
+        if not sem.acquire(blocking=False):
+            return await self._reject(send, _busy(
+                "caller_concurrency",
+                f"同一调用方并发超过 {MAX_CONC_PER_CALLER} 个（/search 是 CPU 密集型）"))
+        # ② 全局那层：机器忙 ⇒ **在事件循环里等**（不占线程），等不到才拒。
+        #    ★ 这一层保护的正是"被吵的那个邻居"：它不该因为别人吵而收到 429。
+        took_global = False
+        if _GLOBAL_ASYNC is not None:
+            try:
+                await asyncio.wait_for(_GLOBAL_ASYNC.acquire(), CONC_WAIT_MS / 1000.0)
+                took_global = True
+            except (asyncio.TimeoutError, TimeoutError):
+                sem.release()
+                return await self._reject(send, _busy(
+                    "global_concurrency",
+                    f"本进程 /search 并发已满（GLOBAL_CONC={GLOBAL_CONC}，等待 {CONC_WAIT_MS}ms 未空出）"))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            if took_global:
+                _GLOBAL_ASYNC.release()
+            sem.release()
+
+    @staticmethod
+    async def _reject(send, exc: HTTPException) -> None:
+        """把 HTTPException 直接写成响应：不经过异常处理链，也不读 body（便宜）。"""
+        raw = json.dumps({"detail": exc.detail}, ensure_ascii=False).encode("utf-8")
+        hdrs = [(b"content-type", b"application/json; charset=utf-8"),
+                (b"content-length", str(len(raw)).encode("latin-1"))]
+        for hk, hv in (exc.headers or {}).items():
+            hdrs.append((hk.lower().encode("latin-1"), str(hv).encode("latin-1")))
+        await send({"type": "http.response.start", "status": exc.status_code, "headers": hdrs})
+        await send({"type": "http.response.body", "body": raw})
 # ★ 多租户默认关闭（MULTI_TENANT=1 才校验）；关闭时走 default 租户 = 既有行为不变。
 TENANTS = tenants_mod.Registry.from_env(os.environ)
 
@@ -1438,6 +1575,10 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+# ★ 并发准入（2026-11-20）：只拦 /search，且在**读 body 之前**判。
+#   注册必须在建 app 之后、任何请求之前；行为开关是 ADMIT_MODE（默认 early）。
+app.add_middleware(_EarlyAdmit)
 
 
 # pydantic 模型：规定"请求体必须长这样"，传错了框架自动返回 422，不用你写判断
@@ -2270,12 +2411,15 @@ def search(req: SearchRequest, request: Request):
     tenant = _tenant(request)
     _assert_tenant_namespace(tenant, req.namespace)
     quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
-    slot = _caller_slot(request)          # ★ 并发上限：满了直接 429，不排队
+    # ★ 并发准入：默认在 ASGI 中间件里判（读 body 之前，见 `_EarlyAdmit`）。
+    #   只有 ADMIT_MODE=endpoint（回滚）时才在这里再判一次 —— 两条路都判会双算名额。
+    slot = None if ADMIT_MODE == "early" else _caller_slot(request)
     try:
         return _gated(request, lambda led: handle_search(req, led, roles=roles),
                       who_override=quota_key, tenant_id=tenant.id)
     finally:
-        slot.release()
+        if slot is not None:
+            slot.release()
 
 
 def _kb_admin_guard(request: Request) -> None:
