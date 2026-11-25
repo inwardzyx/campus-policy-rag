@@ -220,9 +220,13 @@ def test_docs_path_prompt_is_byte_identical_and_has_no_context(rag) -> None:
     assert rag["prompts"] == [GOLDEN_PROMPT], f"旧路径 prompt 变了：{rag['prompts']!r}"
     assert r.context is None, "docs/ 默认路径不该有上下文层"
     assert rag["search_kwargs"] == [{"k": 5, "namespace": None, "acl": None}]
-    # 字段集：只多一个 `context`（默认 None），语义与 `session_used` 同款
+    # 字段集：`context`（2026-10-25）+ `configVersion`/`configSource`（2026-11-25，发布门禁平台）。
+    # ★ 后两个是"这次答案用了哪一版 prompt"的可见标记：没有平台或没带 X-Config-Version 时
+    #   恒为 None —— 忽略它们的旧调用方看到的东西不变。
     assert set(r.model_dump()) == {"answer", "sources", "took_ms", "rerank_used",
-                                   "knowledge_hit", "usage", "session_used", "context"}
+                                   "knowledge_hit", "usage", "session_used", "context",
+                                   "configVersion", "configSource"}
+    assert r.configVersion is None and r.configSource is None
 
 
 def test_sso_roles_do_not_turn_on_the_context_layer(rag) -> None:

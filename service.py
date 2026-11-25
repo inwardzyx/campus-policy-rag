@@ -38,6 +38,8 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+import arg_config   # ★ 2026-11-25：按版本取 prompt（发布门禁平台）
 from typing import Optional
 
 # 先读仓库根目录的 .env（没有这个文件就静默跳过，什么都不影响）。
@@ -1242,33 +1244,46 @@ class RAG:
             out.append((chunk, float(vec_score), score, reason))
         return out
 
+    #: 内置默认模板 —— **必须与历史输出逐字节一致**（`tests/test_context.py` 断言了完整文本）。
+    #: 版本化模板从这里复制出来；平台不可达时永远回落到这两段。
+    DEFAULT_TEMPLATES = {
+        "answered_with_citation":
+            "你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
+            "{ver_line}"
+            "引用要求：每条结论后用方括号标出依据的资料编号（例如「……[2]」）；"
+            "没有资料支撑的话不要写；资料不足以下结论时直接说不知道。\n"
+            "资料：\n{ctx}\n\n问题：{question}",
+        "answered_plain":
+            "你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
+            "资料：\n{ctx}\n\n问题：{question}",
+    }
+
     @staticmethod
-    def build_answer_prompt(question, chunks) -> str:
+    def build_answer_prompt(question, chunks, templates=None) -> str:
         """拼生成用的 prompt —— **`answer()` 与流式端点共用的唯一实现**。
 
         ★ 为什么抽成 staticmethod 而不是让流式那条自己拼一遍：
           两条路必须喂**完全一样**的资料与措辞，否则"流式和非流式答的是同一件事"
           就成了靠注释承诺的话（本仓库为这种"两处各写一份"栽过好几次）。
           抽出来之后，测试可以直接比两边的 prompt 字符串。
+
+        ★ 2026-11-25：`templates` 让 prompt 可以按**版本**取（发布门禁平台的 config-svc）。
+          `templates=None` ⇒ 用 `DEFAULT_TEMPLATES`，输出与改造前逐字节一致。
+          为什么"带不带编号"仍由数据触发（`cite_id`）：两条路（同步/流式）的签名被十几个
+          测试桩依赖，加参数要连带改桩；让编号由数据决定，旧路径的 prompt 就一字不变。
         """
+        tpls = templates or arg_config.current_templates() or RAG.DEFAULT_TEMPLATES
         as_of_note = str((chunks[0] if chunks else {}).get("as_of_note") or "")
         if chunks and "cite_id" in chunks[0]:
-            # ★ v2 模板：块带编号 ⇒ 要求逐句标注来源。
-            #   为什么用"数据触发"而不是给 `answer()` 加参数：那两个方法（同步/流式）的签名
-            #   被十几个测试桩依赖；加参数要连带改桩，而且**两条路必须喂同一份 prompt**。
-            #   让"带不带编号"由数据决定 ⇒ 两条路天然同源，docs/ 旧路径的 prompt 一字不变。
             ctx = "\n".join(f"[{c['cite_id']}] {c.get('text_full', c['text'])}"
                              for c in chunks)
             ver_line = (f"开头先写一句「按 {as_of_note} 时点有效的版本」；"
                         if as_of_note else "")
-            return ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
-                    f"{ver_line}"
-                    "引用要求：每条结论后用方括号标出依据的资料编号（例如「……[2]」）；"
-                    "没有资料支撑的话不要写；资料不足以下结论时直接说不知道。\n"
-                    f"资料：\n{ctx}\n\n问题：{question}")
+            template = tpls.get("answered_with_citation") or RAG.DEFAULT_TEMPLATES["answered_with_citation"]
+            return template.format(ver_line=ver_line, ctx=ctx, question=question)
         ctx = "\n".join(f"- {c.get('text_full', c['text'])}" for c in chunks)
-        return ("你是学校学生事务的答疑助手。只根据下面的资料回答，资料里没有的就明确说不知道。\n"
-                f"资料：\n{ctx}\n\n问题：{question}")
+        template = tpls.get("answered_plain") or RAG.DEFAULT_TEMPLATES["answered_plain"]
+        return template.format(ctx=ctx, question=question)
 
     def answer(self, question, chunks):
         # ★ 生成同样用全文：喂给模型的资料不该比库里的少
@@ -1718,6 +1733,11 @@ class ChatResponse(BaseModel):
     #   docs/ 默认路径恒为 None（“没启用” ≠ “启用但为空”——后者用 degraded 报）。
     #   ⚠️ 默认 None ⇒ 旧调用方只是多看到一个 null，与 `session_used` 同款。
     context: Optional[ContextSummary] = None
+    # ★ 2026-11-25 加：这次答案用的是哪一版 prompt（来自发布门禁平台的 config-svc）。
+    #   `configSource`：header（门禁评测候选版本）/ pointer（线上生效版本）/ default（平台不可达，用内置模板）。
+    #   ★ 降级必须**可见**：拿不到平台就用默认模板，但要让调用方看见 source=default。
+    configVersion: Optional[int] = None
+    configSource: Optional[str] = None
 
 
 class AgentRequest(BaseModel):
@@ -1920,8 +1940,19 @@ def chat(req: ChatRequest, request: Request):
     tenant = _tenant(request)
     _assert_tenant_namespace(tenant, req.namespace)
     quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
-    resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
-                  who_override=quota_key, tenant_id=tenant.id)
+    # ★ 2026-11-25：`X-Config-Version: N` ⇒ 用第 N 版 prompt（门禁评测候选版本走这条）；
+    #   不带这个头 ⇒ 用 release-svc 指针指向的**线上生效版本**；平台不可达 ⇒ 内置默认。
+    prompt_cfg = arg_config.resolve(request.headers.get("X-Config-Version"))
+    _tpl_token = arg_config.push_templates(prompt_cfg)
+    try:
+        resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
+                      who_override=quota_key, tenant_id=tenant.id)
+    finally:
+        arg_config.pop_templates(_tpl_token)
+    # 降级也要**可见**：source=default 说明这次没用上平台里的模板
+    if hasattr(resp, "configVersion"):
+        resp.configVersion = prompt_cfg.version
+        resp.configSource = prompt_cfg.source
     # ★ 审计在 HTTP 层做一次就够：进到这里的响应已经含 context（或拒答的 trace）。
     #   `model_dump()` 为了拿 dict；失败也只 warning，不影响这一轮答案。
     payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
@@ -3238,8 +3269,16 @@ def internal_chat(req: ChatRequest, request: Request):
     tenant = _tenant(request)
     _assert_tenant_namespace(tenant, req.namespace)
     quota_key = f"tenant:{tenant.id}" if TENANTS.enabled else None
-    resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
-                  who_override=quota_key, tenant_id=tenant.id, skip_limit=True)
+    prompt_cfg = arg_config.resolve(request.headers.get("X-Config-Version"))
+    _tpl_token = arg_config.push_templates(prompt_cfg)
+    try:
+        resp = _gated(request, lambda led: handle_chat(req, led, roles=roles),
+                      who_override=quota_key, tenant_id=tenant.id, skip_limit=True)
+    finally:
+        arg_config.pop_templates(_tpl_token)
+    if hasattr(resp, "configVersion"):
+        resp.configVersion = prompt_cfg.version
+        resp.configSource = prompt_cfg.source
     payload = resp.model_dump() if hasattr(resp, "model_dump") else resp
     audit_mod.record_response(req, payload, route="/internal/chat", roles=roles,
                               tenant=tenant.id)

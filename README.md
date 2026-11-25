@@ -2157,3 +2157,31 @@ docker run --rm -p 8000:8000 rag-cs
       接线打真接口、**五处反向验证**（拿掉锁 / 拿掉 `EXPIRE` / 去掉回拨保护 / 拿掉闸门 / 拿掉记账
       ⇒ 对应用例必须红）。这一轮还当场抓出我自己写的**两条假用例**并重写。
     ★ 这一层里**没做**的（答案缓存、多副本 / TLS、反压排队）写在〈跑起来只要一条命令〉那节末尾。
+
+## 答案 prompt 可版本化（2026-11-25，接发布门禁平台）
+
+答案模板不再只写死在 `RAG.DEFAULT_TEMPLATES` 里：现在可以从**发布门禁平台**按版本取。
+
+| 请求情况 | 用哪一版 | 响应里的 `configSource` |
+|---|---|---|
+| 带 `X-Config-Version: N` | 第 N 版（门禁评测**候选版本**走这条） | `header` |
+| 不带 | release-svc 指针指向的**生效版本**（线上答案） | `pointer` |
+| 平台没配/不可达/该版本没有 templates | `RAG.DEFAULT_TEMPLATES`（与历史逐字节一致） | `default` |
+
+三条约束（都是踩过的坑）：
+
+1. **默认路径逐字节不变**：`tests/test_context.py::test_docs_path_prompt_is_byte_identical_and_has_no_context`
+   把旧路径的完整 prompt 钉死了；改造后仍然逐字节相同。
+2. **降级必须可见**：平台不可达就用默认模板，但响应里 `configSource=default` ——
+   静默降级会让"线上用的是旧模板"这件事没人知道。
+3. **不改 `answer()` / `handle_chat()` 的签名**：那两处签名被十几个测试桩依赖（加参数会连带改桩），
+   所以模板用 `ContextVar` 传递（`arg_config.push_templates()` / `pop_templates()`），对调用方透明。
+
+配置：`CONFIG_SVC_URL` / `RELEASE_SVC_URL` / `PROMPT_KEY`（默认 `policy_qa`）。
+生效指针缓存 5 秒，版本内容按 (key, version) 永久缓存（版本不可变）。
+
+⚠️ 已知边界：**SSE 流式路径暂不支持 `X-Config-Version`**（policy-desk 走的是 `/internal/chat` 非流式；
+流式的生成在独立线程里，ContextVar 不会自动带过去，要支持需显式透传）。
+
+验证脚本在门禁平台仓库：`scripts/smoke_campus_config.py`（按版本取模板）与
+`scripts/smoke_publish_changes_behavior.py`（发布/回滚真的改变了这里的行为）。
