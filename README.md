@@ -2183,5 +2183,5 @@ docker run --rm -p 8000:8000 rag-cs
 ⚠️ 已知边界：**SSE 流式路径暂不支持 `X-Config-Version`**（policy-desk 走的是 `/internal/chat` 非流式；
 流式的生成在独立线程里，ContextVar 不会自动带过去，要支持需显式透传）。
 
-验证脚本在门禁平台仓库：`scripts/smoke_campus_config.py`（按版本取模板）与
-`scripts/smoke_publish_changes_behavior.py`（发布/回滚真的改变了这里的行为）。
+验证脚本在**门禁平台仓库**（ai-release-gate）里，不在这里：
+`smoke_campus_config.py`（按版本取模板）与 `smoke_publish_changes_behavior.py`（发布/回滚真的改变了这里的行为）。
