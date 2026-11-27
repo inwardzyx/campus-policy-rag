@@ -201,6 +201,10 @@ def test_single_turn_response_shape_unchanged(rag, monkeypatch) -> None:
     monkeypatch.setattr(svc.rag, "answer", lambda q, ch: "假答案")
     r = svc.handle_chat(svc.ChatRequest(question="问题", use_rerank=True))
     got = set(r.model_dump().keys())
+    # 2026-11-25 加 configVersion / configSource：发布门禁平台按版本取 prompt 的可见标记。
+    # 没有平台或没带 X-Config-Version 时恒为 None ⇒ 忽略它们的旧调用方看到的字段值不变。
     expect = {"answer", "sources", "took_ms", "rerank_used", "knowledge_hit",
-              "usage", "session_used", "context"}
+              "usage", "session_used", "context", "configVersion", "configSource"}
     assert got == expect, f"字段集变了：多 {got - expect}，少 {expect - got}"
+    assert r.configVersion is None and r.configSource is None, \
+        "没接平台时这两个字段必须是 None（不填默认版本号）"
