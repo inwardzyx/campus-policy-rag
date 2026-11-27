@@ -1614,11 +1614,11 @@ sources 条数 ±1 容差），1 遍就够，**实测全绿**。
 | `refuse_ok` | 26/61 | **40/61** | 41/61 |
 
 > ★ **三项全给，且结论是"打平"不是"更好"**：gold +1、漏答 −1、拒答 −1，
-> 两处 −1 都在噪声带内（见 `reports/noise-floor.md`）。挑着看会显得更好看，
+> 两处 −1 都在噪声带内（见 `reports/noise-floor.md`）。挑着看会显得更好看，（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
 > 但 README 是公开的 —— 选择性展示迟早被对上。
 
-产物（脚本生成，不许手改）：`eval/reports/agent-baseline.md`（含同刻对照表）、
-`eval/reports/chat-baseline-same-moment.md`；跑法见 `agent/PLAN.md`。
+产物（脚本生成，不许手改）：`eval/reports/agent-baseline.md`（含同刻对照表）、（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
+`eval/reports/chat-baseline-same-moment.md`；跑法见 `agent/PLAN.md`。（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
 
 ---
 
