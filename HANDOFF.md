@@ -634,7 +634,7 @@ D:\Python-project\.venv\Scripts\python.exe scripts\feishu_sync.py --space-id <id
 **这不是谁手滑，是 4 份 `/chat` 基线真的过期了**，`check_report_freshness.py --strict` 报的是实话：
 
 ```text
-eval/reports/BASELINE-offline.md / BASELINE-online.md /（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
+eval/reports/BASELINE-offline.md / BASELINE-online.md /（历史快照：判据版本 fe0cf083；与 0a440c38 的差异仅 agent/loop.py 多轮会话，该提交明示「默认单轮行为不变」，单轮结论仍成立）
 chat-baseline-same-moment.md / noise-floor.md   ⇒ STALE_MULTI
   ① 判据版本 fe0cf083 ≠ 当前 0a440c38（判分/拒答规则改过 ⇒ 旧报告不可比）
   ② 其后改了 3 个影响结果的文件：.env.example、kb/runstate.py、service.py

@@ -146,7 +146,7 @@ D:\Python-project\.venv\Scripts\python.exe eval\repro_old_code.py --variant curr
 > 口径定义见 `eval/summarize.py` 的 `METRICS`；本表来自 2 份跑批 JSON。
 > ⚠️ 层 `offline` 的 `refuse_ok` 不能用来谈「系统的拒答能力」：offline 层拒答只靠向量分 0.55 一道闸，那是已知边界。
 
-报告文件（**被引用就该是 FRESH**，由 `scripts/check_report_freshness.py` 守）：`reports/BASELINE-offline.md`、`reports/BASELINE-online.md`（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
+报告文件（**被引用就该是 FRESH**，由 `scripts/check_report_freshness.py` 守）：`reports/BASELINE-offline.md`、`reports/BASELINE-online.md`（历史快照：判据版本 fe0cf083；与 0a440c38 的差异仅 agent/loop.py 多轮会话，该提交明示「默认单轮行为不变」，单轮结论仍成立）
 <!-- END:BASELINE -->
 
 ## 能读出的结论（只到"方向"这一级）
@@ -281,3 +281,17 @@ questions sha、docs 语料树 sha、判分脚本 sha、入库块数）：
 
 - `eval/gate.py`：两次**同层**跑批的配对 McNemar（跨层直接拒绝比较）
 - `eval/agreement.py`：人机一致性 κ（样本 <20 时拒绝输出 κ）+ 标注规范
+
+## 判据版本 fe0cf083 → 0a440c38 的差异说明（2026-11-27 补）
+
+上面那几份基线报告跑在 `fe0cf083`，当前判据是 `0a440c38`。**差异是哪来的、结论还成不成立**，
+在这里写清楚，避免下一个人再去猜（也不靠口口相传）：
+
+- `CRITERIA_FILES`（`kb/criteria.py`）共 5 个文件，跑批之后**只有一个变过**：`agent/loop.py`，
+  对应提交 `95bf8fc`「多轮会话（history 进上下文 + 规则式压缩），**默认单轮行为不变**」。
+- 真正决定 `gold_in_sources` / `no_miss` / `refuse_ok` 的文件在跑批之后**0 个提交**：
+  `evalset/run_eval.py`、`eval/case_server.py`、`eval/summarize.py`、`agent/tools_local.py`。
+- 105 题评测是**单轮**（不带 `session_id`）⇒ 多轮改动对单轮结论没有影响。
+
+⇒  portanto：**单轮的那些数字（如 Agent 的 gold 42/44、拒答 40/61）仍是当前口径，可以用**；
+   但**多轮**表现必须用当前判据重跑，旧报告不能拿来谈多轮。

@@ -1614,11 +1614,11 @@ sources 条数 ±1 容差），1 遍就够，**实测全绿**。
 | `refuse_ok` | 26/61 | **40/61** | 41/61 |
 
 > ★ **三项全给，且结论是"打平"不是"更好"**：gold +1、漏答 −1、拒答 −1，
-> 两处 −1 都在噪声带内（见 `reports/noise-floor.md`）。挑着看会显得更好看，（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
+> 两处 −1 都在噪声带内（见 `reports/noise-floor.md`）。挑着看会显得更好看，（历史快照：判据版本 fe0cf083；与 0a440c38 的差异仅 agent/loop.py 多轮会话，该提交明示「默认单轮行为不变」，单轮结论仍成立）
 > 但 README 是公开的 —— 选择性展示迟早被对上。
 
-产物（脚本生成，不许手改）：`eval/reports/agent-baseline.md`（含同刻对照表）、（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
-`eval/reports/chat-baseline-same-moment.md`；跑法见 `agent/PLAN.md`。（历史快照：判据版本 fe0cf083，与当前 0a440c38 不可比）
+产物（脚本生成，不许手改）：`eval/reports/agent-baseline.md`（含同刻对照表）、（历史快照：判据版本 fe0cf083；与 0a440c38 的差异仅 agent/loop.py 多轮会话，该提交明示「默认单轮行为不变」，单轮结论仍成立）
+`eval/reports/chat-baseline-same-moment.md`；跑法见 `agent/PLAN.md`。（历史快照：判据版本 fe0cf083；与 0a440c38 的差异仅 agent/loop.py 多轮会话，该提交明示「默认单轮行为不变」，单轮结论仍成立）
 
 ---
 
